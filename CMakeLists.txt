@@ -1,0 +1,100 @@
+# Copyright (c) 2020-2021, Manticore Software LTD (https://manticoresearch.com)
+# All rights reserved
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+cmake_minimum_required ( VERSION 2.8 )
+project ( columnar )
+
+set ( GCC_OR_CLANG 0 )
+
+if ( CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang" )
+	set ( GCC_OR_CLANG 1 )
+endif()
+
+# override default /MD
+if ( MSVC )
+	set ( CMAKE_CXX_FLAGS_DEBUG_INIT "/D_DEBUG /MTd /Zi /Ob0 /Od /RTC1 /GR-" )
+	set ( CMAKE_CXX_FLAGS_MINSIZEREL_INIT "/MT /O1 /Ob1 /D NDEBUG /GR-" )
+	set ( CMAKE_CXX_FLAGS_RELEASE_INIT "/MT /O2 /Ob2 /D NDEBUG /GR-" )
+	set ( CMAKE_CXX_FLAGS_RELWITHDEBINFO_INIT "/MT /Zi /O2 /Ob2 /D NDEBUG /GR-" )
+	set ( CMAKE_CXX_STANDARD_LIBRARIES_INIT "kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib" )
+elseif ( GCC_OR_CLANG )
+	add_definitions ( "-D_FILE_OFFSET_BITS=64" )
+endif()
+
+if (DEFINED ENV{LIBS_BUNDLE})
+	set(LIBS_BUNDLE "$ENV{LIBS_BUNDLE}")
+endif()
+
+if ( NOT LIBS_BUNDLE )
+	get_filename_component(LIBS_BUNDLE "${CMAKE_CURRENT_SOURCE_DIR}/../bundle" ABSOLUTE)
+endif ()
+
+if (NOT IS_ABSOLUTE ${LIBS_BUNDLE})
+	set(LIBS_BUNDLE "${CMAKE_CURRENT_BINARY_DIR}/${LIBS_BUNDLE}")
+endif ()
+
+
+include ( CheckFunctionExists )
+string ( TOUPPER "${it}" _it )
+check_function_exists ( "pread" "HAVE_PREAD" )
+message ( STATUS "Generating config.h file" )
+configure_file ( "${CMAKE_CURRENT_SOURCE_DIR}/config_cmake.h.in" "${CMAKE_CURRENT_BINARY_DIR}/config/config.h" ESCAPE_QUOTES )
+include_directories ( "${CMAKE_CURRENT_BINARY_DIR}/config" )
+
+
+set ( ACCESSOR_H accessor/attributeheader.h accessor/accessor.h accessor/accessorbool.h accessor/accessorint.h accessor/accessormva.h
+	accessor/accessorstr.h accessor/accessortraits.h )
+
+set ( ACCESSOR_SRC accessor/attributeheader.cpp accessor/accessor.cpp accessor/accessorbool.cpp accessor/accessorint.cpp accessor/accessormva.cpp
+	accessor/accessorstr.cpp accessor/accessortraits.cpp )
+
+set ( BUILDER_H builder/builderbool.h builder/builderint.h builder/builderminmax.h builder/buildermva.h builder/builderstr.h builder/buildertraits.h )
+set ( BUILDER_SRC builder/builderbool.cpp builder/builderint.cpp builder/buildermva.cpp builder/builderstr.cpp builder/buildertraits.cpp )
+
+set ( UTIL_H util/util.h util/interval.h util/reader.h )
+set ( UTIL_SRC util/util.cpp util/reader.cpp )
+
+set ( COMMON_H columnar.h builder.h )
+set ( COMMON_SRC columnar.cpp builder.cpp )
+
+set ( ALL_HEADERS ${ACCESSOR_H} ${BUILDER_H} ${COMMON_H} ${UTIL_H} )
+set ( ALL_SOURCES ${ACCESSOR_SRC} ${BUILDER_SRC} ${COMMON_SRC} ${UTIL_SRC} )
+
+SET ( CMAKE_CXX_STANDARD 14 )
+
+add_library ( columnar SHARED ${ALL_SOURCES} ${ALL_HEADERS} ${COMMON_SRC} )
+target_include_directories ( columnar PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} )
+target_include_directories ( columnar PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/util )
+target_include_directories ( columnar PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/accessor )
+target_include_directories ( columnar PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/builder )
+
+if (WIN32)
+	target_compile_options ( columnar PRIVATE "-wd4996" )
+endif()
+
+SET ( EXTRA_LIBRARIES )
+include ( ${CMAKE_CURRENT_SOURCE_DIR}/GetFastPFOR.cmake )
+
+target_link_libraries ( columnar ${EXTRA_LIBRARIES} )
+
+if (DEFINED COLUMNAR_DEST)
+	add_custom_command ( TARGET columnar POST_BUILD	COMMAND ${CMAKE_COMMAND} -E rm -f "${COLUMNAR_DEST}/$<TARGET_FILE_NAME:columnar>" )
+	add_custom_command ( TARGET columnar POST_BUILD	COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:columnar>" "${COLUMNAR_DEST}/."	)
+	if ( MSVC )
+		add_custom_command ( TARGET columnar POST_BUILD	COMMAND ${CMAKE_COMMAND} -E rm -f "${COLUMNAR_DEST}/$<TARGET_PDB_FILE_NAME:columnar>" )
+		add_custom_command ( TARGET columnar POST_BUILD	COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_PDB_FILE:columnar>" "${COLUMNAR_DEST}/." )
+	endif ()
+endif ()

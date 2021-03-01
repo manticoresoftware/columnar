@@ -1,0 +1,37 @@
+// Copyright (c) 2020-2021, Manticore Software LTD (https://manticoresearch.com)
+// All rights reserved
+//
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include "accessortraits.h"
+
+namespace columnar
+{
+
+SubblockCalc_t::SubblockCalc_t ( int iSubblockSize )
+	: m_iSubblockSize ( iSubblockSize )
+	, m_iSubblockShift ( CalcNumBits(iSubblockSize) - 1 )
+	, m_iSubblocksPerBlock ( DOCS_PER_BLOCK / iSubblockSize )
+{}
+
+
+void StoredBlockTraits_t::SetBlockId ( uint32_t uBlockId, uint32_t uNumDocsInBlock )
+{
+	m_uBlockId = uBlockId;
+	m_uNumDocsInBlock = uNumDocsInBlock;
+	m_iNumSubblocks = (uNumDocsInBlock+m_iSubblockSize-1) / m_iSubblockSize;
+	m_tStartBlockRowId = BlockId2RowId(uBlockId);
+}
+
+} // namespace columnar
