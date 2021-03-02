@@ -335,10 +335,10 @@ private:
 
 	const AttributeHeader_i *			GetHeader ( const std::string & sName ) const;
 	bool								LoadHeaders ( FileReader_c & tReader, int iNumAttrs, std::string & sError );
-	FileReader_c *						CreateFileReader ( AttrType_e eType, bool bSequentialReads ) const;
+	FileReader_c *						CreateFileReader() const;
 	std::vector<HeaderWithLocator_t>	GetHeadersForMinMax ( const std::vector<Filter_t> & dFilters, const GetAttrId_fn & fnGetAttrId ) const;
 
-	Analyzer_i *						CreateAnalyzer ( const Filter_t & tSettings, const SharedBlocks_c & pMatchingBlocks ) const;
+	Analyzer_i *						CreateAnalyzer ( const Filter_t & tSettings, bool bHaveMatchingBlocks ) const;
 	std::vector<BlockIterator_i *>		TryToCreatePrefilter ( const std::vector<HeaderWithLocator_t> & dHeaders, SharedBlocks_c pMatchingBlocks ) const;
 	std::vector<BlockIterator_i *>		TryToCreateAnalyzers ( const std::vector<Filter_t> & dFilters, std::vector<int> & dDeletedFilters, SharedBlocks_c & pMatchingBlocks, const GetAttrId_fn & fnGetAttrId ) const;
 };
@@ -386,7 +386,7 @@ Iterator_i * Columnar_c::CreateIterator ( const std::string & sName, const Itera
 	if ( !pHeader )
 		return nullptr;
 
-	std::unique_ptr<FileReader_c> pReader ( CreateFileReader ( pHeader->GetType(), tHints.m_bSequential ) );
+	std::unique_ptr<FileReader_c> pReader ( CreateFileReader() );
 	if ( !pReader )
 		return nullptr;
 
@@ -411,39 +411,13 @@ Iterator_i * Columnar_c::CreateIterator ( const std::string & sName, const Itera
 }
 
 
-FileReader_c * Columnar_c::CreateFileReader ( AttrType_e eType, bool bSequentialReads ) const
+FileReader_c * Columnar_c::CreateFileReader() const
 {
-	const size_t SEQUENTIAL_BUFFER_INT	= 16384;
-	const size_t RANDOM_BUFFER_INT		= 1024;
-
-	const size_t SEQUENTIAL_BUFFER_MVA	= 32768;
-	const size_t RANDOM_BUFFER_MVA		= 4096;
-
-	const size_t SEQUENTIAL_BUFFER_STR	= 32768;
-	const size_t RANDOM_BUFFER_STR		= 32768;
-
-	size_t tBufferSize;
-	switch ( eType )
-	{
-	case AttrType_e::UINT32SET:
-	case AttrType_e::INT64SET:
-		tBufferSize = bSequentialReads ? SEQUENTIAL_BUFFER_MVA : RANDOM_BUFFER_MVA;
-		break;
-
-	case AttrType_e::STRING:
-		tBufferSize = bSequentialReads ? SEQUENTIAL_BUFFER_STR : RANDOM_BUFFER_STR;
-		break;
-
-	default:
-		tBufferSize = bSequentialReads ? SEQUENTIAL_BUFFER_INT : RANDOM_BUFFER_INT;
-		break;
-	}
-
-	return new FileReader_c ( m_tReader.GetFD(), tBufferSize );
+	return new FileReader_c ( m_tReader.GetFD() );
 }
 
 
-Analyzer_i * Columnar_c::CreateAnalyzer ( const Filter_t & tSettings, const SharedBlocks_c & pMatchingBlocks ) const
+Analyzer_i * Columnar_c::CreateAnalyzer ( const Filter_t & tSettings, bool bHaveMatchingBlocks ) const
 {
 	const AttributeHeader_i * pHeader = GetHeader ( tSettings.m_sName );
 	if ( !pHeader )
@@ -452,15 +426,9 @@ Analyzer_i * Columnar_c::CreateAnalyzer ( const Filter_t & tSettings, const Shar
 	if ( tSettings.m_eType!=FilterType_e::VALUES && tSettings.m_eType!=FilterType_e::RANGE && tSettings.m_eType!=FilterType_e::FLOATRANGE )
 		return nullptr;
 
-	int64_t iNumMatchingDocs = int64_t ( pMatchingBlocks ? pMatchingBlocks->GetNumBlocks() : pHeader->GetNumDocs() ) * pHeader->GetSettings().m_iMinMaxLeafSize;
-	const float SEQUENTIAL_THRESH = 0.1f;
-	bool bSequential = float(iNumMatchingDocs) / pHeader->GetNumDocs() >= 0.1f;
-
-	std::unique_ptr<FileReader_c> pReader ( CreateFileReader ( pHeader->GetType(), bSequential ) );
+	std::unique_ptr<FileReader_c> pReader ( CreateFileReader() );
 	if ( !pReader )
 		return nullptr;
-
-	bool bHaveMatchingBlocks = !!pMatchingBlocks;
 
 	switch ( pHeader->GetType() )
 	{
@@ -572,7 +540,7 @@ std::vector<BlockIterator_i *> Columnar_c::TryToCreateAnalyzers ( const std::vec
 			// assume that minmax leaf size is the same as subblock size, it makes things easier
 			assert ( pHeader->GetSettings().m_iMinMaxLeafSize == pHeader->GetSettings().m_iSubblockSize );
 
-			Analyzer_i * pAnalyzer = CreateAnalyzer ( tFilter, pMatchingBlocks );
+			Analyzer_i * pAnalyzer = CreateAnalyzer ( tFilter, !!pMatchingBlocks );
 			if ( pAnalyzer )
 			{
 				pAnalyzer->Setup ( pMatchingBlocks, pHeader->GetNumDocs() );
@@ -606,25 +574,13 @@ const AttributeHeader_i * Columnar_c::GetHeader ( const std::string & sName ) co
 }
 
 
-static AttrType_e TmpAttrRemap ( uint32_t uValue )
-{
-	if ( uValue==0x40000001UL )
-		return AttrType_e::UINT32SET;
-
-	if ( uValue==0x40000002UL )
-		return AttrType_e::INT64SET;
-
-	return (AttrType_e)uValue;
-}
-
-
 bool Columnar_c::LoadHeaders ( FileReader_c & tReader, int iNumAttrs, std::string & sError )
 {
 	m_dHeaders.resize(iNumAttrs);
 
 	for ( auto & i : m_dHeaders )
 	{
-		AttrType_e eType = TmpAttrRemap ( tReader.Read_uint32() );
+		AttrType_e eType = AttrType_e ( tReader.Read_uint32() );
 		std::unique_ptr<AttributeHeader_i> pHeader ( CreateAttributeHeader ( eType, m_uTotalDocs, sError ) );
 		if ( !pHeader )
 			return false;

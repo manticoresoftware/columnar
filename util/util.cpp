@@ -254,7 +254,7 @@ void MemWriter_c::Write ( const uint8_t * pData, size_t tSize )
 
 } // namespace columnar
 
-
+#ifdef _MSC_VER
 void * operator new ( size_t tSize )
 {
 	// VS performs static initialization (in release) before we can setup our allocation funcs
@@ -294,3 +294,4 @@ void operator delete [] ( void * pPtr ) throw()
 	if ( pPtr )
 		columnar::g_fnFree(pPtr);
 }
+#endif

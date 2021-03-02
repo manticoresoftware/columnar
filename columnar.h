@@ -23,7 +23,7 @@
 namespace columnar
 {
 
-static const int LIB_VERSION = 4;
+static const int LIB_VERSION = 5;
 
 class Iterator_i
 {
@@ -66,7 +66,6 @@ public:
 
 struct IteratorHints_t
 {
-	bool	m_bSequential = false;
 	bool	m_bNeedStringHashes = false;
 };
 

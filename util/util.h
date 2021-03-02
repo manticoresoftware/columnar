@@ -359,9 +359,12 @@ bool    CopySingleFile ( const std::string & sSource, const std::string & sDest,
 
 } // namespace columnar
 
+
+#ifdef _MSC_VER
 void *	operator new ( size_t iSize );
 void *	operator new [] ( size_t iSize );
 void	operator delete ( void * pPtr ) throw();
 void	operator delete [] ( void * pPtr ) throw();
+#endif
 
 #endif // util
