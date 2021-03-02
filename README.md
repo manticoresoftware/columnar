@@ -1,3 +1,2 @@
 # Manticore Columnar Library
 
-
