@@ -24,8 +24,6 @@
 namespace columnar
 {
 
-static const size_t MVA_BUFFER_SIZE = 4096;
-
 template<bool LEFT_CLOSED, bool RIGHT_CLOSED>
 class MvaAll_T
 {
@@ -139,7 +137,7 @@ public:
 /////////////////////////////////////////////////////////////////////
 
 template <typename T>
-static FORCE_INLINE void ApplyInverseDeltas ( std::vector<T> & dValues, std::vector<Span_T<T>> & dValuePtrs )
+static FORCE_INLINE void ApplyInverseDeltas ( Span_T<T> & dValues, std::vector<Span_T<T>> & dValuePtrs )
 {
 	for ( auto & tValue : dValuePtrs )
 	{
@@ -172,7 +170,7 @@ static FORCE_INLINE uint32_t PackMVA ( const Span_T<T> & dValue, const uint8_t *
 }
 
 template <typename T>
-static FORCE_INLINE void PrecalcSizeOffset ( const Span_T<uint32_t> & dLengths, std::vector<T> & dValues, std::vector<Span_T<T>> & dValuePtrs )
+static FORCE_INLINE void PrecalcSizeOffset ( const Span_T<uint32_t> & dLengths, Span_T<T> & dValues, std::vector<Span_T<T>> & dValuePtrs )
 {
 	// FIXME! optimize
 	dValuePtrs.resize ( dLengths.size() );
@@ -204,9 +202,9 @@ public:
 
 private:
 	std::unique_ptr<IntCodec_i>	m_pCodec;
-	std::vector<T>				m_dValue;
+	SpanResizeable_T<T>			m_dValue;
 	Span_T<T>					m_dValueSpan;
-	std::vector<uint32_t>		m_dTmp;
+	SpanResizeable_T<uint32_t>	m_dTmp;
 };
 
 template <typename T>
@@ -247,10 +245,10 @@ public:
 
 private:
 	std::unique_ptr<IntCodec_i>	m_pCodec;
-	std::vector<uint32_t>		m_dSubblockCumulativeSizes;
-	std::vector<uint32_t>		m_dTmp;
+	SpanResizeable_T<uint32_t>	m_dSubblockCumulativeSizes;
+	SpanResizeable_T<uint32_t>	m_dTmp;
 
-	std::vector<T>				m_dValues;
+	SpanResizeable_T<T>			m_dValues;
 	std::vector<Span_T<T>>		m_dValuePtrs;
 
 	int							m_iLength = 0;
@@ -342,10 +340,10 @@ public:
 
 private:
 	std::unique_ptr<IntCodec_i>	m_pCodec;
-	std::vector<uint32_t>		m_dTmp;
+	SpanResizeable_T<uint32_t>	m_dTmp;
 
-	std::vector<uint32_t>		m_dLengths;
-	std::vector<T>				m_dValues;
+	SpanResizeable_T<uint32_t>	m_dLengths;
+	SpanResizeable_T<T>			m_dValues;
 	std::vector<Span_T<T>>		m_dValuePtrs;
 
 	int64_t						m_iValuesOffset = 0;
@@ -428,11 +426,11 @@ public:
 
 private:
 	std::unique_ptr<IntCodec_i>	m_pCodec;
-	std::vector<uint32_t>		m_dSubblockCumulativeSizes;
-	std::vector<uint32_t>		m_dTmp;
+	SpanResizeable_T<uint32_t>	m_dSubblockCumulativeSizes;
+	SpanResizeable_T<uint32_t>	m_dTmp;
 
-	std::vector<uint32_t>		m_dLengths;
-	std::vector<T>				m_dValues;
+	SpanResizeable_T<uint32_t>	m_dLengths;
+	SpanResizeable_T<T>			m_dValues;
 	std::vector<Span_T<T>>		m_dValuePtrs;
 
 	int64_t						m_tValuesOffset = 0;
@@ -1145,8 +1143,6 @@ bool Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::MoveToBlock ( int iNext
 
 Iterator_i * CreateIteratorMVA ( const AttributeHeader_i & tHeader, FileReader_c * pReader )
 {
-	pReader->SetBufferSize(MVA_BUFFER_SIZE);
-
 	if ( tHeader.GetType()==AttrType_e::UINT32SET )
 		return new Iterator_MVA_T<uint32_t> ( tHeader, pReader );
 
@@ -1156,8 +1152,6 @@ Iterator_i * CreateIteratorMVA ( const AttributeHeader_i & tHeader, FileReader_c
 template <typename ANY, typename ALL>
 static Analyzer_i * CreateAnalyzerMVA ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings, bool bHaveMatchingBlocks )
 {
-	pReader->SetBufferSize(MVA_BUFFER_SIZE);
-
 	bool b64 = tHeader.GetType()==AttrType_e::INT64SET;
 	bool bAny = tSettings.m_eMvaAggr==MvaAggr_e::ANY;
 	int iIndex = b64*4 + bAny*2 + bHaveMatchingBlocks;

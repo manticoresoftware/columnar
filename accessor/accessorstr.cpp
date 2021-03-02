@@ -22,8 +22,6 @@
 namespace columnar
 {
 
-static const size_t STR_BUFFER_SIZE = 32768;
-
 class StoredSubblock_Str_c
 {
 public:
@@ -36,13 +34,13 @@ public:
 	inline uint64_t	GetHash ( int iIdInSubblock ) const;
 
 protected:
-	std::vector<uint64_t>	m_dCumulativeLengths;
-	std::vector<uint64_t>	m_dHashes;
-	std::vector<uint8_t>	m_dValue;
-	int64_t					m_tFirstValueOffset = 0;
-	int						m_iLastReadId = -1;
-	bool					m_bHaveHashes = false;
-	bool					m_bNeedHashes = false;
+	SpanResizeable_T<uint64_t>	m_dCumulativeLengths;
+	std::vector<uint64_t>		m_dHashes;
+	std::vector<uint8_t>		m_dValue;
+	int64_t						m_tFirstValueOffset = 0;
+	int							m_iLastReadId = -1;
+	bool						m_bHaveHashes = false;
+	bool						m_bNeedHashes = false;
 
 	inline void	ReadHashes ( FileReader_c & tReader, int iValues );
 };
@@ -144,7 +142,7 @@ public:
 	void		ReadHeader ( FileReader_c & tReader, IntCodec_i & tCodec, int iValues );
 
 private:
-	std::vector<uint32_t>	m_dTmp;
+	SpanResizeable_T<uint32_t>	m_dTmp;
 };
 
 
@@ -254,11 +252,11 @@ struct StoredBlock_Str_t
 {
 	int			m_iNumValues = 0;
 	int			m_iSubblockId = -1;
-	int64_t	m_tValuesOffset = 0;
+	int64_t		m_tValuesOffset = 0;
 
-	std::vector<uint64_t> m_dOffsets;
+	SpanResizeable_T<uint64_t> m_dOffsets;
 
-	void		Setup ( int iBlockValues, int64_t tValuesOffset );
+	void			Setup ( int iBlockValues, int64_t tValuesOffset );
 	uint32_t		GetNumSubblockValues ( int iSubblockId, int iSubblockSize ) const;
 };
 
@@ -297,7 +295,7 @@ public:
 
 private:
 	std::unique_ptr<IntCodec_i>	m_pCodec;
-	std::vector<uint32_t>	m_dTmp;
+	SpanResizeable_T<uint32_t>	m_dTmp;
 };
 
 
@@ -543,7 +541,6 @@ bool Iterator_String_c::HaveStringHashes() const
 
 Iterator_i * CreateIteratorStr ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const IteratorHints_t & tHints )
 {
-	pReader->SetBufferSize(STR_BUFFER_SIZE);
 	return new Iterator_String_c ( tHeader, pReader, tHints );
 }
 

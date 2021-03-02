@@ -82,9 +82,33 @@ public:
 	T & operator [] ( size_t i ) { return m_pData[i]; }
 	const T & operator [] ( size_t i ) const { return m_pData[i]; }
 
-private:
+protected:
 	T *		m_pData = nullptr;
 	size_t	m_tLength = 0; 
+};
+
+
+template<typename T>
+class SpanResizeable_T : public Span_T<T>
+{
+	using BASE = Span_T<T>;
+
+public:
+	void resize ( size_t tLength )
+	{
+		if ( tLength>m_tMaxLength )
+		{
+			m_tMaxLength = tLength;
+			m_dData.resize(m_tMaxLength);
+			BASE::m_pData = m_dData.data();
+		}
+
+		BASE::m_tLength = tLength;
+	}
+
+private:
+	std::vector<T>	m_dData;
+	size_t			m_tMaxLength = 0;
 };
 
 

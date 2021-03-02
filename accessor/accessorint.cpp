@@ -139,16 +139,16 @@ public:
 	FORCE_INLINE void		ReadSubblock_Delta ( int iSubblockId, FileReader_c & tReader );
 	FORCE_INLINE void		ReadSubblock_Generic ( int iSubblockId, FileReader_c & tReader );
 	FORCE_INLINE T			GetValue ( int iIdInSubblock ) const;
-	FORCE_INLINE const std::vector<T> & GetAllValues() const { return m_dSubblockValues; }
+	FORCE_INLINE const Span_T<T> & GetAllValues() const { return m_dSubblockValues; }
 
 private:
 	std::unique_ptr<IntCodec_i>	m_pCodec;
-	std::vector<uint32_t>	m_dSubblockCumulativeSizes;
-	std::vector<uint32_t>	m_dTmp;
-	int64_t					m_tValuesOffset = 0;
+	SpanResizeable_T<uint32_t>	m_dSubblockCumulativeSizes;
+	SpanResizeable_T<uint32_t>	m_dTmp;
+	int64_t						m_tValuesOffset = 0;
 
-	int						m_iSubblockId = -1;
-	std::vector<T>			m_dSubblockValues;
+	int							m_iSubblockId = -1;
+	SpanResizeable_T<T>			m_dSubblockValues;
 
 	template <typename DECOMPRESS>
 	FORCE_INLINE void		ReadSubblock ( int iSubblockId, FileReader_c & tReader, DECOMPRESS && fnDecompress );
@@ -172,7 +172,7 @@ void StoredBlock_Int_PFOR_T<T>::ReadHeader ( FileReader_c & tReader )
 template <typename T>
 void StoredBlock_Int_PFOR_T<T>::ReadSubblock_Delta ( int iSubblockId, FileReader_c & tReader )
 {
-	ReadSubblock ( iSubblockId, tReader, [this] ( std::vector<T> & dValues, FileReader_c & tReader, uint32_t uTotalSize )
+	ReadSubblock ( iSubblockId, tReader, [this] ( SpanResizeable_T<T> & dValues, FileReader_c & tReader, uint32_t uTotalSize )
 		{ DecodeValues_Delta_PFOR ( dValues, tReader, *m_pCodec, m_dTmp, uTotalSize, true ); }
 	);
 }
@@ -180,7 +180,7 @@ void StoredBlock_Int_PFOR_T<T>::ReadSubblock_Delta ( int iSubblockId, FileReader
 template <typename T>
 void StoredBlock_Int_PFOR_T<T>::ReadSubblock_Generic ( int iSubblockId, FileReader_c & tReader )
 {
-	ReadSubblock ( iSubblockId, tReader, [this] ( std::vector<T> & dValues, FileReader_c & tReader, uint32_t uTotalSize )
+	ReadSubblock ( iSubblockId, tReader, [this] ( SpanResizeable_T<T> & dValues, FileReader_c & tReader, uint32_t uTotalSize )
 		{ DecodeValues_PFOR ( dValues, tReader, *m_pCodec, m_dTmp, uTotalSize); }
 	);
 }
@@ -629,19 +629,19 @@ class AnalyzerBlock_Int_Values_T : public AnalyzerBlock_c
 	using AnalyzerBlock_c::AnalyzerBlock_c;
 
 public:
-	FORCE_INLINE int	ProcessSubblock_SingleValue ( uint32_t * & pRowID, const std::vector<ACCESSOR_VALUES> & dValues );
-	FORCE_INLINE int	ProcessSubblock_ValuesLinear ( uint32_t * & pRowID, const std::vector<ACCESSOR_VALUES> & dValues );
-	FORCE_INLINE int	ProcessSubblock_ValuesBinary ( uint32_t * & pRowID, const std::vector<ACCESSOR_VALUES> & dValues );
+	FORCE_INLINE int	ProcessSubblock_SingleValue ( uint32_t * & pRowID, const Span_T<ACCESSOR_VALUES> & dValues );
+	FORCE_INLINE int	ProcessSubblock_ValuesLinear ( uint32_t * & pRowID, const Span_T<ACCESSOR_VALUES> & dValues );
+	FORCE_INLINE int	ProcessSubblock_ValuesBinary ( uint32_t * & pRowID, const Span_T<ACCESSOR_VALUES> & dValues );
 
 	template<typename RANGE_EVAL>
-	FORCE_INLINE int	ProcessSubblock_Range ( uint32_t * & pRowID, const std::vector<ACCESSOR_VALUES> & dValues );
+	FORCE_INLINE int	ProcessSubblock_Range ( uint32_t * & pRowID, const Span_T<ACCESSOR_VALUES> & dValues );
 
 	template<typename RANGE_EVAL>
-	FORCE_INLINE int	ProcessSubblock_FloatRange ( uint32_t * & pRowID, const std::vector<ACCESSOR_VALUES> & dValues );
+	FORCE_INLINE int	ProcessSubblock_FloatRange ( uint32_t * & pRowID, const Span_T<ACCESSOR_VALUES> & dValues );
 };
 
 template<typename VALUES, typename ACCESSOR_VALUES>
-int AnalyzerBlock_Int_Values_T<VALUES,ACCESSOR_VALUES>::ProcessSubblock_SingleValue ( uint32_t * & pRowID, const std::vector<ACCESSOR_VALUES> & dValues )
+int AnalyzerBlock_Int_Values_T<VALUES,ACCESSOR_VALUES>::ProcessSubblock_SingleValue ( uint32_t * & pRowID, const Span_T<ACCESSOR_VALUES> & dValues )
 {
 	uint32_t tRowID = m_tRowID;
 
@@ -659,7 +659,7 @@ int AnalyzerBlock_Int_Values_T<VALUES,ACCESSOR_VALUES>::ProcessSubblock_SingleVa
 }
 
 template<typename VALUES, typename ACCESSOR_VALUES>
-int AnalyzerBlock_Int_Values_T<VALUES,ACCESSOR_VALUES>::ProcessSubblock_ValuesLinear ( uint32_t * & pRowID, const std::vector<ACCESSOR_VALUES> & dValues )
+int AnalyzerBlock_Int_Values_T<VALUES,ACCESSOR_VALUES>::ProcessSubblock_ValuesLinear ( uint32_t * & pRowID, const Span_T<ACCESSOR_VALUES> & dValues )
 {
 	uint32_t tRowID = m_tRowID;
 
@@ -681,7 +681,7 @@ int AnalyzerBlock_Int_Values_T<VALUES,ACCESSOR_VALUES>::ProcessSubblock_ValuesLi
 }
 
 template<typename VALUES, typename ACCESSOR_VALUES>
-int AnalyzerBlock_Int_Values_T<VALUES,ACCESSOR_VALUES>::ProcessSubblock_ValuesBinary ( uint32_t * & pRowID, const std::vector<ACCESSOR_VALUES> & dValues )
+int AnalyzerBlock_Int_Values_T<VALUES,ACCESSOR_VALUES>::ProcessSubblock_ValuesBinary ( uint32_t * & pRowID, const Span_T<ACCESSOR_VALUES> & dValues )
 {
 	uint32_t tRowID = m_tRowID;
 
@@ -699,7 +699,7 @@ int AnalyzerBlock_Int_Values_T<VALUES,ACCESSOR_VALUES>::ProcessSubblock_ValuesBi
 
 template<typename VALUES, typename ACCESSOR_VALUES>
 template<typename RANGE_EVAL>
-int AnalyzerBlock_Int_Values_T<VALUES,ACCESSOR_VALUES>::ProcessSubblock_Range ( uint32_t * & pRowID, const std::vector<ACCESSOR_VALUES> & dValues )
+int AnalyzerBlock_Int_Values_T<VALUES,ACCESSOR_VALUES>::ProcessSubblock_Range ( uint32_t * & pRowID, const Span_T<ACCESSOR_VALUES> & dValues )
 {
 	uint32_t tRowID = m_tRowID;
 
@@ -717,7 +717,7 @@ int AnalyzerBlock_Int_Values_T<VALUES,ACCESSOR_VALUES>::ProcessSubblock_Range ( 
 
 template<>
 template<typename RANGE_EVAL>
-int AnalyzerBlock_Int_Values_T<float,uint32_t>::ProcessSubblock_Range ( uint32_t * & pRowID, const std::vector<uint32_t> & dValues )
+int AnalyzerBlock_Int_Values_T<float,uint32_t>::ProcessSubblock_Range ( uint32_t * & pRowID, const Span_T<uint32_t> & dValues )
 {
 	uint32_t tRowID = m_tRowID;
 

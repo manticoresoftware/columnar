@@ -223,7 +223,7 @@ bool Analyzer_T<HAVE_MATCHING_BLOCKS>::HintRowID ( uint32_t tRowID )
 }
 
 
-FORCE_INLINE void AddMinValue ( std::vector<uint32_t> & dValues, uint32_t uMin )
+FORCE_INLINE void AddMinValue ( Span_T<uint32_t> & dValues, uint32_t uMin )
 {
 	int nValues = (int)dValues.size();
 	if ( nValues & ( sizeof(__m128i)/sizeof(uint32_t) - 1 ) )
@@ -247,7 +247,7 @@ FORCE_INLINE void AddMinValue ( std::vector<uint32_t> & dValues, uint32_t uMin )
 }
 
 
-FORCE_INLINE void AddMinValue ( std::vector<uint64_t> & dValues, uint64_t uMin )
+FORCE_INLINE void AddMinValue ( Span_T<uint64_t> & dValues, uint64_t uMin )
 {
 	int nValues = (int)dValues.size();
 	if ( nValues & ( sizeof(__m128i)/sizeof(uint64_t) - 1 ) )
@@ -272,7 +272,7 @@ FORCE_INLINE void AddMinValue ( std::vector<uint64_t> & dValues, uint64_t uMin )
 
 
 template <typename T>
-FORCE_INLINE void DecodeValues_Delta_PFOR ( std::vector<T> & dValues, FileReader_c & tReader, IntCodec_i & tCodec, std::vector<uint32_t> & dTmp, uint32_t uTotalSize, bool bReadFlag )
+FORCE_INLINE void DecodeValues_Delta_PFOR ( SpanResizeable_T<T> & dValues, FileReader_c & tReader, IntCodec_i & tCodec, SpanResizeable_T<uint32_t> & dTmp, uint32_t uTotalSize, bool bReadFlag )
 {
 	int64_t tStart = tReader.GetPos();
 	uint8_t uFlags = to_underlying ( IntDeltaPacking_e::DELTA_ASC );
@@ -294,7 +294,7 @@ FORCE_INLINE void DecodeValues_Delta_PFOR ( std::vector<T> & dValues, FileReader
 }
 
 template <typename T>
-FORCE_INLINE void DecodeValues_PFOR ( std::vector<T> & dValues, FileReader_c & tReader, IntCodec_i & tCodec, std::vector<uint32_t> & dTmp, uint32_t uTotalSize )
+FORCE_INLINE void DecodeValues_PFOR ( SpanResizeable_T<T> & dValues, FileReader_c & tReader, IntCodec_i & tCodec, SpanResizeable_T<uint32_t> & dTmp, uint32_t uTotalSize )
 {
 	int64_t tStart = tReader.GetPos();
 	T uMin = (T)tReader.Unpack_uint64();

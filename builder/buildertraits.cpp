@@ -64,8 +64,8 @@ public:
 
 	void	Encode ( const Span_T<uint32_t> & dUncompressed, std::vector<uint32_t> & dCompressed ) override;
 	void	Encode ( const Span_T<uint64_t> & dUncompressed, std::vector<uint32_t> & dCompressed ) override;
-	bool	Decode ( const Span_T<uint32_t> & dCompressed, std::vector<uint32_t> & dDecompressed ) override;
-	bool	Decode ( const Span_T<uint32_t> & dCompressed, std::vector<uint64_t> & dDecompressed ) override;
+	bool	Decode ( const Span_T<uint32_t> & dCompressed, SpanResizeable_T<uint32_t> & dDecompressed ) override;
+	bool	Decode ( const Span_T<uint32_t> & dCompressed, SpanResizeable_T<uint64_t> & dDecompressed ) override;
 
 private:
 	std::unique_ptr<FastPForLib::IntegerCODEC> m_pCodec32;
@@ -75,7 +75,7 @@ private:
 	FORCE_INLINE void	Encode ( const Span_T<T> & dUncompressed, std::vector<uint32_t> & dCompressed, FastPForLib::IntegerCODEC & tCodec );
 
 	template <typename T>
-	FORCE_INLINE bool	Decode ( const Span_T<uint32_t> & dCompressed, std::vector<T> & dDecompressed, FastPForLib::IntegerCODEC & tCodec );
+	FORCE_INLINE bool	Decode ( const Span_T<uint32_t> & dCompressed, SpanResizeable_T<T> & dDecompressed, FastPForLib::IntegerCODEC & tCodec );
 
 	FastPForLib::IntegerCODEC *	CreateCodec ( const std::string & sName );
 };
@@ -99,13 +99,13 @@ void IntCodec_c::Encode ( const Span_T<uint64_t> & dUncompressed, std::vector<ui
 }
 
 
-bool IntCodec_c::Decode ( const Span_T<uint32_t> & dCompressed, std::vector<uint32_t> & dDecompressed )
+bool IntCodec_c::Decode ( const Span_T<uint32_t> & dCompressed, SpanResizeable_T<uint32_t> & dDecompressed )
 {
 	return Decode ( dCompressed, dDecompressed, *m_pCodec32 );
 }
 
 
-bool IntCodec_c::Decode ( const Span_T<uint32_t> & dCompressed, std::vector<uint64_t> & dDecompressed )
+bool IntCodec_c::Decode ( const Span_T<uint32_t> & dCompressed, SpanResizeable_T<uint64_t> & dDecompressed )
 {
 	return Decode ( dCompressed, dDecompressed, *m_pCodec64 );
 }
@@ -121,7 +121,7 @@ void IntCodec_c::Encode ( const Span_T<T> & dUncompressed, std::vector<uint32_t>
 }
 
 template <typename T>
-bool IntCodec_c::Decode ( const Span_T<uint32_t> & dCompressed, std::vector<T> & dDecompressed, FastPForLib::IntegerCODEC & tCodec )
+bool IntCodec_c::Decode ( const Span_T<uint32_t> & dCompressed, SpanResizeable_T<T> & dDecompressed, FastPForLib::IntegerCODEC & tCodec )
 {
 	const int MAX_DECODED_SIZE = 1024;
 	if ( dDecompressed.size()<MAX_DECODED_SIZE )
@@ -334,7 +334,7 @@ void ComputeDeltas ( uint64_t * pData, int iLength, bool bAsc )
 }
 
 
-void ComputeInverseDeltas ( std::vector<uint32_t> & dData, bool bAsc )
+void ComputeInverseDeltas ( Span_T<uint32_t> & dData, bool bAsc )
 {
 	if ( bAsc )
 		FastPForLib::Delta::fastinverseDelta2 ( dData.data(), dData.size() );
@@ -343,12 +343,26 @@ void ComputeInverseDeltas ( std::vector<uint32_t> & dData, bool bAsc )
 }
 
 
-void ComputeInverseDeltas ( std::vector<uint64_t> & dData, bool bAsc )
+void ComputeInverseDeltas ( Span_T<uint64_t> & dData, bool bAsc )
 {
 	if ( bAsc )
 		CalcInverseDelta64 ( dData.data(), dData.size() );
 	else
 		CalcInverseDelta64Desc ( dData.data(), dData.size() );
+}
+
+
+void ComputeInverseDeltas ( std::vector<uint32_t> & dData, bool bAsc )
+{
+	Span_T<uint32_t> tSpan(dData);
+	ComputeInverseDeltas ( tSpan, bAsc );
+}
+
+
+void ComputeInverseDeltas ( std::vector<uint64_t> & dData, bool bAsc )
+{
+	Span_T<uint64_t> tSpan(dData);
+	ComputeInverseDeltas ( tSpan, bAsc );
 }
 
 
