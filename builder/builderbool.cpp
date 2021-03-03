@@ -16,14 +16,45 @@
 
 #include "builderbool.h"
 #include "buildertraits.h"
+#include "builderminmax.h"
 
 namespace columnar
 {
 
-class Packer_Bool_c : public PackerTraits_T<AttributeHeaderBuilder_c>
+class AttributeHeaderBuilder_Bool_c : public AttributeHeaderBuilder_c
+{
+	using BASE = AttributeHeaderBuilder_c;
+
+public:
+	MinMaxBuilder_T<uint8_t> m_tMinMax;
+
+			AttributeHeaderBuilder_Bool_c ( const Settings_t & tSettings, const std::string & sName, AttrType_e eType );
+
+	bool	Save ( FileWriter_c & tWriter, int64_t & tBaseOffset, std::string & sError );
+};
+
+
+AttributeHeaderBuilder_Bool_c::AttributeHeaderBuilder_Bool_c ( const Settings_t & tSettings, const std::string & sName, AttrType_e eType )
+	: BASE ( tSettings, sName, eType )
+	, m_tMinMax ( tSettings )
+{}
+
+
+bool AttributeHeaderBuilder_Bool_c::Save ( FileWriter_c & tWriter, int64_t & tBaseOffset, std::string & sError )
+{
+	if ( !BASE::Save ( tWriter, tBaseOffset, sError ) )
+		return false;
+
+	return m_tMinMax.Save ( tWriter, sError );
+}
+
+//////////////////////////////////////////////////////////////////////////
+
+
+class Packer_Bool_c : public PackerTraits_T<AttributeHeaderBuilder_Bool_c>
 {
 public:
-	using BASE = PackerTraits_T<AttributeHeaderBuilder_c>;
+	using BASE = PackerTraits_T<AttributeHeaderBuilder_Bool_c>;
 	using BASE::m_tWriter;
 	using BASE::m_tHeader;
 
@@ -97,6 +128,8 @@ void Packer_Bool_c::AnalyzeCollected ( int64_t tAttr )
 
 	if ( m_bConstValue!=bValue )
 		m_bConst = false;
+
+	m_tHeader.m_tMinMax.Add ( bValue ? 1 : 0 );
 }
 
 

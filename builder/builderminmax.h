@@ -191,6 +191,19 @@ inline bool MinMaxBuilder_T<T>::SaveTreeLevels ( FileWriter_c & tWriter ) const
 }
 
 template<>
+inline bool MinMaxBuilder_T<uint8_t>::SaveTreeLevels ( FileWriter_c & tWriter ) const
+{
+	for ( int i = (int)m_dTreeLevels.size()-1; i>=0; i-- )
+		for ( auto & tMinMax : m_dTreeLevels[i] )
+		{
+			assert ( tMinMax.first<2 && tMinMax.second<2 );
+			tWriter.Write_uint8 ( ( tMinMax.first << 1 ) | tMinMax.second );
+		}
+
+	return !tWriter.IsError();
+}
+
+template<>
 inline bool MinMaxBuilder_T<float>::SaveTreeLevels ( FileWriter_c & tWriter ) const
 {
 	for ( int i = (int)m_dTreeLevels.size()-1; i>=0; i-- )

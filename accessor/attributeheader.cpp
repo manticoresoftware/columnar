@@ -86,6 +86,20 @@ void MinMax_T<T>::LoadTreeLevels ( FileReader_c & tReader )
 	{
 		i.first = (T)tReader.Unpack_uint64();
 		i.second = i.first + (T)tReader.Unpack_uint64();
+		assert ( i.first<=i.second );
+	}
+}
+
+template <>
+void MinMax_T<uint8_t>::LoadTreeLevels ( FileReader_c & tReader )
+{
+	for ( auto & i : m_dMinMaxTree )
+	{
+		uint8_t uPacked = tReader.Read_uint8();
+		i.first = ( uPacked >> 1 ) & 1;
+		i.second = uPacked & 1;
+		assert ( i.first<=i.second );
+		assert ( i.second<2 );
 	}
 }
 
@@ -96,6 +110,7 @@ void MinMax_T<float>::LoadTreeLevels ( FileReader_c & tReader )
 	{
 		i.first = UintToFloat ( tReader.Unpack_uint32() );
 		i.second = UintToFloat ( tReader.Unpack_uint32() );
+		assert ( i.first<=i.second );
 	}
 }
 
@@ -266,7 +281,7 @@ AttributeHeader_i * CreateAttributeHeader ( AttrType_e eType, uint32_t uTotalDoc
 		return new AttributeHeader_Int_T<uint64_t> ( eType, uTotalDocs );
 
 	case AttrType_e::BOOLEAN:
-		return new AttributeHeader_c ( eType, uTotalDocs );
+		return new AttributeHeader_Int_T<uint8_t> ( eType, uTotalDocs );
 
 	case AttrType_e::FLOAT:
 		return new AttributeHeader_Int_T<float> ( eType, uTotalDocs );
