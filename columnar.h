@@ -23,7 +23,7 @@
 namespace columnar
 {
 
-static const int LIB_VERSION = 5;
+static const int LIB_VERSION = 6;
 
 class Iterator_i
 {
@@ -154,6 +154,7 @@ extern "C"
 	DLLEXPORT columnar::Columnar_i *	CreateColumnarStorageReader ( const std::string & sFilename, uint32_t uTotalDocs, std::string & sError );
 	DLLEXPORT void						SetupColumnar ( columnar::Malloc_fn fnMalloc, columnar::Free_fn fnFree );
 	DLLEXPORT int						GetColumnarLibVersion();
+	DLLEXPORT const char *				GetColumnarLibVersionStr();
 }
 
 #endif // _columnar_

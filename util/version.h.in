@@ -1,0 +1,4 @@
+#define VERSION_STR "1.0.0"
+#define GIT_COMMIT_ID "@GIT_COMMIT_ID@"
+#define GIT_TIMESTAMP_ID "@GIT_TIMESTAMP_ID@"
+#cmakedefine GIT_BRANCH_ID "@GIT_BRANCH_ID@"

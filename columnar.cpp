@@ -598,6 +598,7 @@ bool Columnar_c::LoadHeaders ( FileReader_c & tReader, int iNumAttrs, std::strin
 
 } // namespace columnar
 
+
 columnar::Columnar_i * CreateColumnarStorageReader ( const std::string & sFilename, uint32_t uTotalDocs, std::string & sError )
 {
 	std::unique_ptr<columnar::Columnar_c> pColumnar ( new columnar::Columnar_c ( sFilename, uTotalDocs ) );
@@ -617,4 +618,11 @@ void SetupColumnar ( columnar::Malloc_fn fnMalloc, columnar::Free_fn fnFree )
 int GetColumnarLibVersion()
 {
 	return columnar::LIB_VERSION;
+}
+
+
+extern const char * LIB_VERSION;
+const char * GetColumnarLibVersionStr()
+{
+	return LIB_VERSION;
 }

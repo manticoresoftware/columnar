@@ -65,7 +65,7 @@ set ( BUILDER_H builder/builderbool.h builder/builderint.h builder/builderminmax
 set ( BUILDER_SRC builder/builderbool.cpp builder/builderint.cpp builder/buildermva.cpp builder/builderstr.cpp builder/buildertraits.cpp )
 
 set ( UTIL_H util/util.h util/interval.h util/reader.h )
-set ( UTIL_SRC util/util.cpp util/reader.cpp )
+set ( UTIL_SRC util/util.cpp util/reader.cpp util/version.cpp )
 
 set ( COMMON_H columnar.h builder.h )
 set ( COMMON_SRC columnar.cpp builder.cpp )
@@ -98,3 +98,8 @@ if (DEFINED COLUMNAR_DEST)
 		add_custom_command ( TARGET columnar POST_BUILD	COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_PDB_FILE:columnar>" "${COLUMNAR_DEST}/." )
 	endif ()
 endif ()
+
+add_custom_target ( columnarver COMMAND ${CMAKE_COMMAND} -D SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR} -D BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/rev.cmake
+	COMMENT "Generate version from sources" VERBATIM SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/rev.cmake ${CMAKE_CURRENT_SOURCE_DIR}/util/version.h.in )
+
+add_dependencies ( columnar columnarver )

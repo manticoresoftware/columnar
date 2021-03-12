@@ -1,0 +1,127 @@
+cmake_minimum_required ( VERSION 2.8.12 )
+
+# guess version strings from current git repo
+function(guess_from_git)
+	if (NOT EXISTS "${SOURCE_DIR}/.git")
+		return()
+	endif ()
+
+	find_package(Git QUIET)
+	if (NOT GIT_FOUND)
+		return()
+	endif()
+
+	# extract short hash as GIT_COMMIT_ID
+	execute_process(COMMAND "${GIT_EXECUTABLE}" log -1 --format=%h
+			WORKING_DIRECTORY "${SOURCE_DIR}"
+			RESULT_VARIABLE res
+			OUTPUT_VARIABLE GIT_COMMIT_ID
+			ERROR_QUIET
+			OUTPUT_STRIP_TRAILING_WHITESPACE)
+	set(GIT_COMMIT_ID "${GIT_COMMIT_ID}" PARENT_SCOPE)
+
+	# extract timestamp and make number YYMMDD from it
+	# it would be --date=format:%y%m%d, but old git on centos doesn't understand it
+	execute_process(COMMAND "${GIT_EXECUTABLE}" log -1 --date=short --format=%ad
+			WORKING_DIRECTORY "${SOURCE_DIR}"
+			RESULT_VARIABLE res
+			OUTPUT_VARIABLE GIT_TIMESTAMP_ID
+			ERROR_QUIET
+			OUTPUT_STRIP_TRAILING_WHITESPACE)
+	string(REPLACE "-" "" GIT_TIMESTAMP_ID "${GIT_TIMESTAMP_ID}")
+	string(SUBSTRING "${GIT_TIMESTAMP_ID}" 2 -1 GIT_TIMESTAMP_ID)
+	set(GIT_TIMESTAMP_ID "${GIT_TIMESTAMP_ID}" PARENT_SCOPE)
+
+	# timestamp for reproducable packages
+	execute_process(COMMAND "${GIT_EXECUTABLE}" log -1 --pretty=%ct
+			WORKING_DIRECTORY "${SOURCE_DIR}"
+			RESULT_VARIABLE res
+			OUTPUT_VARIABLE GIT_EPOCH_ID
+			ERROR_QUIET
+			OUTPUT_STRIP_TRAILING_WHITESPACE)
+	set(SOURCE_DATE_EPOCH ${GIT_EPOCH_ID} PARENT_SCOPE)
+
+	# extract branch name (top of 'git status -s -b'), throw out leading '## '
+	execute_process(COMMAND "${GIT_EXECUTABLE}" status -s -b
+			WORKING_DIRECTORY "${SOURCE_DIR}"
+			RESULT_VARIABLE res
+			OUTPUT_VARIABLE GIT_BRANCH_ID
+			ERROR_QUIET
+			OUTPUT_STRIP_TRAILING_WHITESPACE)
+	string(REGEX REPLACE "\n.*$" "" GIT_BRANCH_ID "${GIT_BRANCH_ID}")
+	string(REPLACE "## " "" GIT_BRANCH_ID "${GIT_BRANCH_ID}")
+	set(GIT_BRANCH_ID "git branch ${GIT_BRANCH_ID}" PARENT_SCOPE)
+endfunction()
+
+# guess version strings from template header file (git archive mark it there)
+function(extract_from_git_slug HEADER)
+	if (EXISTS "${HEADER}")
+		FILE(READ "${HEADER}" _CONTENT)
+		# replace lf into ';' (it makes list from the line)
+		STRING(REGEX REPLACE "\n" ";" _CONTENT "${_CONTENT}")
+		foreach (LINE ${_CONTENT})
+			# match definitions like - // GIT_*_ID VALUE
+			if ("${LINE}" MATCHES "^//[ \t]+(GIT_.*_ID)[ \t]\"(.*)\"")
+				set(${CMAKE_MATCH_1} "${CMAKE_MATCH_2}")
+			endif ()
+		endforeach ()
+		if (GIT_COMMIT_ID STREQUAL "$Format:%h$")
+			return() # no slug
+		endif()
+		# commit id
+		set(GIT_COMMIT_ID "${GIT_COMMIT_ID}" PARENT_SCOPE)
+		# timestamp
+		string(REPLACE "-" "" GIT_TIMESTAMP_ID "${GIT_TIMESTAMP_ID}")
+		string(SUBSTRING "${GIT_TIMESTAMP_ID}" 2 6 GIT_TIMESTAMP_ID)
+		set(GIT_TIMESTAMP_ID "${GIT_TIMESTAMP_ID}" PARENT_SCOPE)
+		# epoch for packaging
+		set(SOURCE_DATE_EPOCH ${GIT_EPOCH_ID} PARENT_SCOPE)
+		# branch id
+		set(GIT_BRANCH_ID "from tarball" PARENT_SCOPE)
+	endif ()
+endfunction()
+
+# function definitions finished, execution starts from here
+##################################
+
+# first try to use binary git
+guess_from_git()
+
+# 2-nd try - if we build from git archive. Correct hash and date provided then, but no branch
+if (NOT GIT_COMMIT_ID)
+	extract_from_git_slug("${SOURCE_DIR}/util/version.h.in")
+endif ()
+
+# nothing found, bail with error
+if ( NOT GIT_COMMIT_ID )
+	message(FATAL_ERROR "Git not found")
+endif ()
+
+# extract version number string from version.h.in
+if ( NOT VERSION_STR )
+	FILE ( STRINGS "${SOURCE_DIR}/util/version.h.in" _STRINGS LIMIT_COUNT 500
+			REGEX "^#define[ \t]+VERSION_STR.*" )
+	STRING ( REGEX REPLACE ".*\"(.*)\"(.*)$" "\\1" VERSION_STR "${_STRINGS}" )
+endif()
+
+# All info collected (we need GIT_COMMIT_ID, GIT_TIMESTAMP_ID and GIT_BRANCH_ID)
+set ( VERFILE "${BINARY_DIR}/config/gen_version.h" )
+
+configure_file ( "${SOURCE_DIR}/util/version.h.in" "${VERFILE}1" )
+file ( MD5 "${VERFILE}1" VERNEW )
+set ( NEED_NEWFILE TRUE )
+
+if ( EXISTS "${VERFILE}" )
+	file ( MD5 "${VERFILE}" VEROLD )
+	if ( VEROLD STREQUAL VERNEW )
+		set ( NEED_NEWFILE FALSE )
+	endif()
+endif()
+
+if ( NEED_NEWFILE )
+	message ( STATUS "Version ${VERSION_STR} ${GIT_COMMIT_ID}@${GIT_TIMESTAMP_ID}, ${GIT_BRANCH_ID}" )
+	configure_file ( "${VERFILE}1" "${VERFILE}" COPYONLY )
+	file ( REMOVE "${VERFILE}1" )
+else()
+	message ( STATUS "Version not changed: ${VERSION_STR} ${GIT_COMMIT_ID}@${GIT_TIMESTAMP_ID}, ${GIT_BRANCH_ID}" )
+endif()
