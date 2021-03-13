@@ -92,9 +92,12 @@ if (NOT GIT_COMMIT_ID)
 	extract_from_git_slug("${SOURCE_DIR}/util/version.h.in")
 endif ()
 
-# nothing found, bail with error
+# nothing found
 if ( NOT GIT_COMMIT_ID )
-	message(FATAL_ERROR "Git not found")
+	set(GIT_TIMESTAMP_ID "000000")
+	set(GIT_COMMIT_ID "00000000")
+	set(GIT_BRANCH_ID "developer version")
+	set(SOURCE_DATE_EPOCH "1607089638")
 endif ()
 
 # extract version number string from version.h.in
