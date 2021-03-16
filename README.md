@@ -26,16 +26,18 @@ Infrastructure:
 * CPU: 6*2 Intel(R) Core(TM) i7-3930K CPU @ 3.20GHz
 * RAM: 64GB
 * Storage: HDD (not SSD)
-* Software: 
+* Software and test specifics: 
   - docker in privileged mode
   - RAM limit with help of Linux cgroups
-  - CPU limit to only 2 virtual cores to test the performance on one physical core
+  - CPU limit to only 2 virtual cores (one physical core)
   - restarting each engine before each query, then running 10 queries one by one
   - dropping OS cache before each query
+  - disabled query cache
   - capturing: slowest response time (i.e. cold OS cache) and avg(top 80% fastest) ("Fast avg", shown on the pictures)
   - one shard in Elasticsearch, one plain index in Manticore Search
   - no fine-tuning in either of the engines, just default settings + same field data types everywhere
   - heap size for Elasticsearch - 50% of RAM
+  - if a query fails in either of the engines it's not accounted for in the total calculation 
 * The RAM constraints are based on what Manticore Search traditional storage requires: 
   - 30MB - ~1/3 of the minimum requirement for Manticore Search with the traditional storage for good performance in this case (89MB)
   - 100MB - enough for all the attributes (89MB) to be put in RAM
@@ -60,4 +62,35 @@ Infrastructure:
 
 #### Manticore GA vs Manticore + Columnar with 1024MB RAM limit - the columnar lib is 1.43x slower
 ![hn_small_es_ms_1024MB](benchmarks/hn_small_ma_co_1024MB.png)
+
+## Benchmark "116M nginx log records"
+
+Goal: compare Manticore Columnar Library + Manticore Search vs Elasticsearch 7.9.1 on typical log analysis queries with.
+
+Dataset: 116M docs generated with help of [Nginx Log Generator](https://github.com/kscarlett/nginx-log-generator) like this:
+```
+docker pull kscarlett/nginx-log-generator
+docker run -d -e "RATE=1000000" --name nginx-log-generator kscarlett/nginx-log-generator
+```
+
+Same infrastructure as in the previous benchmark.
+* The RAM constraints are based on what Manticore Search traditional storage requires: 
+  - 1500MB - ~1/3 of the minimum requirement for Manticore Search with the traditional storage for good performance in this case
+  - 4400MB - enough for all the attributes to be put in RAM
+  - 36000MB - enough for all the index files to be put in RAM
+
+#### Elasticsearch vs Manticore with 1500MB RAM limit - Elasticsearch is 5.68x slower than Manticore Columnar Library:
+![hn_small_es_ms_1500MB](benchmarks/logs116m_es_ms_1500MB.png)
+
+#### Elasticsearch vs Manticore with 4400MB RAM limit - Elasticsearch is 2.71x slower than Manticore Columnar Library:
+![hn_small_es_ms_4400MB](benchmarks/logs116m_es_ms_4400MB.png)
+
+#### Elasticsearch vs Manticore with 46000MB RAM limit - Elasticsearch is 6.7x slower than Manticore Columnar Library:
+![hn_small_es_ms_36000MB](benchmarks/logs116m_es_ms_36000MB.png)
+
+# Work in progress
+
+The benchmarks reveal some problems we are working on:
+* Secondary indexes. There's no secondary indexes in the library while in Elasticsearch every field is indexed by default. Hence worse performance on some queries that heavily depend on filtering performance.
+* Grouping by strings. Elasticsearch does it faster in the logs benchmark.
 
