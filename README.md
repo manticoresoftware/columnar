@@ -17,8 +17,7 @@ TODO
 
 Goal: compare Manticore Columnar Library + Manticore Search on mostly analytical queries with:
 1. Manticore Search with its traditional storage
-2. Elasticsearch v ...
-3. Clickhouse v ...
+2. Elasticsearch version 7.9.1
 
 Dataset: 1,165,439 [Hacker News curated comments](https://zenodo.org/record/45901/) with numeric fields
 
@@ -33,16 +32,32 @@ Infrastructure:
   - CPU limit to only 2 virtual cores to test the performance on one physical core
   - restarting each engine before each query, then running 10 queries one by one
   - dropping OS cache before each query
-  - capturing: slowest response time (considered "cold cache") and avg(top 80% fastest) ("hot cache")
-  - one shard in Elasticsearch/Clickhouse, one plain index in Manticore Search
+  - capturing: slowest response time (i.e. cold OS cache) and avg(top 80% fastest) ("Fast avg", shown on the pictures)
+  - one shard in Elasticsearch, one plain index in Manticore Search
   - no fine-tuning in either of the engines, just default settings + same field data types everywhere
   - heap size for Elasticsearch - 50% of RAM
 * The RAM constraints are based on what Manticore Search traditional storage requires: 
   - 30MB - ~1/3 of the minimum requirement for Manticore Search with the traditional storage for good performance in this case (89MB)
   - 100MB - enough for all the attributes (89MB) to be put in RAM
   - 1024MB - enough for all the index files (972MB) to be put in RAM
-  - 60000MB - almost no limit (close to the server limit 64GB)
 
 ### Results:
 
-TODO
+#### Elasticsearch vs Manticore with 30MB RAM limit - Elasticsearch failed on start
+![hn_small_es_ms_30MB](benchmarks/hn_small_es_ms_30MB.png)
+
+#### Elasticsearch vs Manticore with 100MB RAM limit - Elasticsearch failed on start
+![hn_small_es_ms_100MB](benchmarks/hn_small_es_ms_100MB.png)
+
+#### Elasticsearch vs Manticore with 1024MB RAM limit - Elasticsearch is 6.51x slower
+![hn_small_es_ms_1024MB](benchmarks/hn_small_es_ms_1024MB.png)
+
+#### Manticore GA vs Manticore + Columnar with 30MB RAM limit - the columnar lib is 129.45x faster
+![hn_small_es_ms_1024MB](benchmarks/hn_small_ma_co_30MB.png)
+
+#### Manticore GA vs Manticore + Columnar with 100MB RAM limit - the columnar lib is 1.43x slower
+![hn_small_es_ms_1024MB](benchmarks/hn_small_ma_co_100MB.png)
+
+#### Manticore GA vs Manticore + Columnar with 1024MB RAM limit - the columnar lib is 1.43x slower
+![hn_small_es_ms_1024MB](benchmarks/hn_small_ma_co_1024MB.png)
+
