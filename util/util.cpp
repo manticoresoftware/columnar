@@ -17,6 +17,7 @@
 #include "util.h"
 #include <stdexcept>
 #include <assert.h>
+#include <errno.h>
 
 #ifdef _MSC_VER
 	#include <io.h>

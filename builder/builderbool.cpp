@@ -60,9 +60,9 @@ public:
 
 						Packer_Bool_c ( const Settings_t & tSettings, const std::string & sName );
 
-	void				AddDoc ( int64_t tAttr );
-	void				AddDoc ( const uint8_t * pData, int iLength );
-	void				AddDoc ( const int64_t * pData, int iLength );
+	void				AddDoc ( int64_t tAttr ) override;
+	void				AddDoc ( const uint8_t * pData, int iLength ) override;
+	void				AddDoc ( const int64_t * pData, int iLength ) override;
 	void				Flush() override;
 
 protected:

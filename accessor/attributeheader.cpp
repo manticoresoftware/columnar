@@ -135,7 +135,7 @@ public:
 
 	bool					HaveStringHashes() const override { return false; }
 
-	virtual bool			Load ( FileReader_c & tReader, std::string & sError );
+	bool					Load ( FileReader_c & tReader, std::string & sError ) override;
 
 private:
 	std::string				m_sName;
