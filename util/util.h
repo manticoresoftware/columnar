@@ -335,7 +335,7 @@ const T * binary_search ( const std::vector<T> & dValues, const T & tValue )
 template <typename T>
 constexpr auto to_underlying(T t) noexcept
 {
-	return static_cast<std::underlying_type<T>::type>(t);
+	return static_cast<typename std::underlying_type<T>::type>(t);
 }
 
 template <typename T>
