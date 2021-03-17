@@ -5,6 +5,8 @@
 #
 cmake_minimum_required(VERSION 3.0)
 project(FastPFOR CXX C)
+
+set(CMAKE_C_STANDARD 99)
 set(CMAKE_CXX_STANDARD 14)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modules")
