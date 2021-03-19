@@ -15,7 +15,7 @@
 // limitations under the License.
 
 #include "reader.h"
-#include <assert.h>
+#include "assert.h"
 #include <errno.h>
 
 #ifdef _MSC_VER
