@@ -32,7 +32,7 @@ osx:
     - mac
     - build
   script:
-    - cmake -DBUILD_TAG=$RELEASE_TAG -DDISTR_BUILD=macos .
+    - cmake -DBUILD_TAG=$RELEASE_TAG -DDISTR=macos .
     - make -j2 package
   artifacts:
     paths:
@@ -48,7 +48,7 @@ windows:
     - build
   script:
     - 'net use x: \\\\VBOXSRV\\shared'
-    - cmake -DBUILD_TAG=$RELEASE_TAG -DDISTR_BUILD=default .
+    - cmake -DPACK=1 -DBUILD_TAG=$RELEASE_TAG -DDISTR=default .
     - cmake --build . --target package
   artifacts:
     paths:
@@ -64,7 +64,7 @@ windows:
   script:
     - ln -s $(pwd) /manticore012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789/src
     - cd /manticore012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789/src
-    - cmake -DBUILD_TAG=$RELEASE_TAG $XTRAFLAGS .
+    - cmake -DPACK=1 -DBUILD_TAG=$RELEASE_TAG .
     - make -j4 package
   artifacts:
     paths:
@@ -78,7 +78,7 @@ windows:
   tags:
     - docker
   script:
-    - cmake -DBUILD_TAG=$RELEASE_TAG $XTRAFLAGS .
+    - cmake -DPACK=1 -DBUILD_TAG=$RELEASE_TAG .
     - make -j4 package
   artifacts:
     paths:
@@ -89,15 +89,11 @@ windows:
 rhel7:
   extends:
     - .redhat_based
-  variables:
-    REPO_DIST_VER: "7"
   image: registry.gitlab.com/manticoresearch/dev/centos7_cmake:317
 
 rhel8:
   extends:
     - .redhat_based
-  variables:
-    REPO_DIST_VER: "8"
   image: registry.gitlab.com/manticoresearch/dev/centos8_cmake:317
 
 stretch:
@@ -124,7 +120,3 @@ buster:
   extends:
     - .debian_based
   image: registry.gitlab.com/manticoresearch/dev/buster_cmake:317
-
-
-
-

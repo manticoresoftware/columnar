@@ -113,6 +113,11 @@ set ( PKGSUFFIXES ) # list of suffixes which will be append to package name, wil
 include( GetVersion )
 get_library_version( VERSION_STR "${CMAKE_CURRENT_SOURCE_DIR}/util/version.h.in" )
 
+# simpler packages: provide -DPACK=1, and DISTR_BUILD will be set from env $DISTR, easier in dockers
+if (PACK)
+        set(DISTR "$ENV{DISTR}")
+endif ()
+
 include ( SetBuildType )
 
 configure_file ( "LICENSE" "${CMAKE_CURRENT_BINARY_DIR}/LICENSE" COPYONLY )
