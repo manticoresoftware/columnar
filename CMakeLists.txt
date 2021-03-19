@@ -115,7 +115,20 @@ get_library_version( VERSION_STR "${CMAKE_CURRENT_SOURCE_DIR}/util/version.h.in"
 
 # simpler packages: provide -DPACK=1, and DISTR_BUILD will be set from env $DISTR, easier in dockers
 if (PACK)
-        set(DISTR "$ENV{DISTR}")
+        set(DISTR_BUILD "$ENV{DISTR}")
+endif ()
+
+
+# Make release build for the pointed distr
+# That will override defaults and give possibility to build
+# the distribution with minimal command line
+if ( DISTR_BUILD )
+        # set default options to be included into build
+        set ( DISTR "${DISTR_BUILD}" CACHE STRING "Choose the distr." )
+        if ( NOT "${DISTR_BUILD}" STREQUAL "macosbrew" )
+                SET ( CMAKE_INSTALL_PREFIX "/usr" CACHE FILEPATH "Forced install to /usr" FORCE )
+        endif ()
+        message ( STATUS "DISTR_BUILD applied. Package will be set to ${DISTR_BUILD}" )
 endif ()
 
 include ( SetBuildType )
