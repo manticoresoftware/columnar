@@ -15,7 +15,10 @@
 # limitations under the License.
 
 cmake_minimum_required ( VERSION 2.8 )
+
 project ( columnar )
+SET ( columnar_CMAKE_DIR "${columnar_SOURCE_DIR}/cmake" )
+SET ( CMAKE_MODULE_PATH "${columnar_SOURCE_DIR}/cmake" )
 
 set ( GCC_OR_CLANG 0 )
 
@@ -99,7 +102,67 @@ if (DEFINED COLUMNAR_DEST)
 	endif ()
 endif ()
 
-add_custom_target ( columnarver COMMAND ${CMAKE_COMMAND} -D SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR} -D BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/rev.cmake
-	COMMENT "Generate version from sources" VERBATIM SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/rev.cmake ${CMAKE_CURRENT_SOURCE_DIR}/util/version.h.in )
+# --------------- related with packaging -------------------
+
+set ( PACKAGE_NAME "manticore-columnar-lib" )
+set ( COMPANY_NAME "Manticore Software LTD" )
+set ( BUILD_TAG "" CACHE STRING "The tag which will be added to build" )
+set ( PKGSUFFIXES ) # list of suffixes which will be append to package name, will be '-'-separated and added to package file name along with DISTR_SUFFIX
+
+# getting library version from version.h.in
+include( GetVersion )
+get_library_version( VERSION_STR "${CMAKE_CURRENT_SOURCE_DIR}/util/version.h.in" )
+
+include ( SetBuildType )
+
+configure_file ( "LICENSE" "${CMAKE_CURRENT_BINARY_DIR}/LICENSE" COPYONLY )
+
+set ( CPACK_SOURCE_IGNORE_FILES "/\\\\.idea/" "/\\\\.git/"
+                "/\\\\.svn/" "/autom4te\\\\.cache/" "/bin/" "/junk/" "/win/" "/gmock/" "/gtest/" "/libtest"   "/pkgconfig/"
+                ".swp$" ".orig$" ".log$" ".deps/" )
+set ( CPACK_SOURCE_GENERATOR TGZ )
+set ( CPACK_PACKAGE_NAME "${PACKAGE_NAME}" )
+set ( CPACK_PACKAGE_CONTACT "Manticore Team <build@manticoresearch.com>" )
+set ( CMAKE_PROJECT_HOMEPAGE_URL "https://github.com/manticoresoftware/columnar/" )
+set ( CPACK_PACKAGE_VENDOR "${COMPANY_NAME}" )
+set ( CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_BINARY_DIR}/LICENSE" )
+set ( CPACK_PACKAGE_DESCRIPTION_SUMMARY "Manticore Columnar Library is a column-oriented storage library, aiming to provide decent performance with low memory footprint at big data volume")
+set ( CPACK_PACKAGE_DESCRIPTION "Manticore Columnar Library is a column-oriented storage library, aiming to provide decent performance with low memory footprint at big data volume. When used in combination with Manticore Search can be beneficial for faster / lower resource consumption log/metrics analytics and running log / metric analytics in docker / kubernetes")
+set ( CPACK_RPM_PACKAGE_DESCRIPTION "${CPACK_PACKAGE_DESCRIPTION}" ) # the description will default to the default one (This is an installer created using CPack..." otherwise, i.e. it doesn't take CPACK_PACKAGE_DESCRIPTION as a default 
+set ( CPACK_PROJECT_CONFIG_FILE "${CMAKE_CURRENT_BINARY_DIR}/config/CPackOptions.cmake" )
+
+include ( CPack )
+cpack_add_component( columnar )
+
+if ( WIN32 )
+        IF ( CMAKE_EXE_LINKER_FLAGS MATCHES "x64" )
+                LIST ( APPEND PKGSUFFIXES "x64" )
+        else ()
+                LIST ( APPEND PKGSUFFIXES "win32" )
+        endif ()
+endif ()
+
+set ( CPACK_SUFFIX "" )
+FOREACH ( SUFFIX ${PKGSUFFIXES} )
+        set ( CPACK_SUFFIX "${CPACK_SUFFIX}-${SUFFIX}" )
+endforeach ()
+
+add_custom_target (
+                columnarver
+                COMMAND ${CMAKE_COMMAND}
+                        -D SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+                        -D BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
+                        -D BUILD_TAG=${BUILD_TAG}
+                        -D DISTR_SUFFIX=${DISTR_SUFFIX}
+                        -D PACKAGE_NAME=${PACKAGE_NAME}
+                        -D CPACK_SUFFIX=${CPACK_SUFFIX}
+                        -P ${CMAKE_CURRENT_SOURCE_DIR}/rev.cmake
+                COMMENT "Generate version from sources"
+                VERBATIM
+                SOURCES
+                        ${CMAKE_CURRENT_SOURCE_DIR}/rev.cmake
+                        ${CMAKE_CURRENT_SOURCE_DIR}/util/version.h.in
+                        ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CPackOptions.cmake.in
+)
 
 add_dependencies ( columnar columnarver )
