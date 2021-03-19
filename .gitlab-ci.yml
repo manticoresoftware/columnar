@@ -10,6 +10,8 @@ workflow:
 
 stages:
   - mirroring
+  - build
+  - publish
 
 job_mirror:
   stage: mirroring
@@ -21,4 +23,108 @@ job_mirror:
   script:
     - ~/gitsync_columnar.sh
   cache: {}
+
+osx:
+  stage: build
+  interruptible: true
+  retry: 1
+  tags:
+    - mac
+    - build
+  script:
+    - cmake -DBUILD_TAG=$RELEASE_TAG -DDISTR_BUILD=macos .
+    - make -j2 package
+  artifacts:
+    paths:
+      - manticore-*.tar.gz
+    when: on_success
+    expire_in: 12 hrs
+
+windows:
+  stage: build
+  interruptible: true
+  tags:
+    - windev19
+    - build
+  script:
+    - 'net use x: \\\\VBOXSRV\\shared'
+    - cmake -DBUILD_TAG=$RELEASE_TAG -DDISTR_BUILD=default .
+    - cmake --build . --target package
+  artifacts:
+    paths:
+      - manticore-*.zip
+    when: on_success
+    expire_in: 12 hrs
+
+.redhat_based:
+  stage: build
+  interruptible: true
+  tags:
+    - docker
+  script:
+    - ln -s $(pwd) /manticore012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789/src
+    - cd /manticore012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789/src
+    - cmake -DBUILD_TAG=$RELEASE_TAG $XTRAFLAGS .
+    - make -j4 package
+  artifacts:
+    paths:
+      - manticore*.rpm
+    when: on_success
+    expire_in: 12 hrs
+
+.debian_based:
+  stage: build
+  interruptible: true
+  tags:
+    - docker
+  script:
+    - cmake -DBUILD_TAG=$RELEASE_TAG $XTRAFLAGS .
+    - make -j4 package
+  artifacts:
+    paths:
+      - manticore*deb
+    when: on_success
+    expire_in: 12 hrs
+
+rhel7:
+  extends:
+    - .redhat_based
+  variables:
+    REPO_DIST_VER: "7"
+  image: registry.gitlab.com/manticoresearch/dev/centos7_cmake:317
+
+rhel8:
+  extends:
+    - .redhat_based
+  variables:
+    REPO_DIST_VER: "8"
+  image: registry.gitlab.com/manticoresearch/dev/centos8_cmake:317
+
+stretch:
+  extends:
+    - .debian_based
+  image: registry.gitlab.com/manticoresearch/dev/stretch_cmake:317
+
+xenial:
+  extends:
+    - .debian_based
+  image: registry.gitlab.com/manticoresearch/dev/xenial_cmake:317
+
+bionic:
+  extends:
+    - .debian_based
+  image: registry.gitlab.com/manticoresearch/dev/bionic_cmake:317
+
+focal:
+  extends:
+    - .debian_based
+  image: registry.gitlab.com/manticoresearch/dev/focal_cmake:317
+
+buster:
+  extends:
+    - .debian_based
+  image: registry.gitlab.com/manticoresearch/dev/buster_cmake:317
+
+
+
 
