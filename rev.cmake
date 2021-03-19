@@ -22,14 +22,15 @@ function(guess_from_git)
 
 	# extract timestamp and make number YYMMDD from it
 	# it would be --date=format:%y%m%d, but old git on centos doesn't understand it
-	execute_process(COMMAND "${GIT_EXECUTABLE}" log -1 --date=short --format=%ad --date=format:%Y%m%d%H
+	execute_process(COMMAND "${GIT_EXECUTABLE}" log -1 --date=short --format=%ad
 			WORKING_DIRECTORY "${SOURCE_DIR}"
 			RESULT_VARIABLE res
 			OUTPUT_VARIABLE GIT_TIMESTAMP_ID
 			ERROR_QUIET
 			OUTPUT_STRIP_TRAILING_WHITESPACE)
-	string(SUBSTRING "${GIT_TIMESTAMP_ID}" 2 -1 GIT_TIMESTAMP_ID)
-	set(GIT_TIMESTAMP_ID "${GIT_TIMESTAMP_ID}" PARENT_SCOPE)
+        string(REPLACE "-" "" GIT_TIMESTAMP_ID "${GIT_TIMESTAMP_ID}")
+        string(SUBSTRING "${GIT_TIMESTAMP_ID}" 2 -1 GIT_TIMESTAMP_ID)
+        set(GIT_TIMESTAMP_ID "${GIT_TIMESTAMP_ID}" PARENT_SCOPE)
 
 	# timestamp for reproducable packages
 	execute_process(COMMAND "${GIT_EXECUTABLE}" log -1 --pretty=%ct
