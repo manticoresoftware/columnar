@@ -13,7 +13,7 @@ set ( CPACK_RPM_PACKAGE_RELEASE_DIST ON )
 set ( CPACK_RPM_PACKAGE_URL "https://github.com/manticoresoftware/columnar/" )
 set ( CPACK_RPM_PACKAGE_GROUP "Applications/Internet" )
 
-set ( CPACK_RPM_PACKAGE_SUGGESTS "manticore >= 3.5.5" )
+#set ( CPACK_RPM_PACKAGE_SUGGESTS "manticore >= 3.5.5" ) # not supported in centos 7
 
 set (CPACK_RPM_BUILD_SOURCE_DIRS_PREFIX  OFF)
 
