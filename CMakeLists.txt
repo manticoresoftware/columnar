@@ -79,6 +79,7 @@ set ( ALL_SOURCES ${ACCESSOR_SRC} ${BUILDER_SRC} ${COMMON_SRC} ${UTIL_SRC} )
 SET ( CMAKE_CXX_STANDARD 14 )
 
 add_library ( columnar SHARED ${ALL_SOURCES} ${ALL_HEADERS} ${COMMON_SRC} )
+set_target_properties(columnar PROPERTIES OUTPUT_NAME "_manticore_columnar")
 target_include_directories ( columnar PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} )
 target_include_directories ( columnar PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/util )
 target_include_directories ( columnar PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/accessor )
