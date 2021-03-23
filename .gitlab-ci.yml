@@ -89,9 +89,6 @@ windows:
 rhel7:
   extends:
     - .redhat_based
-  script:
-    - bash -c 'source /opt/rh/devtoolset-8/enable; cmake -DPACK=1 -DBUILD_TAG=$RELEASE_TAG .'
-    - bash -c 'source /opt/rh/devtoolset-8/enable; make -j4 package'
   image: registry.gitlab.com/manticoresearch/dev/centos7_cmake:317
 
 rhel8:
