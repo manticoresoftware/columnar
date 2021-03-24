@@ -120,3 +120,14 @@ buster:
   extends:
     - .debian_based
   image: registry.gitlab.com/manticoresearch/dev/buster_cmake:317
+
+collect_repo:
+  stage: publish
+  interruptible: true
+  tags:
+    - dev-host
+  script:
+    - echo "Collected packages"
+    - ls -1
+    - ~/upload_repo.sh
+  dependencies: [rhel7, rhel8, stretch, xenial, bionic, buster, focal, osx, windows]
