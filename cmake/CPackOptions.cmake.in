@@ -2,8 +2,8 @@
 SET ( GIT_TIMESTAMP_ID "@GIT_TIMESTAMP_ID@" )
 SET ( GIT_COMMIT_ID "@GIT_COMMIT_ID@" )
 SET ( CPACK_PACKAGE_NAME "@PACKAGE_NAME@" )
-SET ( TAG @BUILD_TAG@ ) # like 'my-super-puper-ver' or 'release'
-SET ( SUFFIX @CPACK_SUFFIX@) # atogen, like '-osx' or '-rhel7'
+SET ( TAG "@BUILD_TAG@" ) # like 'my-super-puper-ver' or 'release'
+SET ( SUFFIX "@CPACK_SUFFIX@") # atogen, like '-osx' or '-rhel7'
 SET ( DISTR_SUFFIX "@DISTR_SUFFIX@" ) # like ~trusty_amd64, no- prefixed
 SET ( SOURCE_DIR "@SOURCE_DIR@" )
 SET ( BINARY_DIR "@BINARY_DIR@" )
@@ -41,6 +41,9 @@ endif()
 
 set ( TARBALL_FILE_NAME "${CPACK_PACKAGE_NAME_LOWERCASE}-${TARBALL_VERSION}-source" )
 SET ( CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME_LOWERCASE}${_d}${FULL_VERSION}" )
+
+# deb specific
+set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_FILE_NAME}.deb")
 
 # rpm specific (used inside .spec template)
 SET ( CPACK_RPM_PACKAGE_VERSION "${VERSION_STR}-${GIT_TIMESTAMP_ID}.${GIT_COMMIT_ID}" )
