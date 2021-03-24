@@ -11,7 +11,35 @@ When used in combination with [Manticore Search](https://github.com/manticoresof
 
 ## Getting started
 
-TODO
+### Installation from dev yum/apt repositories
+#### Ubuntu, Debian:
+```bash
+apt-key adv --fetch-keys 'http://repo.manticoresearch.com/GPG-KEY-manticore'
+wget https://repo.manticoresearch.com/manticore-dev-repo.noarch.deb
+dpkg -i manticore-dev-repo.noarch.deb
+apt update
+apt install manticore-columnar-lib
+apt install manticore
+```
+
+#### Centos:
+```bash
+yum install https://repo.manticoresearch.com/manticore-repo.noarch.rpm
+yum --enablerepo manticore-dev install manticore-columnar-lib
+yum --enablerepo manticore-dev install manticore
+```
+
+`searchd -v` should include `columnar x.y.z`, e.g.:
+```bash
+root@srv# searchd -v
+Manticore 3.5.5 0ea41fb7@210320 dev (columnar 1.0.0 653b0f4@210320)
+```
+
+### Basic usage:
+1. Add a plain index to Manticore - https://manual.manticoresearch.com/Creating_an_index/Local_indexes/Plain_index#Plain-index
+2. Add `columnar_attrs = attr1, attr2, attr3, ..., attr4` to the plain index (section `index`). You can add `id` too.
+3. Build the index us usually - https://play.manticoresearch.com/mysql/
+
 
 ## Benchmark "Hacker News comments"
 
