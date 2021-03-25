@@ -32,7 +32,7 @@ yum --enablerepo manticore-dev install manticore
 `searchd -v` should include `columnar x.y.z`, e.g.:
 ```bash
 root@srv# searchd -v
-Manticore 3.5.5 0ea41fb7@210320 dev (columnar 1.0.0 653b0f4@210320)
+Manticore 3.5.5 02802ecb@210325 release (columnar 0.9.9 61bc681@210325)
 ```
 
 ### Basic usage:
