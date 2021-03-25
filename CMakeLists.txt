@@ -86,10 +86,8 @@ if(NOT DEFINED CMAKE_INSTALL_LIBDIR)
         set(CMAKE_INSTALL_LIBDIR lib)
 endif(NOT DEFINED CMAKE_INSTALL_LIBDIR)
 
-SET ( BINPREFIX "usr/" )
 add_library ( columnar SHARED ${ALL_SOURCES} ${ALL_HEADERS} ${COMMON_SRC} )
 set_target_properties( columnar PROPERTIES OUTPUT_NAME _manticore_columnar VERSION "${VERSION_STR}" SOVERSION 1 )
-
 target_include_directories ( columnar PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} )
 target_include_directories ( columnar PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/util )
 target_include_directories ( columnar PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/accessor )
@@ -113,64 +111,68 @@ if (DEFINED COLUMNAR_DEST)
 	endif ()
 endif ()
 
-# --------------- related with packaging -------------------
+if (PACK_COLUMNAR)
+        # --------------- related with packaging -------------------
 
-set ( PACKAGE_NAME "manticore-columnar-lib" )
-set ( COMPANY_NAME "Manticore Software LTD" )
-set ( BUILD_TAG "" CACHE STRING "The tag which will be added to build" )
-set ( PKGSUFFIXES ) # list of suffixes which will be append to package name, will be '-'-separated and added to package file name along with DISTR_SUFFIX
+        SET ( BINPREFIX "usr/" )
 
-# simpler packages: provide -DPACK=1, and DISTR_BUILD will be set from env $DISTR, easier in dockers
-if (PACK)
-        set(DISTR_BUILD "$ENV{DISTR}")
-endif ()
+        set ( PACKAGE_NAME "manticore-columnar-lib" )
+        set ( COMPANY_NAME "Manticore Software LTD" )
+        set ( BUILD_TAG "" CACHE STRING "The tag which will be added to build" )
+        set ( PKGSUFFIXES ) # list of suffixes which will be append to package name, will be '-'-separated and added to package file name along with DISTR_SUFFIX
 
-
-# Make release build for the pointed distr
-# That will override defaults and give possibility to build
-# the distribution with minimal command line
-if ( DISTR_BUILD )
-        # set default options to be included into build
-        set ( DISTR "${DISTR_BUILD}" CACHE STRING "Choose the distr." )
-        if ( NOT "${DISTR_BUILD}" STREQUAL "macosbrew" )
-                SET ( CMAKE_INSTALL_PREFIX "/usr" CACHE FILEPATH "Forced install to /usr" FORCE )
+        # simpler packages: provide -DPACK=1, and DISTR_BUILD will be set from env $DISTR, easier in dockers
+        if (PACK)
+                set(DISTR_BUILD "$ENV{DISTR}")
         endif ()
-        message ( STATUS "DISTR_BUILD applied. Package will be set to ${DISTR_BUILD}" )
-endif ()
 
-include ( SetBuildType )
 
-configure_file ( "LICENSE" "${CMAKE_CURRENT_BINARY_DIR}/LICENSE" COPYONLY )
+        # Make release build for the pointed distr
+        # That will override defaults and give possibility to build
+        # the distribution with minimal command line
+        if ( DISTR_BUILD )
+               # set default options to be included into build
+               set ( DISTR "${DISTR_BUILD}" CACHE STRING "Choose the distr." )
+               if ( NOT "${DISTR_BUILD}" STREQUAL "macosbrew" )
+                      SET ( CMAKE_INSTALL_PREFIX "/usr" CACHE FILEPATH "Forced install to /usr" FORCE )
+               endif ()
+               message ( STATUS "DISTR_BUILD applied. Package will be set to ${DISTR_BUILD}" )
+        endif ()
 
-set ( CPACK_SOURCE_IGNORE_FILES "/\\\\.idea/" "/\\\\.git/"
+        include ( SetBuildType )
+
+        configure_file ( "LICENSE" "${CMAKE_CURRENT_BINARY_DIR}/LICENSE" COPYONLY )
+
+        set ( CPACK_SOURCE_IGNORE_FILES "/\\\\.idea/" "/\\\\.git/"
                 "/\\\\.svn/" "/autom4te\\\\.cache/" "/bin/" "/junk/" "/win/" "/gmock/" "/gtest/" "/libtest"   "/pkgconfig/"
                 ".swp$" ".orig$" ".log$" ".deps/" )
-set ( CPACK_SOURCE_GENERATOR TGZ )
-set ( CPACK_PACKAGE_NAME "${PACKAGE_NAME}" )
-set ( CPACK_PACKAGE_CONTACT "Manticore Team <build@manticoresearch.com>" )
-set ( CMAKE_PROJECT_HOMEPAGE_URL "https://github.com/manticoresoftware/columnar/" )
-set ( CPACK_PACKAGE_VENDOR "${COMPANY_NAME}" )
-set ( CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_BINARY_DIR}/LICENSE" )
-set ( CPACK_PACKAGE_DESCRIPTION_SUMMARY "Manticore Columnar Library is a column-oriented storage library, aiming to provide decent performance with low memory footprint at big data volume")
-set ( CPACK_PACKAGE_DESCRIPTION "Manticore Columnar Library is a column-oriented storage library, aiming to provide decent performance with low memory footprint at big data volume. When used in combination with Manticore Search can be beneficial for faster / lower resource consumption log/metrics analytics and running log / metric analytics in docker / kubernetes")
-set ( CPACK_RPM_PACKAGE_DESCRIPTION "${CPACK_PACKAGE_DESCRIPTION}" ) # the description will default to the default one (This is an installer created using CPack..." otherwise, i.e. it doesn't take CPACK_PACKAGE_DESCRIPTION as a default 
-set ( CPACK_PROJECT_CONFIG_FILE "${CMAKE_CURRENT_BINARY_DIR}/config/CPackOptions.cmake" )
+        set ( CPACK_SOURCE_GENERATOR TGZ )
+        set ( CPACK_PACKAGE_NAME "${PACKAGE_NAME}" )
+        set ( CPACK_PACKAGE_CONTACT "Manticore Team <build@manticoresearch.com>" )
+        set ( CMAKE_PROJECT_HOMEPAGE_URL "https://github.com/manticoresoftware/columnar/" )
+        set ( CPACK_PACKAGE_VENDOR "${COMPANY_NAME}" )
+        set ( CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_BINARY_DIR}/LICENSE" )
+        set ( CPACK_PACKAGE_DESCRIPTION_SUMMARY "Manticore Columnar Library is a column-oriented storage library, aiming to provide decent performance with low memory footprint at big data volume")
+        set ( CPACK_PACKAGE_DESCRIPTION "Manticore Columnar Library is a column-oriented storage library, aiming to provide decent performance with low memory footprint at big data volume. When used in combination with Manticore Search can be beneficial for faster / lower resource consumption log/metrics analytics and running log / metric analytics in docker / kubernetes")
+        set ( CPACK_RPM_PACKAGE_DESCRIPTION "${CPACK_PACKAGE_DESCRIPTION}" ) # the description will default to the default one (This is an installer created using CPack..." otherwise, i.e. it doesn't take CPACK_PACKAGE_DESCRIPTION as a default 
+        set ( CPACK_PROJECT_CONFIG_FILE "${CMAKE_CURRENT_BINARY_DIR}/config/CPackOptions.cmake" )
 
-include ( CPack )
-cpack_add_component( columnar )
+        include ( CPack )
+        cpack_add_component( columnar )
 
-if ( WIN32 )
-        IF ( CMAKE_EXE_LINKER_FLAGS MATCHES "x64" )
-                LIST ( APPEND PKGSUFFIXES "x64" )
-        else ()
-                LIST ( APPEND PKGSUFFIXES "win32" )
+        if ( WIN32 )
+                IF ( CMAKE_EXE_LINKER_FLAGS MATCHES "x64" )
+                       LIST ( APPEND PKGSUFFIXES "x64" )
+                else ()
+                       LIST ( APPEND PKGSUFFIXES "win32" )
+                endif ()
         endif ()
-endif ()
 
-set ( CPACK_SUFFIX "" )
-FOREACH ( SUFFIX ${PKGSUFFIXES} )
-        set ( CPACK_SUFFIX "${CPACK_SUFFIX}-${SUFFIX}" )
-endforeach ()
+        set ( CPACK_SUFFIX "" )
+        FOREACH ( SUFFIX ${PKGSUFFIXES} )
+                set ( CPACK_SUFFIX "${CPACK_SUFFIX}-${SUFFIX}" )
+        endforeach ()
+endif()
 
 add_custom_target (
                 columnarver

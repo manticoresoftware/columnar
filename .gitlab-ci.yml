@@ -48,7 +48,7 @@ windows:
     - build
   script:
     - 'net use x: \\\\VBOXSRV\\shared'
-    - cmake -DPACK=1 -DBUILD_TAG=$RELEASE_TAG -DDISTR=default .
+    - cmake -DPACK=1 -DBUILD_TAG=$RELEASE_TAG -DDISTR=default -DPACK_COLUMNAR=1 .
     - cmake --build . --target package
   artifacts:
     paths:
@@ -64,7 +64,7 @@ windows:
   script:
     - ln -s $(pwd) /manticore012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789/src
     - cd /manticore012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789/src
-    - cmake -DPACK=1 -DBUILD_TAG=$RELEASE_TAG .
+    - cmake -DPACK=1 -DBUILD_TAG=$RELEASE_TAG -DPACK_COLUMNAR=1 .
     - make -j4 package
   artifacts:
     paths:
@@ -78,7 +78,7 @@ windows:
   tags:
     - docker
   script:
-    - cmake -DPACK=1 -DBUILD_TAG=$RELEASE_TAG .
+    - cmake -DPACK=1 -DBUILD_TAG=$RELEASE_TAG -DPACK_COLUMNAR=1 .
     - make -j4 package
   artifacts:
     paths:
