@@ -1,7 +1,7 @@
 # configured imports, add more here; avoid to add anything apart this block
 SET ( GIT_TIMESTAMP_ID "@GIT_TIMESTAMP_ID@" )
 SET ( GIT_COMMIT_ID "@GIT_COMMIT_ID@" )
-SET ( CPACK_PACKAGE_NAME "@PACKAGE_NAME@" )
+SET ( CPACK_PACKAGE_NAME "manticore-columnar-lib" )
 SET ( TAG "@BUILD_TAG@" ) # like 'my-super-puper-ver' or 'release'
 SET ( SUFFIX "@CPACK_SUFFIX@") # atogen, like '-osx' or '-rhel7'
 SET ( DISTR_SUFFIX "@DISTR_SUFFIX@" ) # like ~trusty_amd64, no- prefixed
