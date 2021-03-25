@@ -8,9 +8,6 @@ message ( STATUS "Will create TGZ with build for Mac Os X" )
 set ( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -arch x86_64" )
 set ( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -arch x86_64" )
 
-set_target_properties ( columnar PROPERTIES OUTPUT_NAME _manticore_columnar VERSION "${VERSION_STR}" SOVERSION 1 )
-install ( TARGETS columnar LIBRARY DESTINATION "lib" COMPONENT columnar ) # adds lib file and a chain of version symlinks to it
-
 # package specific
 
 find_program ( SWVERSPROG sw_vers )

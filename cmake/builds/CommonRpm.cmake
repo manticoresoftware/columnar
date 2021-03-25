@@ -1,8 +1,6 @@
 # Common rpm-specific build variables
 cmake_minimum_required ( VERSION 3.12 )
 
-set ( BINPREFIX "usr/" )
-
 set ( CPACK_GENERATOR "RPM" )
 SET ( CPACK_RPM_FILE_NAME "RPM-DEFAULT" )
   
@@ -24,6 +22,3 @@ if ( source_dir_len_ LESS 75 )
 endif ()
 
 SET ( CPACK_RPM_PACKAGE_LICENSE "Apache-2.0" )
-
-set_target_properties ( columnar PROPERTIES OUTPUT_NAME _manticore_columnar VERSION "${VERSION_STR}" SOVERSION 1 )
-install ( TARGETS columnar LIBRARY DESTINATION ${BINPREFIX}/lib/ COMPONENT columnar ) # adds lib file and a chain of version symlinks to it

@@ -15,13 +15,18 @@
 # limitations under the License.
 
 cmake_minimum_required ( VERSION 2.8 )
+include("CMakePrintHelpers")
+include("GNUInstallDirs")
 
 project ( columnar )
 SET ( columnar_CMAKE_DIR "${columnar_SOURCE_DIR}/cmake" )
 SET ( CMAKE_MODULE_PATH "${columnar_SOURCE_DIR}/cmake" )
 
-set ( GCC_OR_CLANG 0 )
+# getting library version from version.h.in
+include( GetVersion )
+get_library_version( VERSION_STR "${CMAKE_CURRENT_SOURCE_DIR}/util/version.h.in" )
 
+set ( GCC_OR_CLANG 0 )
 if ( CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang" )
 	set ( GCC_OR_CLANG 1 )
 endif()
@@ -78,8 +83,18 @@ set ( ALL_SOURCES ${ACCESSOR_SRC} ${BUILDER_SRC} ${COMMON_SRC} ${UTIL_SRC} )
 
 SET ( CMAKE_CXX_STANDARD 14 )
 
+if(NOT DEFINED CMAKE_INSTALL_LIBDIR)
+        set(CMAKE_INSTALL_LIBDIR lib)
+endif(NOT DEFINED CMAKE_INSTALL_LIBDIR)
+
+SET ( BINPREFIX "usr/" )
+message(STATUS "!!!!!!!!!!!!!!!")
+cmake_print_variables(CMAKE_INSTALL_LIBDIR)
+message(STATUS "!!!!!!!!!!!!!!!")
 add_library ( columnar SHARED ${ALL_SOURCES} ${ALL_HEADERS} ${COMMON_SRC} )
-set_target_properties(columnar PROPERTIES OUTPUT_NAME "_manticore_columnar")
+set_target_properties( columnar PROPERTIES OUTPUT_NAME _manticore_columnar VERSION "${VERSION_STR}" SOVERSION 1 )
+install ( TARGETS columnar LIBRARY DESTINATION ${BINPREFIX}/${CMAKE_INSTALL_LIBDIR}/ COMPONENT columnar ) # adds lib file and a chain of version symlinks to it
+
 target_include_directories ( columnar PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} )
 target_include_directories ( columnar PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/util )
 target_include_directories ( columnar PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/accessor )
@@ -109,10 +124,6 @@ set ( PACKAGE_NAME "manticore-columnar-lib" )
 set ( COMPANY_NAME "Manticore Software LTD" )
 set ( BUILD_TAG "" CACHE STRING "The tag which will be added to build" )
 set ( PKGSUFFIXES ) # list of suffixes which will be append to package name, will be '-'-separated and added to package file name along with DISTR_SUFFIX
-
-# getting library version from version.h.in
-include( GetVersion )
-get_library_version( VERSION_STR "${CMAKE_CURRENT_SOURCE_DIR}/util/version.h.in" )
 
 # simpler packages: provide -DPACK=1, and DISTR_BUILD will be set from env $DISTR, easier in dockers
 if (PACK)
