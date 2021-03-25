@@ -22,3 +22,5 @@ if ( source_dir_len_ LESS 75 )
 endif ()
 
 SET ( CPACK_RPM_PACKAGE_LICENSE "Apache-2.0" )
+
+install ( TARGETS columnar LIBRARY DESTINATION "usr/lib64/" COMPONENT columnar )

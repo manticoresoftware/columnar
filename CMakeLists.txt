@@ -16,7 +16,6 @@
 
 cmake_minimum_required ( VERSION 2.8 )
 include("CMakePrintHelpers")
-include("GNUInstallDirs")
 
 project ( columnar )
 SET ( columnar_CMAKE_DIR "${columnar_SOURCE_DIR}/cmake" )
@@ -88,12 +87,8 @@ if(NOT DEFINED CMAKE_INSTALL_LIBDIR)
 endif(NOT DEFINED CMAKE_INSTALL_LIBDIR)
 
 SET ( BINPREFIX "usr/" )
-message(STATUS "!!!!!!!!!!!!!!!")
-cmake_print_variables(CMAKE_INSTALL_LIBDIR)
-message(STATUS "!!!!!!!!!!!!!!!")
 add_library ( columnar SHARED ${ALL_SOURCES} ${ALL_HEADERS} ${COMMON_SRC} )
 set_target_properties( columnar PROPERTIES OUTPUT_NAME _manticore_columnar VERSION "${VERSION_STR}" SOVERSION 1 )
-install ( TARGETS columnar LIBRARY DESTINATION ${BINPREFIX}/${CMAKE_INSTALL_LIBDIR}/ COMPONENT columnar ) # adds lib file and a chain of version symlinks to it
 
 target_include_directories ( columnar PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} )
 target_include_directories ( columnar PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/util )
