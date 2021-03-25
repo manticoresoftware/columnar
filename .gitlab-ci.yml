@@ -32,7 +32,7 @@ osx:
     - mac
     - build
   script:
-    - cmake -DBUILD_TAG=$RELEASE_TAG -DDISTR=macos .
+    - cmake -DBUILD_TAG=$RELEASE_TAG -DDISTR=macos -DPACK_COLUMNAR=1 .
     - make -j2 package
   artifacts:
     paths:
