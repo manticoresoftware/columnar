@@ -14,19 +14,19 @@ When used in combination with [Manticore Search](https://github.com/manticoresof
 ### Installation from dev yum/apt repositories
 #### Ubuntu, Debian:
 ```bash
-apt-key adv --fetch-keys 'http://repo.manticoresearch.com/GPG-KEY-manticore'
-wget https://repo.manticoresearch.com/manticore-dev-repo.noarch.deb
-dpkg -i manticore-dev-repo.noarch.deb
-apt update
-apt install manticore-columnar-lib
-apt install manticore
+sudo apt-key adv --fetch-keys 'http://repo.manticoresearch.com/GPG-KEY-manticore'
+sudo wget https://repo.manticoresearch.com/manticore-dev-repo.noarch.deb
+sudo dpkg -i manticore-dev-repo.noarch.deb
+sudo apt update
+sudo apt install manticore-columnar-lib
+sudo apt install manticore
 ```
 
 #### Centos:
 ```bash
-yum install https://repo.manticoresearch.com/manticore-repo.noarch.rpm
-yum --enablerepo manticore-dev install manticore-columnar-lib
-yum --enablerepo manticore-dev install manticore
+sudo yum install https://repo.manticoresearch.com/manticore-repo.noarch.rpm
+sudo yum --enablerepo manticore-dev install manticore-columnar-lib
+sudo yum --enablerepo manticore-dev install manticore
 ```
 
 `searchd -v` should include `columnar x.y.z`, e.g.:
