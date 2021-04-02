@@ -22,6 +22,7 @@
 #include "buildertraits.h"
 #include "builderint.h"
 #include "reader.h"
+#include "delta.h"
 
 #if _WIN32
 	#include "intrin.h"

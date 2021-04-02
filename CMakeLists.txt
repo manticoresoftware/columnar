@@ -71,8 +71,8 @@ set ( ACCESSOR_SRC accessor/attributeheader.cpp accessor/accessor.cpp accessor/a
 set ( BUILDER_H builder/builderbool.h builder/builderint.h builder/builderminmax.h builder/buildermva.h builder/builderstr.h builder/buildertraits.h )
 set ( BUILDER_SRC builder/builderbool.cpp builder/builderint.cpp builder/buildermva.cpp builder/builderstr.cpp builder/buildertraits.cpp )
 
-set ( UTIL_H util/util.h util/interval.h util/reader.h )
-set ( UTIL_SRC util/util.cpp util/reader.cpp util/version.cpp )
+set ( UTIL_H util/util.h util/interval.h util/reader.h util/delta.h )
+set ( UTIL_SRC util/util.cpp util/reader.cpp util/version.cpp util/delta.cpp )
 
 set ( COMMON_H columnar.h builder.h )
 set ( COMMON_SRC columnar.cpp builder.cpp )
