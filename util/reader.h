@@ -82,7 +82,7 @@ public:
 	}
 
 private:
-	static const size_t DEFAULT_SIZE = 524288;
+	static const size_t DEFAULT_SIZE = 1048576;
 
 	int         m_iFD = -1;
 	bool        m_bOpened = false;

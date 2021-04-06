@@ -231,7 +231,7 @@ public:
 	std::string GetError() const { return m_sError; }
 
 private:
-	static const size_t DEFAULT_SIZE = 256*1024;
+	static const size_t DEFAULT_SIZE = 1048576;
 
 	int         m_iFD = -1;
 	std::string m_sFile;
