@@ -14,9 +14,9 @@ When used in combination with [Manticore Search](https://github.com/manticoresof
 ### Installation from dev yum/apt repositories
 #### Ubuntu, Debian:
 ```bash
-sudo apt-key adv --fetch-keys 'http://repo.manticoresearch.com/GPG-KEY-manticore'
 sudo wget https://repo.manticoresearch.com/manticore-dev-repo.noarch.deb
 sudo dpkg -i manticore-dev-repo.noarch.deb
+sudo apt-key adv --fetch-keys 'http://repo.manticoresearch.com/GPG-KEY-manticore'
 sudo apt update
 sudo apt install manticore-columnar-lib
 sudo apt install manticore
