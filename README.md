@@ -18,15 +18,13 @@ sudo wget https://repo.manticoresearch.com/manticore-dev-repo.noarch.deb
 sudo dpkg -i manticore-dev-repo.noarch.deb
 sudo apt-key adv --fetch-keys 'http://repo.manticoresearch.com/GPG-KEY-manticore'
 sudo apt update
-sudo apt install manticore-columnar-lib
-sudo apt install manticore
+sudo apt install manticore manticore-columnar-lib
 ```
 
 #### Centos:
 ```bash
 sudo yum install https://repo.manticoresearch.com/manticore-repo.noarch.rpm
-sudo yum --enablerepo manticore-dev install manticore-columnar-lib
-sudo yum --enablerepo manticore-dev install manticore
+sudo yum --enablerepo manticore-dev install manticore manticore-columnar-lib
 ```
 
 `searchd -v` should include `columnar x.y.z`, e.g.:
