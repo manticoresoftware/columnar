@@ -50,15 +50,15 @@ template <typename T>
 class StoredBlock_Int_Table_T
 {
 public:
-											StoredBlock_Int_Table_T ( int iSubblockSize );
+							StoredBlock_Int_Table_T ( int iSubblockSize );
 
-	FORCE_INLINE void						ReadHeader ( FileReader_c & tReader );
-	FORCE_INLINE void						ReadSubblock ( int iSubblockId, int iNumValues, FileReader_c & tReader );
-	FORCE_INLINE T							GetValue ( int iIdInSubblock );
-	FORCE_INLINE const Span_T<uint32_t> &	GetValueIndexes() const { return m_tValuesRead; }
-	FORCE_INLINE std::pair<uint8_t, bool>	GetIndexInTable ( T tValue ) const;
-	FORCE_INLINE T							GetValueFromTable ( uint8_t uIndex ) const { return m_dTableValues[uIndex]; }
-	FORCE_INLINE int						GetTableSize() const { return (int)m_dTableValues.size(); }
+	FORCE_INLINE void		ReadHeader ( FileReader_c & tReader );
+	FORCE_INLINE void		ReadSubblock ( int iSubblockId, int iNumValues, FileReader_c & tReader );
+	FORCE_INLINE T			GetValue ( int iIdInSubblock );
+	FORCE_INLINE const Span_T<uint32_t> & GetValueIndexes() const { return m_tValuesRead; }
+	FORCE_INLINE int		GetIndexInTable ( T tValue ) const;
+	FORCE_INLINE T			GetValueFromTable ( uint8_t uIndex ) const { return m_dTableValues[uIndex]; }
+	FORCE_INLINE int		GetTableSize() const { return (int)m_dTableValues.size(); }
 
 private:
 	std::vector<T>			m_dTableValues;
@@ -118,13 +118,13 @@ T StoredBlock_Int_Table_T<T>::GetValue ( int iIdInSubblock )
 }
 
 template <typename T>
-std::pair<uint8_t, bool> StoredBlock_Int_Table_T<T>::GetIndexInTable ( T tValue ) const
+int StoredBlock_Int_Table_T<T>::GetIndexInTable ( T tValue ) const
 {
 	const T * pValue = binary_search ( m_dTableValues, tValue );
 	if ( !pValue )
-		return {0,false};
+		return -1;
 
-	return { uint8_t(pValue-m_dTableValues.data()), true };
+	return int(pValue-m_dTableValues.data());
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -409,24 +409,31 @@ class AnalyzerBlock_Int_Const_c : public AnalyzerBlock_c
 
 public:
 	template<typename T, typename RANGE_EVAL>
-	FORCE_INLINE bool	SetupNextBlock ( const StoredBlock_Int_Const_T<T> & tBlock );
+	FORCE_INLINE bool	SetupNextBlock ( const StoredBlock_Int_Const_T<T> & tBlock, bool bEq );
 	FORCE_INLINE int	ProcessSubblock ( uint32_t * & pRowID, int iNumValues );
 };
 
 
 template<typename T, typename RANGE_EVAL>
-bool AnalyzerBlock_Int_Const_c::SetupNextBlock ( const StoredBlock_Int_Const_T<T> & tBlock )
+bool AnalyzerBlock_Int_Const_c::SetupNextBlock ( const StoredBlock_Int_Const_T<T> & tBlock, bool bEq )
 {
 	int64_t tValue = tBlock.GetValue();
 
 	switch ( m_eType )
 	{
 	case FilterType_e::VALUES:
+	{
+		bool bAnyEqual = false;
 		for ( auto i : m_dValues )
 			if ( i==tValue )
-				return true;
-
-		break;
+			{
+				bAnyEqual = true;
+				break;
+			}
+		
+		return bAnyEqual ^ ( !bEq );
+	}
+	break;
 
 	case FilterType_e::RANGE:
 		if ( RANGE_EVAL::Eval ( tValue, m_iMinValue, m_iMaxValue ) )
@@ -467,29 +474,39 @@ class AnalyzerBlock_Int_Table_c : public AnalyzerBlock_c
 	using AnalyzerBlock_c::AnalyzerBlock_c;
 
 public:
-	FORCE_INLINE int	ProcessSubblock_SingleValue ( uint32_t * & pRowID, const Span_T<uint32_t> & dValueIndexes );
-	FORCE_INLINE int	ProcessSubblock_ValuesLinear ( uint32_t * & pRowID, const Span_T<uint32_t> & dValueIndexes );
-	FORCE_INLINE int	ProcessSubblock_ValuesBinary ( uint32_t * & pRowID, const Span_T<uint32_t> & dValueIndexes );
+	template <bool EQ> FORCE_INLINE int	ProcessSubblock_SingleValue ( uint32_t * & pRowID, const Span_T<uint32_t> & dValueIndexes );
+	template <bool EQ> FORCE_INLINE int	ProcessSubblock_ValuesLinear ( uint32_t * & pRowID, const Span_T<uint32_t> & dValueIndexes );
+	template <bool EQ> FORCE_INLINE int	ProcessSubblock_ValuesBinary ( uint32_t * & pRowID, const Span_T<uint32_t> & dValueIndexes );
 	FORCE_INLINE int	ProcessSubblock_Range ( uint32_t * & pRowID, const Span_T<uint32_t> & dValueIndexes );
 
 	template <typename T, typename RANGE_EVAL>
-	FORCE_INLINE bool	SetupNextBlock ( const StoredBlock_Int_Table_T<T> & tBlock );
+	FORCE_INLINE bool	SetupNextBlock ( const StoredBlock_Int_Table_T<T> & tBlock, bool bEq );
 
 private:
-	uint8_t						m_uTableValueId = 0;
+	int							m_iTableValueId = -1;
 	std::vector<uint8_t>		m_dTableValues;
 	std::array<bool,UCHAR_MAX>	m_dRangeMap;
 };
 
-
+template <bool EQ>
 int AnalyzerBlock_Int_Table_c::ProcessSubblock_SingleValue ( uint32_t * & pRowID, const Span_T<uint32_t> & dValueIndexes )
 {
 	uint32_t tRowID = m_tRowID;
 
 	// FIXME! use SSE here
+	if ( !EQ && m_iTableValueId==-1 ) // accept all values
+	{
+		for ( auto i : dValueIndexes )
+			*pRowID++ = tRowID++;
+
+		return (int)dValueIndexes.size();
+	}
+
+	assert ( m_iTableValueId>=0 );
+
 	for ( auto i : dValueIndexes )
 	{
-		if ( i==(uint32_t)m_uTableValueId )
+		if ( ( i==(uint32_t)m_iTableValueId ) ^ (!EQ) )
 			*pRowID++ = tRowID;
 
 		tRowID++;
@@ -499,20 +516,44 @@ int AnalyzerBlock_Int_Table_c::ProcessSubblock_SingleValue ( uint32_t * & pRowID
 	return (int)dValueIndexes.size();
 }
 
-
+template <bool EQ>
 int AnalyzerBlock_Int_Table_c::ProcessSubblock_ValuesLinear ( uint32_t * & pRowID, const Span_T<uint32_t> & dValueIndexes )
 {
 	uint32_t tRowID = m_tRowID;
 
 	// FIXME! use SSE here
+	if ( !EQ && m_dTableValues.empty() ) // accept all values
+	{
+		for ( auto i : dValueIndexes )
+			*pRowID++ = tRowID++;
+
+		return (int)dValueIndexes.size();
+	}
+
 	for ( auto i : dValueIndexes )
 	{
-		for ( auto j : m_dTableValues )
-			if ( i==(uint32_t)j )
-			{
+		if ( EQ )
+		{
+			for ( auto j : m_dTableValues )
+				if ( i==(uint32_t)j )
+				{
+					*pRowID++ = tRowID;
+					break;
+				}
+		}
+		else
+		{
+			bool bAnyEqual = false;
+			for ( auto j : m_dTableValues )
+				if ( i==(uint32_t)j )
+				{
+					bAnyEqual = true;
+					break;
+				}
+
+			if ( !bAnyEqual )
 				*pRowID++ = tRowID;
-				break;
-			}
+		}
 
 		tRowID++;
 	}
@@ -521,14 +562,24 @@ int AnalyzerBlock_Int_Table_c::ProcessSubblock_ValuesLinear ( uint32_t * & pRowI
 	return (int)dValueIndexes.size();
 }
 
-
+template <bool EQ>
 int AnalyzerBlock_Int_Table_c::ProcessSubblock_ValuesBinary ( uint32_t * & pRowID, const Span_T<uint32_t> & dValueIndexes )
 {
 	uint32_t tRowID = m_tRowID;
 
+	// FIXME! use SSE here
+	if ( !EQ && m_dTableValues.empty() ) // accept all values
+	{
+		for ( auto i : dValueIndexes )
+			*pRowID++ = tRowID++;
+
+		return (int)dValueIndexes.size();
+	}
+
 	for ( auto i : dValueIndexes )
 	{
-		if ( std::binary_search ( m_dTableValues.cbegin(), m_dTableValues.cend(), (uint8_t)i ) )
+		bool bAnyEqual = std::binary_search ( m_dTableValues.cbegin(), m_dTableValues.cend(), (uint8_t)i );
+		if ( bAnyEqual ^ (!EQ) )
 			*pRowID++ = tRowID;
 
 		tRowID++;
@@ -555,16 +606,15 @@ int AnalyzerBlock_Int_Table_c::ProcessSubblock_Range ( uint32_t * & pRowID, cons
 }
 
 template<typename T, typename RANGE_EVAL>
-bool AnalyzerBlock_Int_Table_c::SetupNextBlock ( const StoredBlock_Int_Table_T<T> & tBlock )
+bool AnalyzerBlock_Int_Table_c::SetupNextBlock ( const StoredBlock_Int_Table_T<T> & tBlock, bool bEq )
 {
 	switch ( m_eType )
 	{
 	case FilterType_e::VALUES:
 		if ( m_dValues.size()==1 )
 		{
-			bool bFound = false;
-			std::tie(m_uTableValueId, bFound) = tBlock.GetIndexInTable ( (T)m_tValue );
-			if ( !bFound )
+			m_iTableValueId = tBlock.GetIndexInTable ( (T)m_tValue );
+			if ( bEq && m_iTableValueId==-1 )
 				return false;
 		}
 		else
@@ -572,14 +622,12 @@ bool AnalyzerBlock_Int_Table_c::SetupNextBlock ( const StoredBlock_Int_Table_T<T
 			m_dTableValues.resize(0);
 			for ( auto i : m_dValues )
 			{
-				uint8_t uValue = 0;
-				bool bFound = false;
-				std::tie(uValue, bFound) = tBlock.GetIndexInTable ( (T)i );
-				if ( bFound )
-					m_dTableValues.push_back(uValue);
+				int iValue = tBlock.GetIndexInTable ( (T)i );
+				if ( iValue!=-1 )
+					m_dTableValues.push_back ( (uint8_t)iValue );
 			}
 
-			if ( m_dTableValues.empty() )
+			if ( bEq && m_dTableValues.empty() )
 				return false;
 
 			std::sort ( m_dTableValues.begin(), m_dTableValues.end() );
@@ -629,18 +677,16 @@ class AnalyzerBlock_Int_Values_T : public AnalyzerBlock_c
 	using AnalyzerBlock_c::AnalyzerBlock_c;
 
 public:
-	FORCE_INLINE int	ProcessSubblock_SingleValue ( uint32_t * & pRowID, const Span_T<ACCESSOR_VALUES> & dValues );
-	FORCE_INLINE int	ProcessSubblock_ValuesLinear ( uint32_t * & pRowID, const Span_T<ACCESSOR_VALUES> & dValues );
-	FORCE_INLINE int	ProcessSubblock_ValuesBinary ( uint32_t * & pRowID, const Span_T<ACCESSOR_VALUES> & dValues );
+	template <bool EQ> FORCE_INLINE int	ProcessSubblock_SingleValue ( uint32_t * & pRowID, const Span_T<ACCESSOR_VALUES> & dValues );
+	template <bool EQ> FORCE_INLINE int	ProcessSubblock_ValuesLinear ( uint32_t * & pRowID, const Span_T<ACCESSOR_VALUES> & dValues );
+	template <bool EQ> FORCE_INLINE int	ProcessSubblock_ValuesBinary ( uint32_t * & pRowID, const Span_T<ACCESSOR_VALUES> & dValues );
 
-	template<typename RANGE_EVAL>
-	FORCE_INLINE int	ProcessSubblock_Range ( uint32_t * & pRowID, const Span_T<ACCESSOR_VALUES> & dValues );
-
-	template<typename RANGE_EVAL>
-	FORCE_INLINE int	ProcessSubblock_FloatRange ( uint32_t * & pRowID, const Span_T<ACCESSOR_VALUES> & dValues );
+	template<typename RANGE_EVAL> FORCE_INLINE int	ProcessSubblock_Range ( uint32_t * & pRowID, const Span_T<ACCESSOR_VALUES> & dValues );
+	template<typename RANGE_EVAL> FORCE_INLINE int	ProcessSubblock_FloatRange ( uint32_t * & pRowID, const Span_T<ACCESSOR_VALUES> & dValues );
 };
 
 template<typename VALUES, typename ACCESSOR_VALUES>
+template <bool EQ>
 int AnalyzerBlock_Int_Values_T<VALUES,ACCESSOR_VALUES>::ProcessSubblock_SingleValue ( uint32_t * & pRowID, const Span_T<ACCESSOR_VALUES> & dValues )
 {
 	uint32_t tRowID = m_tRowID;
@@ -648,7 +694,7 @@ int AnalyzerBlock_Int_Values_T<VALUES,ACCESSOR_VALUES>::ProcessSubblock_SingleVa
 	// FIXME! use SSE here
 	for ( auto & i : dValues )
 	{
-		if ( i==(ACCESSOR_VALUES)m_tValue )
+		if ( ( i==(ACCESSOR_VALUES)m_tValue ) ^ (!EQ) )
 			*pRowID++ = tRowID;
 
 		tRowID++;
@@ -659,6 +705,7 @@ int AnalyzerBlock_Int_Values_T<VALUES,ACCESSOR_VALUES>::ProcessSubblock_SingleVa
 }
 
 template<typename VALUES, typename ACCESSOR_VALUES>
+template <bool EQ>
 int AnalyzerBlock_Int_Values_T<VALUES,ACCESSOR_VALUES>::ProcessSubblock_ValuesLinear ( uint32_t * & pRowID, const Span_T<ACCESSOR_VALUES> & dValues )
 {
 	uint32_t tRowID = m_tRowID;
@@ -667,7 +714,7 @@ int AnalyzerBlock_Int_Values_T<VALUES,ACCESSOR_VALUES>::ProcessSubblock_ValuesLi
 	for ( auto i : dValues )
 	{
 		for ( auto j : m_dValues )
-			if ( i==(ACCESSOR_VALUES)j )
+			if ( ( i==(ACCESSOR_VALUES)j ) ^ (!EQ) )
 			{
 				*pRowID++ = tRowID;
 				break;
@@ -681,13 +728,14 @@ int AnalyzerBlock_Int_Values_T<VALUES,ACCESSOR_VALUES>::ProcessSubblock_ValuesLi
 }
 
 template<typename VALUES, typename ACCESSOR_VALUES>
+template <bool EQ>
 int AnalyzerBlock_Int_Values_T<VALUES,ACCESSOR_VALUES>::ProcessSubblock_ValuesBinary ( uint32_t * & pRowID, const Span_T<ACCESSOR_VALUES> & dValues )
 {
 	uint32_t tRowID = m_tRowID;
 
 	for ( auto i : dValues )
 	{
-		if ( std::binary_search ( m_dValues.cbegin(), m_dValues.cend(), (VALUES)i ) )
+		if ( std::binary_search ( m_dValues.cbegin(), m_dValues.cend(), (VALUES)i ) ^ (!EQ) )
 			*pRowID++ = tRowID;
 
 		tRowID++;
@@ -759,25 +807,31 @@ private:
 	std::array<ProcessSubblock_fn,to_underlying(IntPacking_e::TOTAL)> m_dProcessingFuncs;
 	ProcessSubblock_fn	m_fnProcessSubblock = nullptr;
 
+	void				SetupPackingFuncs_SingleValue();
+	void				SetupPackingFuncs_ValuesLinear();
+	void				SetupPackingFuncs_ValuesBinary();
+	void				SetupPackingFuncs_Range();
+
 	void				SetupPackingFuncs();
 	void				FixupFilterSettings();
 
 	int					ProcessSubblockConst ( uint32_t * & pRowID, int iSubblockIdInBlock );
 
-	int					ProcessSubblockGenericPFOR_SingleValue ( uint32_t * & pRowID, int iSubblockIdInBlock );
-	int					ProcessSubblockGenericPFOR_ValuesLinear ( uint32_t * & pRowID, int iSubblockIdInBlock );
-	int					ProcessSubblockGenericPFOR_ValuesBinary ( uint32_t * & pRowID, int iSubblockIdInBlock );
-	int					ProcessSubblockGenericPFOR_Range ( uint32_t * & pRowID, int iSubblockIdInBlock );
+	template <bool EQ>				int	ProcessSubblockGenericPFOR_SingleValue ( uint32_t * & pRowID, int iSubblockIdInBlock );
+	template <bool EQ, bool LINEAR>	int	ProcessSubblockGenericPFOR_Values ( uint32_t * & pRowID, int iSubblockIdInBlock );
 
-	int					ProcessSubblockDeltaPFOR_SingleValue ( uint32_t * & pRowID, int iSubblockIdInBlock );
-	int					ProcessSubblockDeltaPFOR_ValuesLinear ( uint32_t * & pRowID, int iSubblockIdInBlock );
-	int					ProcessSubblockDeltaPFOR_ValuesBinary ( uint32_t * & pRowID, int iSubblockIdInBlock );
-	int					ProcessSubblockDeltaPFOR_Range ( uint32_t * & pRowID, int iSubblockIdInBlock );
+	int	ProcessSubblockGenericPFOR_Range ( uint32_t * & pRowID, int iSubblockIdInBlock );
 
-	int					ProcessSubblockTable_SingleValue ( uint32_t * & pRowID, int iSubblockIdInBlock );
-	int					ProcessSubblockTable_ValuesLinear ( uint32_t * & pRowID, int iSubblockIdInBlock );
-	int					ProcessSubblockTable_ValuesBinary ( uint32_t * & pRowID, int iSubblockIdInBlock );
-	int					ProcessSubblockTable_Range ( uint32_t * & pRowID, int iSubblockIdInBlock );
+	template <bool EQ>				int	ProcessSubblockDeltaPFOR_SingleValue ( uint32_t * & pRowID, int iSubblockIdInBlock );
+
+	template <bool EQ, bool LINEAR>	int	ProcessSubblockDeltaPFOR_Values ( uint32_t * & pRowID, int iSubblockIdInBlock );
+
+	int	ProcessSubblockDeltaPFOR_Range ( uint32_t * & pRowID, int iSubblockIdInBlock );
+
+	template <bool EQ>				int	ProcessSubblockTable_SingleValue ( uint32_t * & pRowID, int iSubblockIdInBlock );
+	template <bool EQ, bool LINEAR>	int	ProcessSubblockTable_Values ( uint32_t * & pRowID, int iSubblockIdInBlock );
+
+	int	ProcessSubblockTable_Range ( uint32_t * & pRowID, int iSubblockIdInBlock );
 
 	bool				MoveToBlock ( int iNextBlock ) final;
 };
@@ -793,11 +847,76 @@ Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::Analyzer_INT_T ( const Attrib
 {
 	FixupFilterSettings();
 
+	assert ( !tSettings.m_bExclude || ( tSettings.m_bExclude && tSettings.m_eType==FilterType_e::VALUES ) );
+
 	m_tBlockConst.Setup(m_tSettings);
 	m_tBlockTable.Setup(m_tSettings);
 	m_tBlockValues.Setup(m_tSettings);
 
 	SetupPackingFuncs();
+}
+
+template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL>
+void Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::SetupPackingFuncs_SingleValue()
+{
+	auto & dFuncs = m_dProcessingFuncs;
+	if ( m_tSettings.m_bExclude )
+	{
+		dFuncs [ to_underlying ( IntPacking_e::TABLE ) ]		= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockTable_SingleValue<false>;
+		dFuncs [ to_underlying ( IntPacking_e::DELTA_PFOR ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockDeltaPFOR_SingleValue<false>;
+		dFuncs [ to_underlying ( IntPacking_e::GENERIC_PFOR )]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockGenericPFOR_SingleValue<false>;
+	}
+	else
+	{
+		dFuncs [ to_underlying ( IntPacking_e::TABLE ) ]		= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockTable_SingleValue<true>;
+		dFuncs [ to_underlying ( IntPacking_e::DELTA_PFOR ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockDeltaPFOR_SingleValue<true>;
+		dFuncs [ to_underlying ( IntPacking_e::GENERIC_PFOR )]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockGenericPFOR_SingleValue<true>;
+	}
+}
+
+template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL>
+void Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::SetupPackingFuncs_ValuesLinear()
+{
+	auto & dFuncs = m_dProcessingFuncs;
+	if ( m_tSettings.m_bExclude )
+	{
+		dFuncs [ to_underlying ( IntPacking_e::TABLE ) ]		= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockTable_Values<false,true>;
+		dFuncs [ to_underlying ( IntPacking_e::DELTA_PFOR ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockDeltaPFOR_Values<false,true>;
+		dFuncs [ to_underlying ( IntPacking_e::GENERIC_PFOR ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockGenericPFOR_Values<false,true>;
+	}
+	else
+	{
+		dFuncs [ to_underlying ( IntPacking_e::TABLE ) ]		= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockTable_Values<true,true>;
+		dFuncs [ to_underlying ( IntPacking_e::DELTA_PFOR ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockDeltaPFOR_Values<true,true>;
+		dFuncs [ to_underlying ( IntPacking_e::GENERIC_PFOR ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockGenericPFOR_Values<true,true>;
+	}
+}
+
+template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL>
+void Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::SetupPackingFuncs_ValuesBinary()
+{
+	auto & dFuncs = m_dProcessingFuncs;
+	if ( m_tSettings.m_bExclude )
+	{
+		dFuncs [ to_underlying ( IntPacking_e::TABLE ) ]		= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockTable_Values<false,false>;
+		dFuncs [ to_underlying ( IntPacking_e::DELTA_PFOR ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockDeltaPFOR_Values<false,false>;
+		dFuncs [ to_underlying ( IntPacking_e::GENERIC_PFOR ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockGenericPFOR_Values<false,false>;
+	}
+	else
+	{
+		dFuncs [ to_underlying ( IntPacking_e::TABLE ) ]		= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockTable_Values<true,false>;
+		dFuncs [ to_underlying ( IntPacking_e::DELTA_PFOR ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockDeltaPFOR_Values<true,false>;
+		dFuncs [ to_underlying ( IntPacking_e::GENERIC_PFOR ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockGenericPFOR_Values<true,false>;
+	}
+}
+
+template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL>
+void Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::SetupPackingFuncs_Range()
+{
+	auto & dFuncs = m_dProcessingFuncs;
+	dFuncs [ to_underlying ( IntPacking_e::TABLE ) ]		= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockTable_Range;
+	dFuncs [ to_underlying ( IntPacking_e::DELTA_PFOR ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockDeltaPFOR_Range;
+	dFuncs [ to_underlying ( IntPacking_e::GENERIC_PFOR ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockGenericPFOR_Range;
 }
 
 template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL>
@@ -816,30 +935,16 @@ void Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::SetupPackingFuncs()
 	{
 	case FilterType_e::VALUES:
 		if ( m_tSettings.m_dValues.size()==1 )
-		{
-			dFuncs [ to_underlying ( IntPacking_e::TABLE ) ]		= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockTable_SingleValue;
-			dFuncs [ to_underlying ( IntPacking_e::DELTA_PFOR ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockDeltaPFOR_SingleValue;
-			dFuncs [ to_underlying ( IntPacking_e::GENERIC_PFOR )]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockGenericPFOR_SingleValue;
-		}
+			SetupPackingFuncs_SingleValue();
 		else if ( m_tSettings.m_dValues.size()<=LINEAR_SEARCH_THRESH )
-		{
-			dFuncs [ to_underlying ( IntPacking_e::TABLE ) ]		= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockTable_ValuesLinear;
-			dFuncs [ to_underlying ( IntPacking_e::DELTA_PFOR ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockDeltaPFOR_ValuesLinear;
-			dFuncs [ to_underlying ( IntPacking_e::GENERIC_PFOR ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockGenericPFOR_ValuesLinear;
-		}
+			SetupPackingFuncs_ValuesLinear();
 		else
-		{
-			dFuncs [ to_underlying ( IntPacking_e::TABLE ) ]		= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockTable_ValuesBinary;
-			dFuncs [ to_underlying ( IntPacking_e::DELTA_PFOR ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockDeltaPFOR_ValuesBinary;
-			dFuncs [ to_underlying ( IntPacking_e::GENERIC_PFOR ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockGenericPFOR_ValuesBinary;
-		}
+			SetupPackingFuncs_ValuesBinary();
 		break;
 
 	case FilterType_e::RANGE:
 	case FilterType_e::FLOATRANGE:
-		dFuncs [ to_underlying ( IntPacking_e::TABLE ) ]		= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockTable_Range;
-		dFuncs [ to_underlying ( IntPacking_e::DELTA_PFOR ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockDeltaPFOR_Range;
-		dFuncs [ to_underlying ( IntPacking_e::GENERIC_PFOR ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockGenericPFOR_Range;
+		SetupPackingFuncs_Range();
 		break;
 
 	default:
@@ -877,24 +982,23 @@ int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockConst ( ui
 }
 
 template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL>
+template <bool EQ>
 int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockGenericPFOR_SingleValue ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
 	ACCESSOR::m_tBlockPFOR.ReadSubblock_Generic ( iSubblockIdInBlock, *ACCESSOR::m_pReader );
-	return m_tBlockValues.ProcessSubblock_SingleValue ( pRowID, ACCESSOR::m_tBlockPFOR.GetAllValues() );
+	return m_tBlockValues.ProcessSubblock_SingleValue<EQ> ( pRowID, ACCESSOR::m_tBlockPFOR.GetAllValues() );
 }
 
 template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL>
-int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockGenericPFOR_ValuesLinear ( uint32_t * & pRowID, int iSubblockIdInBlock )
+template <bool EQ, bool LINEAR>
+int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockGenericPFOR_Values ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
 	ACCESSOR::m_tBlockPFOR.ReadSubblock_Generic ( iSubblockIdInBlock, *ACCESSOR::m_pReader );
-	return m_tBlockValues.ProcessSubblock_ValuesLinear ( pRowID, ACCESSOR::m_tBlockPFOR.GetAllValues() );
-}
 
-template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL>
-int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockGenericPFOR_ValuesBinary ( uint32_t * & pRowID, int iSubblockIdInBlock )
-{
-	ACCESSOR::m_tBlockPFOR.ReadSubblock_Generic ( iSubblockIdInBlock, *ACCESSOR::m_pReader );
-	return m_tBlockValues.ProcessSubblock_ValuesBinary ( pRowID, ACCESSOR::m_tBlockPFOR.GetAllValues() );
+	if ( LINEAR )
+		return m_tBlockValues.ProcessSubblock_ValuesLinear<EQ> ( pRowID, ACCESSOR::m_tBlockPFOR.GetAllValues() );
+
+	return m_tBlockValues.ProcessSubblock_ValuesBinary<EQ> ( pRowID, ACCESSOR::m_tBlockPFOR.GetAllValues() );
 }
 
 template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL>
@@ -905,24 +1009,23 @@ int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockGenericPFO
 }
 
 template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL>
+template <bool EQ>
 int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockDeltaPFOR_SingleValue ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
 	ACCESSOR::m_tBlockPFOR.ReadSubblock_Delta ( iSubblockIdInBlock, *ACCESSOR::m_pReader );
-	return m_tBlockValues.ProcessSubblock_SingleValue ( pRowID, ACCESSOR::m_tBlockPFOR.GetAllValues() );
+	return m_tBlockValues.ProcessSubblock_SingleValue<EQ> ( pRowID, ACCESSOR::m_tBlockPFOR.GetAllValues() );
 }
 
 template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL>
-int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockDeltaPFOR_ValuesLinear ( uint32_t * & pRowID, int iSubblockIdInBlock )
+template <bool EQ, bool LINEAR>
+int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockDeltaPFOR_Values ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
 	ACCESSOR::m_tBlockPFOR.ReadSubblock_Delta ( iSubblockIdInBlock, *ACCESSOR::m_pReader );
-	return m_tBlockValues.ProcessSubblock_ValuesLinear ( pRowID, ACCESSOR::m_tBlockPFOR.GetAllValues() );
-}
 
-template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL>
-int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockDeltaPFOR_ValuesBinary ( uint32_t * & pRowID, int iSubblockIdInBlock )
-{
-	ACCESSOR::m_tBlockPFOR.ReadSubblock_Delta ( iSubblockIdInBlock, *ACCESSOR::m_pReader );
-	return m_tBlockValues.ProcessSubblock_ValuesBinary ( pRowID, ACCESSOR::m_tBlockPFOR.GetAllValues() );
+	if ( LINEAR )
+		return m_tBlockValues.ProcessSubblock_ValuesLinear<EQ> ( pRowID, ACCESSOR::m_tBlockPFOR.GetAllValues() );
+
+	return m_tBlockValues.ProcessSubblock_ValuesBinary<EQ> ( pRowID, ACCESSOR::m_tBlockPFOR.GetAllValues() );
 }
 
 template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL>
@@ -933,24 +1036,23 @@ int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockDeltaPFOR_
 }
 
 template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL>
+template <bool EQ>
 int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockTable_SingleValue ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
 	ACCESSOR::m_tBlockTable.ReadSubblock ( iSubblockIdInBlock, StoredBlockTraits_t::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
-	return m_tBlockTable.ProcessSubblock_SingleValue ( pRowID, ACCESSOR::m_tBlockTable.GetValueIndexes() );
+	return m_tBlockTable.ProcessSubblock_SingleValue<EQ> ( pRowID, ACCESSOR::m_tBlockTable.GetValueIndexes() );
 }
 
 template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL>
-int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockTable_ValuesLinear ( uint32_t * & pRowID, int iSubblockIdInBlock )
+template <bool EQ, bool LINEAR>
+int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockTable_Values ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
 	ACCESSOR::m_tBlockTable.ReadSubblock ( iSubblockIdInBlock, StoredBlockTraits_t::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
-	return m_tBlockTable.ProcessSubblock_ValuesLinear ( pRowID, ACCESSOR::m_tBlockTable.GetValueIndexes() );
-}
 
-template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL>
-int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::ProcessSubblockTable_ValuesBinary ( uint32_t * & pRowID, int iSubblockIdInBlock )
-{
-	ACCESSOR::m_tBlockTable.ReadSubblock ( iSubblockIdInBlock, StoredBlockTraits_t::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
-	return m_tBlockTable.ProcessSubblock_ValuesBinary ( pRowID, ACCESSOR::m_tBlockTable.GetValueIndexes() );
+	if ( LINEAR )
+		return m_tBlockTable.ProcessSubblock_ValuesLinear<EQ> ( pRowID, ACCESSOR::m_tBlockTable.GetValueIndexes() );
+
+	return m_tBlockTable.ProcessSubblock_ValuesBinary<EQ> ( pRowID, ACCESSOR::m_tBlockTable.GetValueIndexes() );
 }
 
 template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL>
@@ -1002,12 +1104,12 @@ bool Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::MoveToBlock ( int iNextB
 
 		if ( ACCESSOR::m_ePacking==IntPacking_e::CONST )
 		{
-			if ( m_tBlockConst.SetupNextBlock<ACCESSOR_VALUES,RANGE_EVAL> ( ACCESSOR::m_tBlockConst ) )
+			if ( m_tBlockConst.SetupNextBlock<ACCESSOR_VALUES,RANGE_EVAL> ( ACCESSOR::m_tBlockConst, !m_tSettings.m_bExclude ) )
 				break;
 		}
 		else
 		{
-			if ( m_tBlockTable.SetupNextBlock<ACCESSOR_VALUES,RANGE_EVAL> ( ACCESSOR::m_tBlockTable ) )
+			if ( m_tBlockTable.SetupNextBlock<ACCESSOR_VALUES,RANGE_EVAL> ( ACCESSOR::m_tBlockTable, !m_tSettings.m_bExclude ) )
 				break;
 		}
 

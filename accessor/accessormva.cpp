@@ -24,7 +24,7 @@
 namespace columnar
 {
 
-template<bool LEFT_CLOSED, bool RIGHT_CLOSED>
+template<bool LEFT_CLOSED, bool RIGHT_CLOSED, bool EQ>
 class MvaAll_T
 {
 public:
@@ -32,13 +32,13 @@ public:
 	static FORCE_INLINE bool Test ( const Span_T<T> & dValues, const Span_T<int64_t> & dTestValues )
 	{
 		if ( dValues.empty() || dTestValues.empty() )
-			return false;
+			return false ^ (!EQ);
 
 		for ( auto i : dValues )
 			if ( !std::binary_search ( dTestValues.begin(), dTestValues.end(), i ) )
-				return false;
+				return false ^ (!EQ);
 
-		return true;
+		return true ^ (!EQ);
 	}
 
 	template<typename T>
@@ -46,25 +46,25 @@ public:
 	{
 		for ( auto i : dValues )
 			if ( i!=iTestValue )
-				return false;
+				return false ^ (!EQ);
 
-		return true;
+		return true ^ (!EQ);
 	}
 
 	template<typename T>
 	static FORCE_INLINE bool Test ( const Span_T<T> & dValues, int64_t iMinValue, int64_t iMaxValue )
 	{
 		if ( dValues.empty() )
-			return false;
+			return false ^ (!EQ);
 
 		int64_t iFirst = dValues.front();
 		int64_t iLast = dValues.back() ;
-		return ( LEFT_CLOSED ? ( iFirst>=iMinValue ) : ( iFirst>iMinValue ) ) && ( RIGHT_CLOSED ? ( iLast<=iMaxValue ) : ( iLast<iMaxValue ) );
+		return ( ( LEFT_CLOSED ? ( iFirst>=iMinValue ) : ( iFirst>iMinValue ) ) && ( RIGHT_CLOSED ? ( iLast<=iMaxValue ) : ( iLast<iMaxValue ) ) ) ^ (!EQ);
 	}
 };
 
 
-template<bool LEFT_CLOSED, bool RIGHT_CLOSED>
+template<bool LEFT_CLOSED, bool RIGHT_CLOSED, bool EQ>
 class MvaAny_T
 {
 public:
@@ -72,7 +72,7 @@ public:
 	static inline bool Test ( const Span_T<T> & dValues, const Span_T<int64_t> & dTestValues )
 	{
 		if ( dValues.empty() || dTestValues.empty() )
-			return false;
+			return false ^ (!EQ);
 
 		const T * pLeft = dValues.data();
 
@@ -88,24 +88,24 @@ public:
 				else if ( iValue > iTestValue )
 					pRight = pValue - 1;
 				else
-					return true;
+					return true ^ (!EQ);
 			}
 		}
 
-		return false;
+		return false ^ (!EQ);
 	}
 
 	template <typename T>
 	static inline bool Test ( const Span_T<T> & dValues, int64_t iTestValue )
 	{
-		return std::binary_search ( dValues.begin(), dValues.end(), (T)iTestValue );
+		return std::binary_search ( dValues.begin(), dValues.end(), (T)iTestValue ) ^ (!EQ);
 	}
 
 	template<typename T>
 	static FORCE_INLINE bool Test ( const Span_T<T> & dValues, int64_t iMinValue, int64_t iMaxValue )
 	{
 		if ( dValues.empty() )
-			return false;
+			return false ^ (!EQ);
 
 		const T * pEnd = dValues.data()+dValues.size();
 		const T * pLeft = dValues.data();
@@ -121,16 +121,16 @@ public:
 			else if ( iValue > iMinValue )
 				pRight = pValue - 1;
 			else
-				return LEFT_CLOSED || pValue+1<pEnd;
+				return ( LEFT_CLOSED || pValue+1<pEnd ) ^ (!EQ);
 		}
 
 		if ( pLeft==pEnd )
-			return false;
+			return false ^ (!EQ);
 
 		if ( RIGHT_CLOSED )
-			return *pLeft<=iMaxValue;
+			return ( *pLeft<=iMaxValue ) ^ (!EQ);
 
-		return *pLeft<iMaxValue;
+		return ( *pLeft<iMaxValue ) ^ (!EQ);
 	}
 };
 
@@ -930,11 +930,11 @@ public:
 	bool		GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBlock ) final;
 
 private:
-	AnalyzerBlock_MVA_Const_c		m_tBlockConst;
-	AnalyzerBlock_MVA_Table_c		m_tBlockTable;
-	AnalyzerBlock_MVA_Values_c		m_tBlockValues;
+	AnalyzerBlock_MVA_Const_c	m_tBlockConst;
+	AnalyzerBlock_MVA_Table_c	m_tBlockTable;
+	AnalyzerBlock_MVA_Values_c	m_tBlockValues;
 
-	const Filter_t &		m_tSettings;
+	const Filter_t &			m_tSettings;
 
 	typedef int (Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::*ProcessSubblock_fn)( uint32_t * & pRowID, int iSubblockIdInBlock );
 	std::array<ProcessSubblock_fn, to_underlying ( MvaPacking_e::TOTAL )> m_dProcessingFuncs;
@@ -1159,30 +1159,35 @@ static Analyzer_i * CreateAnalyzerMVA ( const AttributeHeader_i & tHeader, FileR
 	switch ( iIndex )
 	{
 	case 0:		return new Analyzer_MVA_T<uint32_t, uint32_t, ALL, false> ( tHeader, pReader, tSettings );
-	case 1:		return new Analyzer_MVA_T<uint32_t, uint32_t, ALL, true> ( tHeader, pReader, tSettings );
+	case 1:		return new Analyzer_MVA_T<uint32_t, uint32_t, ALL, true>  ( tHeader, pReader, tSettings );
 	case 2:		return new Analyzer_MVA_T<uint32_t, uint32_t, ANY, false> ( tHeader, pReader, tSettings );
-	case 3:		return new Analyzer_MVA_T<uint32_t, uint32_t, ANY, true> ( tHeader, pReader, tSettings );
+	case 3:		return new Analyzer_MVA_T<uint32_t, uint32_t, ANY, true>  ( tHeader, pReader, tSettings );
 	case 4:		return new Analyzer_MVA_T<uint64_t, int64_t,  ALL, false> ( tHeader, pReader, tSettings );
-	case 5:		return new Analyzer_MVA_T<uint64_t, int64_t,  ALL, true> ( tHeader, pReader, tSettings );
+	case 5:		return new Analyzer_MVA_T<uint64_t, int64_t,  ALL, true>  ( tHeader, pReader, tSettings );
 	case 6:		return new Analyzer_MVA_T<uint64_t, int64_t,  ANY, false> ( tHeader, pReader, tSettings );
-	case 7:		return new Analyzer_MVA_T<uint64_t, int64_t,  ANY, true> ( tHeader, pReader, tSettings );
+	case 7:		return new Analyzer_MVA_T<uint64_t, int64_t,  ANY, true>  ( tHeader, pReader, tSettings );
 	default:	return nullptr;
 	}
 }
 
 Analyzer_i * CreateAnalyzerMVA ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings, bool bHaveMatchingBlocks )
 {
-	bool bLeftClosed = tSettings.m_bLeftClosed;
-	bool bRightClosed = tSettings.m_bRightClosed;
+	bool bLeftClosed	= tSettings.m_bLeftClosed;
+	bool bRightClosed	= tSettings.m_bRightClosed;
+	bool bEq			= !tSettings.m_bExclude;
 
-	int iIndex = bLeftClosed*2 + bRightClosed;
+	int iIndex = bLeftClosed*4 + bRightClosed*2 + bEq;
 
 	switch ( iIndex )
 	{
-	case 0:		return CreateAnalyzerMVA < MvaAny_T<false,false>, MvaAll_T<false,false> > ( tHeader, pReader, tSettings, bHaveMatchingBlocks );
-	case 1:		return CreateAnalyzerMVA < MvaAny_T<false,true >, MvaAll_T<false,true > > ( tHeader, pReader, tSettings, bHaveMatchingBlocks );
-	case 2:		return CreateAnalyzerMVA < MvaAny_T<true, false>, MvaAll_T<true, false> > ( tHeader, pReader, tSettings, bHaveMatchingBlocks );
-	case 3:		return CreateAnalyzerMVA < MvaAny_T<true, true >, MvaAll_T<true, true > > ( tHeader, pReader, tSettings, bHaveMatchingBlocks );
+	case 0:		return CreateAnalyzerMVA < MvaAny_T<false,false,false>, MvaAll_T<false,false,false> > ( tHeader, pReader, tSettings, bHaveMatchingBlocks );
+	case 1:		return CreateAnalyzerMVA < MvaAny_T<false,false,true >, MvaAll_T<false,false,true > > ( tHeader, pReader, tSettings, bHaveMatchingBlocks );
+	case 2:		return CreateAnalyzerMVA < MvaAny_T<false,true, false>, MvaAll_T<false,true, false> > ( tHeader, pReader, tSettings, bHaveMatchingBlocks );
+	case 3:		return CreateAnalyzerMVA < MvaAny_T<false,true, true >, MvaAll_T<false,true, true > > ( tHeader, pReader, tSettings, bHaveMatchingBlocks );
+	case 4:		return CreateAnalyzerMVA < MvaAny_T<true, false,false>, MvaAll_T<true, false,false> > ( tHeader, pReader, tSettings, bHaveMatchingBlocks );
+	case 5:		return CreateAnalyzerMVA < MvaAny_T<true, false,true >, MvaAll_T<true, false,true > > ( tHeader, pReader, tSettings, bHaveMatchingBlocks );
+	case 6:		return CreateAnalyzerMVA < MvaAny_T<true, true, false>, MvaAll_T<true, true, false> > ( tHeader, pReader, tSettings, bHaveMatchingBlocks );
+	case 7:		return CreateAnalyzerMVA < MvaAny_T<true, true, true >, MvaAll_T<true, true, true > > ( tHeader, pReader, tSettings, bHaveMatchingBlocks );
 	default:	return nullptr;
 	}
 }
