@@ -818,7 +818,7 @@ public:
 template <bool USE_HASHES, bool EQ>
 bool AnalyzerBlock_Str_Const_T<USE_HASHES,EQ>::SetupNextBlock ( StoredBlock_StrConst_c & tBlock )
 {
-	assert ( m_eType==FilterType_e::STRINGS );
+	assert ( BASE::m_eType==FilterType_e::STRINGS );
 	return BASE::template CompareStrings<false> ( 0, tBlock.GetHash(), tBlock.GetValueLength(), [&tBlock](int){ return tBlock.GetValue<false>(); } );
 }
 
@@ -871,7 +871,7 @@ int AnalyzerBlock_Str_Table_T<USE_HASHES,EQ>::ProcessSubblock ( uint32_t * & pRo
 template <bool USE_HASHES, bool EQ>
 bool AnalyzerBlock_Str_Table_T<USE_HASHES,EQ>::SetupNextBlock ( const StoredBlock_StrTable_c & tBlock )
 {
-	assert ( m_eType==FilterType_e::STRINGS );
+	assert ( BASE::m_eType==FilterType_e::STRINGS );
 	bool bAnythingMatches = false;
 
 	for ( int i = 0; i < tBlock.GetTableSize(); i++ )
