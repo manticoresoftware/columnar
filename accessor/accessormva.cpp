@@ -158,17 +158,6 @@ static FORCE_INLINE void ApplyInverseDeltas ( Span_T<T> & dValues, std::vector<S
 	}
 }
 
-template <typename T, bool PACK>
-static FORCE_INLINE uint32_t PackMVA ( const Span_T<T> & dValue, const uint8_t * & pValue )
-{
-	if ( PACK )
-		pValue = ByteCodec_c::PackData(dValue);
-	else
-		pValue = (const uint8_t*)dValue.data();
-
-	return uint32_t ( dValue.size()*sizeof(T) );
-}
-
 template <typename T>
 static FORCE_INLINE void PrecalcSizeOffset ( const Span_T<uint32_t> & dLengths, Span_T<T> & dValues, std::vector<Span_T<T>> & dValuePtrs )
 {
@@ -198,7 +187,7 @@ public:
 	FORCE_INLINE void	ReadHeader ( FileReader_c & tReader );
 
 	template <bool PACK>
-	FORCE_INLINE uint32_t	GetValue ( const uint8_t * & pValue ) const;
+	FORCE_INLINE uint32_t	GetValue ( uint8_t * & pValue ) const;
 
 private:
 	std::unique_ptr<IntCodec_i>	m_pCodec;
@@ -223,9 +212,9 @@ void StoredBlock_MvaConst_T<T>::ReadHeader ( FileReader_c & tReader )
 
 template <typename T>
 template <bool PACK>
-uint32_t StoredBlock_MvaConst_T<T>::GetValue ( const uint8_t * & pValue ) const
+uint32_t StoredBlock_MvaConst_T<T>::GetValue ( uint8_t * & pValue ) const
 {
-	return PackMVA<T,PACK> ( m_dValueSpan, pValue );
+	return PackValue<T,PACK> ( m_dValueSpan, pValue );
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -240,7 +229,7 @@ public:
 	FORCE_INLINE void	ReadSubblock ( int iSubblockId, int iSubblockValues, FileReader_c & tReader );
 
 	template <bool PACK>
-	FORCE_INLINE uint32_t	GetValue ( const uint8_t * & pValue, int iIdInSubblock ) const;
+	FORCE_INLINE uint32_t	GetValue ( uint8_t * & pValue, int iIdInSubblock ) const;
 	FORCE_INLINE const std::vector<Span_T<T>> & GetAllValues() const { return m_dValuePtrs; }
 
 private:
@@ -314,9 +303,9 @@ void StoredBlock_MvaConstLen_T<T>::PrecalcSizeOffset( int iNumSubblockValues )
 
 template <typename T>
 template <bool PACK>
-uint32_t StoredBlock_MvaConstLen_T<T>::GetValue ( const uint8_t * & pValue, int iIdInSubblock ) const
+uint32_t StoredBlock_MvaConstLen_T<T>::GetValue ( uint8_t * & pValue, int iIdInSubblock ) const
 {
-	return PackMVA<T,PACK> ( m_dValuePtrs[iIdInSubblock], pValue );
+	return PackValue<T,PACK> ( m_dValuePtrs[iIdInSubblock], pValue );
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -331,7 +320,7 @@ public:
 	FORCE_INLINE void			ReadSubblock ( int iSubblockId, int iNumValues, FileReader_c & tReader );
 
 	template <bool PACK>
-	FORCE_INLINE uint32_t		GetValue ( int iIdInSubblock, FileReader_c & tReader, const uint8_t * & pValue );
+	FORCE_INLINE uint32_t		GetValue ( uint8_t * & pValue, int iIdInSubblock );
 	FORCE_INLINE const Span_T<uint32_t> & GetValueIndexes() const { return m_tValuesRead; }
 
 	template <typename T_COMP>
@@ -404,9 +393,9 @@ void StoredBlock_MvaTable_T<T>::ReadSubblock ( int iSubblockId, int iNumValues, 
 
 template <typename T>
 template <bool PACK>
-uint32_t StoredBlock_MvaTable_T<T>::GetValue ( int iIdInSubblock, FileReader_c & tReader, const uint8_t * & pValue )
+uint32_t StoredBlock_MvaTable_T<T>::GetValue ( uint8_t * & pValue, int iIdInSubblock )
 {
-	return PackMVA<T,PACK> ( m_dValuePtrs [ m_dValueIndexes[iIdInSubblock] ], pValue );
+	return PackValue<T,PACK> ( m_dValuePtrs [ m_dValueIndexes[iIdInSubblock] ], pValue );
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -421,7 +410,7 @@ public:
 	FORCE_INLINE void		ReadSubblock ( int iSubblockId, FileReader_c & tReader );
 
 	template <bool PACK>
-	FORCE_INLINE uint32_t		GetValue ( const uint8_t * & pValue, int iIdInSubblock ) const;
+	FORCE_INLINE uint32_t	GetValue ( uint8_t * & pValue, int iIdInSubblock ) const;
 	FORCE_INLINE const std::vector<Span_T<T>> & GetAllValues() const { return m_dValuePtrs; }
 
 private:
@@ -488,9 +477,9 @@ void StoredBlock_MvaPFOR_T<T>::ReadSubblock ( int iSubblockId, FileReader_c & tR
 
 template <typename T>
 template <bool PACK>
-FORCE_INLINE uint32_t StoredBlock_MvaPFOR_T<T>::GetValue ( const uint8_t * & pValue, int iIdInSubblock ) const
+FORCE_INLINE uint32_t StoredBlock_MvaPFOR_T<T>::GetValue ( uint8_t * & pValue, int iIdInSubblock ) const
 {
-	return PackMVA<T,PACK> ( m_dValuePtrs[iIdInSubblock], pValue );
+	return PackValue<T,PACK> ( m_dValuePtrs[iIdInSubblock], pValue );
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -501,7 +490,9 @@ class Accessor_MVA_T : public StoredBlockTraits_t
 	using BASE = StoredBlockTraits_t;
 
 public:
-			Accessor_MVA_T ( const AttributeHeader_i & tHeader, FileReader_c * pReader );
+									Accessor_MVA_T ( const AttributeHeader_i & tHeader, FileReader_c * pReader );
+
+	FORCE_INLINE void				SetCurBlock ( uint32_t uBlockId );
 
 protected:
 	const AttributeHeader_i &		m_tHeader;
@@ -517,10 +508,8 @@ protected:
 
 	MvaPacking_e					m_ePacking = MvaPacking_e::CONST;
 
-	const uint8_t *					m_pResult = nullptr;
+	uint8_t *						m_pResult = nullptr;
 	size_t							m_tValueLength = 0;
-
-	FORCE_INLINE void				SetCurBlock ( uint32_t uBlockId );
 
 	template <bool PACK> void		ReadValue_Const();
 	template <bool PACK> void		ReadValue_ConstLen();
@@ -610,7 +599,7 @@ void Accessor_MVA_T<T>::ReadValue_Table()
 	uint32_t uIdInBlock = m_tRequestedRowID - m_tStartBlockRowId;
 	int iSubblockId = StoredBlockTraits_t::GetSubblockId(uIdInBlock);
 	m_tBlockTable.ReadSubblock ( iSubblockId, StoredBlockTraits_t::GetNumSubblockValues(iSubblockId), *m_pReader );
-	m_tValueLength = m_tBlockTable.template GetValue<PACK>( GetValueIdInSubblock(uIdInBlock), *m_pReader, m_pResult );
+	m_tValueLength = m_tBlockTable.template GetValue<PACK>( m_pResult, GetValueIdInSubblock(uIdInBlock) );
 }
 
 template <typename T>
@@ -634,12 +623,13 @@ class Iterator_MVA_T : public Iterator_i, public Accessor_MVA_T<T>
 public:
 	uint32_t	AdvanceTo ( uint32_t tRowID ) final;
 
-	int64_t		Get() final;
-	int			Get ( const uint8_t * & pData, bool bPack ) final;
-	int			GetLength() const final;
+	int64_t		Get() final						{ assert ( 0 && "INTERNAL ERROR: requesting int from MVA iterator" ); return 0; }
+	int			Get ( const uint8_t * & pData ) final;
+	uint8_t *	GetPacked() final;
+	int			GetLength() final				{ assert ( 0 && "INTERNAL ERROR: requesting blob length from MVA iterator" ); return 0;	 }
 
-	uint64_t	GetStringHash() final { return 0; }
-	bool		HaveStringHashes() const final { return false; }
+	uint64_t	GetStringHash() final			{ return 0; }
+	bool		HaveStringHashes() const final	{ return false; }
 };
 
 template <typename T>
@@ -655,25 +645,10 @@ uint32_t Iterator_MVA_T<T>::AdvanceTo ( uint32_t tRowID )
 }
 
 template <typename T>
-int64_t Iterator_MVA_T<T>::Get()
+int Iterator_MVA_T<T>::Get ( const uint8_t * & pData )
 {
-	assert ( 0 && "INTERNAL ERROR: requesting int from MVA iterator" );
-	return 0;
-}
-
-template <typename T>
-int Iterator_MVA_T<T>::Get ( const uint8_t * & pData, bool bPack )
-{
-	if ( bPack )
-	{
-		assert(BASE::m_fnReadValuePacked);
-		(*this.*BASE::m_fnReadValuePacked)();
-	}
-	else
-	{
-		assert(BASE::m_fnReadValue);
-		(*this.*BASE::m_fnReadValue)();
-	}
+	assert(BASE::m_fnReadValue);
+	(*this.*BASE::m_fnReadValue)();
 
 	pData = BASE::m_pResult;
 	BASE::m_pResult = nullptr;
@@ -682,10 +657,15 @@ int Iterator_MVA_T<T>::Get ( const uint8_t * & pData, bool bPack )
 }
 
 template <typename T>
-int Iterator_MVA_T<T>::GetLength() const
+uint8_t * Iterator_MVA_T<T>::GetPacked()
 {
-	assert ( 0 && "INTERNAL ERROR: requesting blob length from MVA iterator" );
-	return 0;
+	assert(BASE::m_fnReadValuePacked);
+	(*this.*BASE::m_fnReadValuePacked)();
+
+	uint8_t * pData = BASE::m_pResult;
+	BASE::m_pResult = nullptr;
+
+	return pData;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -732,7 +712,7 @@ public:
 template<typename T, typename T_COMP, typename FUNC>
 bool AnalyzerBlock_MVA_Const_c::SetupNextBlock ( const StoredBlock_MvaConst_T<T> & tBlock )
 {
-	const uint8_t * pValue = nullptr;
+	uint8_t * pValue = nullptr;
 	uint32_t uLength = tBlock.template GetValue<false>(pValue);
 	Span_T<T_COMP> tCheck ( (T_COMP*)pValue, uLength/sizeof(T_COMP) );
 
@@ -976,33 +956,7 @@ Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::Analyzer_MVA_T ( const Attri
 template <typename T, typename T_COMP, typename FUNC, bool HAVE_MATCHING_BLOCKS>
 bool Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBlock )
 {
-	if ( ANALYZER::m_iCurSubblock>=ANALYZER::m_iTotalSubblocks )
-		return false;
-
-	uint32_t * pRowIdStart = ANALYZER::m_dCollected.data();
-	uint32_t * pRowID = pRowIdStart;
-	uint32_t * pRowIdMax = pRowIdStart + ACCESSOR::m_iSubblockSize;
-
-	// we scan until we find at least 128 (subblock size) matches.
-	// this might lead to this analyzer scanning the whole index
-	// a more responsive version would return after processing each 128 docs
-	// (even if it doesn't find any matches)
-	while ( pRowID<pRowIdMax )
-	{
-		int iSubblockIdInBlock;
-		if ( HAVE_MATCHING_BLOCKS )
-			iSubblockIdInBlock = ACCESSOR::GetSubblockIdInBlock ( ANALYZER::m_pMatchingSubblocks->GetBlock ( ANALYZER::m_iCurSubblock ) );
-		else
-			iSubblockIdInBlock = ACCESSOR::GetSubblockIdInBlock ( ANALYZER::m_iCurSubblock );
-
-		assert(m_fnProcessSubblock);
-		ANALYZER::m_iNumProcessed += (*this.*m_fnProcessSubblock) ( pRowID, iSubblockIdInBlock );
-
-		if ( !ANALYZER::MoveToSubblock ( ANALYZER::m_iCurSubblock+1 ) )
-			break;
-	}
-
-	return CheckEmptySpan ( pRowID, pRowIdStart, dRowIdBlock );
+	return ANALYZER::GetNextRowIdBlock ( (ACCESSOR&)*this, dRowIdBlock, [this] ( uint32_t * & pRowID, int iSubblockIdInBlock ){ return (*this.*m_fnProcessSubblock) ( pRowID, iSubblockIdInBlock ); } );
 }
 
 template <typename T, typename T_COMP, typename FUNC, bool HAVE_MATCHING_BLOCKS>
@@ -1104,8 +1058,7 @@ bool Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::MoveToBlock ( int iNext
 {
 	while(true)
 	{
-		ANALYZER::m_iCurBlockId = iNextBlock;
-		ACCESSOR::SetCurBlock ( ANALYZER::m_iCurBlockId );
+		ANALYZER::StartBlockProcessing ( (ACCESSOR&)*this, iNextBlock );
 
 		if ( ACCESSOR::m_ePacking!=MvaPacking_e::CONST && ACCESSOR::m_ePacking!=MvaPacking_e::TABLE )
 			break;
@@ -1121,15 +1074,7 @@ bool Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::MoveToBlock ( int iNext
 				break;
 		}
 
-		while ( iNextBlock==ANALYZER::m_iCurBlockId && ANALYZER::m_iCurSubblock<ANALYZER::m_iTotalSubblocks )
-		{
-			if ( HAVE_MATCHING_BLOCKS )
-				iNextBlock = ACCESSOR::SubblockId2BlockId ( ANALYZER::m_pMatchingSubblocks->GetBlock ( ANALYZER::m_iCurSubblock++ ) );
-			else
-				iNextBlock = ACCESSOR::SubblockId2BlockId ( ANALYZER::m_iCurSubblock++ );
-		}
-
-		if ( ANALYZER::m_iCurSubblock>=ANALYZER::m_iTotalSubblocks )
+		if ( !ANALYZER::RewindToNextBlock ( (ACCESSOR&)*this, iNextBlock ) )
 			return false;
 	}
 

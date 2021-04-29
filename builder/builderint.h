@@ -35,8 +35,6 @@ enum class IntPacking_e : uint32_t
 	TABLE,
 	DELTA,
 	GENERIC,
-	DELTA_PFOR,
-	GENERIC_PFOR,
 
 	TOTAL
 };

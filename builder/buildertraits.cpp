@@ -216,6 +216,13 @@ void BitUnpack128 ( const std::vector<uint32_t> & dPacked, std::vector<uint32_t>
 }
 
 
+void BitUnpack128 ( const Span_T<uint32_t> & dPacked, Span_T<uint32_t> & dValues, int iBits )
+{
+	assert ( dValues.size()==128 );
+	FastPForLib::SIMD_fastunpack_32 ( (__m128i *)dPacked.data(), dValues.data(), iBits );
+}
+
+
 IntCodec_i * CreateIntCodec ( const std::string & sCodec32, const std::string & sCodec64 )
 {
 	return new IntCodec_c ( sCodec32, sCodec64 );

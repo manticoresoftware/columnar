@@ -136,6 +136,14 @@ public:
 		return { pResult, pResult+iPackedLen };
 	}
 
+	static inline void PackData ( std::vector<uint8_t> & dPacked, const Span_T<uint8_t> & dData )
+	{
+		dPacked.resize ( dData.size() + CalcPackedLen (dData.size() ) );
+		uint8_t * p = dPacked.data();
+		Pack_uint64 ( p, dData.size() );
+		memcpy ( p, dData.begin(), dData.size() );
+	}
+
 	template <typename T>
 	static inline int CalcPackedLen ( T tValue )
 	{
@@ -320,8 +328,8 @@ inline float UintToFloat ( uint32_t uValue )
 	return tUnion.m_fValue;
 }
 
-template<class T>
-const T * binary_search ( const std::vector<T> & dValues, const T & tValue )
+template<class T, class CONTAINER>
+const T * binary_search ( const CONTAINER & dValues, const T & tValue )
 {
 	auto tFirst = dValues.begin();
 	auto tLast = dValues.end();

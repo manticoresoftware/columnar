@@ -23,7 +23,7 @@
 namespace columnar
 {
 
-static const int LIB_VERSION = 6;
+static const int LIB_VERSION = 7;
 
 class Iterator_i
 {
@@ -34,8 +34,9 @@ public:
 
 	virtual	int64_t		Get() = 0;
 
-	virtual	int			Get ( const uint8_t * & pData, bool bPack ) = 0;
-	virtual	int			GetLength() const = 0;
+	virtual	int			Get ( const uint8_t * & pData ) = 0;
+	virtual	uint8_t *	GetPacked() = 0;
+	virtual	int			GetLength() = 0;
 
 	virtual uint64_t	GetStringHash() = 0;
 	virtual bool		HaveStringHashes() const = 0;
@@ -75,7 +76,8 @@ enum class FilterType_e
 	NONE,
 	VALUES,
 	RANGE,
-	FLOATRANGE
+	FLOATRANGE,
+	STRINGS
 };
 
 
@@ -86,6 +88,8 @@ enum class MvaAggr_e
 	ANY
 };
 
+using StringHash_fn = uint64_t (*)( const uint8_t * pStr, int iLen, uint64_t uPrev );
+using StringCmp_fn = int (*) ( std::pair<const uint8_t *, int> tStrA, std::pair<const uint8_t *, int> tStrB, bool bPacked );
 
 struct Filter_t
 {
@@ -102,7 +106,11 @@ struct Filter_t
 	bool					m_bLeftClosed = true;
 	bool					m_bRightClosed = true;
 
+	StringHash_fn			m_fnCalcStrHash = nullptr;
+	StringCmp_fn			m_fnStrCmp = nullptr;
+
 	std::vector<int64_t>	m_dValues;
+	std::vector<std::vector<uint8_t>> m_dStringValues;
 };
 
 enum class AttrType_e : uint32_t

@@ -288,7 +288,7 @@ void Packer_MVA_T<T>::WritePacked_Table()
 
 	// write the ordinals
 	int iBits = CalcNumBits ( m_hUnique.size() );
-	m_dTablePacked.resize ( ( m_dTableIndexes.size()*iBits ) >> 5 );
+	m_dTablePacked.resize ( ( m_dTableIndexes.size()*iBits + 31 ) >> 5 );
 
 	uint32_t uOffset = 0;
 	int iId = 0;

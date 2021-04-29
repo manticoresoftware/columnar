@@ -58,7 +58,7 @@ public:
 	FORCE_INLINE bool		IsError() const { return m_bError; }
 	std::string				GetError() const { return m_sError; }
 
-	FORCE_INLINE bool		ReadFromBuffer ( const uint8_t * & pData, size_t tLen )
+	FORCE_INLINE bool		ReadFromBuffer ( uint8_t * & pData, size_t tLen )
 	{
 		if ( m_tPtr+tLen > m_tUsed )
 			return false;

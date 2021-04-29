@@ -99,6 +99,8 @@ class Accessor_Bool_c : public StoredBlockTraits_t
 public:
 						Accessor_Bool_c ( const AttributeHeader_i & tHeader, FileReader_c * pReader );
 
+	FORCE_INLINE void	SetCurBlock ( uint32_t uBlockId );
+
 protected:
 	const AttributeHeader_i &		m_tHeader;
 	std::unique_ptr<FileReader_c>	m_pReader;
@@ -109,8 +111,6 @@ protected:
 	int64_t (Accessor_Bool_c::*m_fnReadValue)() = nullptr;
 
 	BoolPacking_e		m_ePacking = BoolPacking_e::CONST;
-
-	FORCE_INLINE void	SetCurBlock ( uint32_t uBlockId );
 
 	int64_t			ReadValue_Const();
 	int64_t			ReadValue_Bitmap();
@@ -178,19 +178,20 @@ class Iterator_Bool_c : public Iterator_i, public Accessor_Bool_c
 	using BASE::Accessor_Bool_c;
 
 public:
-	uint32_t		AdvanceTo ( uint32_t tRowID ) final;
+	uint32_t	AdvanceTo ( uint32_t tRowID ) final;
 
-	int64_t	Get() final;
+	int64_t		Get() final;
 
-	int			Get ( const uint8_t * & pData, bool bPack ) final;
-	int			GetLength() const final;
+	int			Get ( const uint8_t * & pData ) final	{ assert ( 0 && "INTERNAL ERROR: requesting blob from bool iterator" ); return 0; }
+	uint8_t *	GetPacked() final						{ assert ( 0 && "INTERNAL ERROR: requesting blob from bool iterator" ); return nullptr; }
+	int			GetLength() final						{ assert ( 0 && "INTERNAL ERROR: requesting string length from bool iterator" ); return 0; }
 
-	uint64_t	GetStringHash() final { return 0; }
-	bool		HaveStringHashes() const final { return false; }
+	uint64_t	GetStringHash() final					{ return 0; }
+	bool		HaveStringHashes() const final			{ return false; }
 };
 
 
-uint32_t	Iterator_Bool_c::AdvanceTo ( uint32_t tRowID )
+uint32_t Iterator_Bool_c::AdvanceTo ( uint32_t tRowID )
 {
 	uint32_t uBlockId = RowId2BlockId(tRowID);
 	if ( uBlockId!=BASE::m_uBlockId )
@@ -208,26 +209,12 @@ int64_t Iterator_Bool_c::Get()
 	return (*this.*BASE::m_fnReadValue)();
 }
 
-
-int Iterator_Bool_c::Get ( const uint8_t * & pData, bool bPack )
-{
-	assert ( 0 && "INTERNAL ERROR: requesting blob from bool iterator" );
-	return 0;
-}
-
-
-int Iterator_Bool_c::GetLength() const
-{
-	assert ( 0 && "INTERNAL ERROR: requesting string length from bool iterator" );
-	return 0;
-}
-
 //////////////////////////////////////////////////////////////////////////
 
 class AnalyzerBlock_Bool_Const_c
 {
 public:
-						AnalyzerBlock_Bool_Const_c ( uint32_t & tRowID );
+						AnalyzerBlock_Bool_Const_c ( uint32_t & tRowID ) : m_tRowID ( tRowID ) {}
 
 	FORCE_INLINE bool	SetupNextBlock ( const StoredBlock_Bool_Const_c & tBlock );
 	FORCE_INLINE int	ProcessSubblock ( uint32_t * & pRowID, int iNumValues );
@@ -237,11 +224,6 @@ private:
 	uint32_t &			m_tRowID;
 	bool				m_bFilterValue = false;
 };
-
-
-AnalyzerBlock_Bool_Const_c::AnalyzerBlock_Bool_Const_c ( uint32_t & tRowID )
-	: m_tRowID ( tRowID )
-{}
 
 
 bool AnalyzerBlock_Bool_Const_c::SetupNextBlock ( const StoredBlock_Bool_Const_c & tBlock )
@@ -268,7 +250,7 @@ int AnalyzerBlock_Bool_Const_c::ProcessSubblock ( uint32_t * & pRowID, int iNumV
 class AnalyzerBlock_Bool_Bitmap_c
 {
 public:
-						AnalyzerBlock_Bool_Bitmap_c ( uint32_t & tRowID );
+						AnalyzerBlock_Bool_Bitmap_c ( uint32_t & tRowID ) : m_tRowID ( tRowID ) {}
 
 	FORCE_INLINE int	ProcessSubblock ( uint32_t * & pRowID, const Span_T<uint32_t> & dValues );
 	void				Setup ( bool bFilterValue ) { m_bFilterValue=bFilterValue; }
@@ -277,11 +259,6 @@ private:
 	uint32_t &			m_tRowID;
 	bool				m_bFilterValue = false;
 };
-
-
-AnalyzerBlock_Bool_Bitmap_c::AnalyzerBlock_Bool_Bitmap_c ( uint32_t & tRowID )
-	: m_tRowID ( tRowID )
-{}
 
 
 int AnalyzerBlock_Bool_Bitmap_c::ProcessSubblock ( uint32_t * & pRowID, const Span_T<uint32_t> & dValues )
@@ -333,8 +310,8 @@ private:
 
 	int			ProcessSubblockConst ( uint32_t * & pRowID, int iSubblockIdInBlock );
 	int			ProcessSubblockBitmap ( uint32_t * & pRowID, int iSubblockIdInBlock );
-	int			ProcessSubblockAny ( uint32_t * & pRowID, int iSubblockIdInBlock );
-	int			ProcessSubblockNone ( uint32_t * & pRowID, int iSubblockIdInBlock );
+	int			ProcessSubblockAny ( uint32_t * & pRowID, int iSubblockIdInBlock )	{ return m_tBlockConst.ProcessSubblock ( pRowID, ACCESSOR::GetNumSubblockValues(iSubblockIdInBlock) ); }
+	int			ProcessSubblockNone ( uint32_t * & pRowID, int iSubblockIdInBlock )	{ return iSubblockIdInBlock; }
 
 	bool		MoveToBlock ( int iNextBlock ) final;
 };
@@ -426,47 +403,9 @@ int Analyzer_Bool_T<HAVE_MATCHING_BLOCKS>::ProcessSubblockBitmap ( uint32_t * & 
 }
 
 template <bool HAVE_MATCHING_BLOCKS>
-int Analyzer_Bool_T<HAVE_MATCHING_BLOCKS>::ProcessSubblockAny ( uint32_t * & pRowID, int iSubblockIdInBlock )
-{
-	return m_tBlockConst.ProcessSubblock ( pRowID, ACCESSOR::GetNumSubblockValues(iSubblockIdInBlock) );
-}
-
-template <bool HAVE_MATCHING_BLOCKS>
-int Analyzer_Bool_T<HAVE_MATCHING_BLOCKS>::ProcessSubblockNone ( uint32_t * & pRowID, int iSubblockIdInBlock )
-{
-	return iSubblockIdInBlock;
-}
-
-template <bool HAVE_MATCHING_BLOCKS>
 bool Analyzer_Bool_T<HAVE_MATCHING_BLOCKS>::GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBlock )
 {
-	if ( ANALYZER::m_iCurSubblock>=ANALYZER::m_iTotalSubblocks )
-		return false;
-
-	uint32_t * pRowIdStart = ANALYZER::m_dCollected.data();
-	uint32_t * pRowID = pRowIdStart;
-	uint32_t * pRowIdMax = pRowIdStart + m_iSubblockSize;
-
-	// we scan until we find at least 128 (subblock size) matches.
-	// this might lead to this analyzer scanning the whole index
-	// a more responsive version would return after processing each 128 docs
-	// (even if it doesn't find any matches)
-	while ( pRowID<pRowIdMax )
-	{
-		int iSubblockIdInBlock;
-		if ( HAVE_MATCHING_BLOCKS )
-			iSubblockIdInBlock = ACCESSOR::GetSubblockIdInBlock ( ANALYZER::m_pMatchingSubblocks->GetBlock ( ANALYZER::m_iCurSubblock ) );
-		else
-			iSubblockIdInBlock = ACCESSOR::GetSubblockIdInBlock ( ANALYZER::m_iCurSubblock );
-
-		assert(m_fnProcessSubblock);
-		ANALYZER::m_iNumProcessed += (*this.*m_fnProcessSubblock) ( pRowID, iSubblockIdInBlock );
-
-		if ( !ANALYZER::MoveToSubblock ( ANALYZER::m_iCurSubblock+1 ) )
-			break;
-	}
-
-	return CheckEmptySpan ( pRowID, pRowIdStart, dRowIdBlock );
+	return ANALYZER::GetNextRowIdBlock ( (ACCESSOR&)*this, dRowIdBlock, [this] ( uint32_t * & pRowID, int iSubblockIdInBlock ){ return (*this.*m_fnProcessSubblock) ( pRowID, iSubblockIdInBlock ); } );
 }
 
 template <bool HAVE_MATCHING_BLOCKS>
@@ -474,8 +413,7 @@ bool Analyzer_Bool_T<HAVE_MATCHING_BLOCKS>::MoveToBlock ( int iNextBlock )
 {
 	while(true)
 	{
-		ANALYZER::m_iCurBlockId = iNextBlock;
-		ACCESSOR::SetCurBlock ( ANALYZER::m_iCurBlockId );
+		ANALYZER::StartBlockProcessing ( (ACCESSOR&)*this, iNextBlock );
 
 		if ( m_bAcceptFalse && m_bAcceptTrue )
 			break;
@@ -489,15 +427,7 @@ bool Analyzer_Bool_T<HAVE_MATCHING_BLOCKS>::MoveToBlock ( int iNextBlock )
 		if ( m_tBlockConst.SetupNextBlock ( ACCESSOR::m_tBlockConst ) )
 			break;
 
-		while ( iNextBlock==ANALYZER::m_iCurBlockId && ANALYZER::m_iCurSubblock<ANALYZER::m_iTotalSubblocks )
-		{
-			if ( HAVE_MATCHING_BLOCKS )
-				iNextBlock = ACCESSOR::SubblockId2BlockId ( ANALYZER::m_pMatchingSubblocks->GetBlock ( ANALYZER::m_iCurSubblock++ ) );
-			else
-				iNextBlock = ACCESSOR::SubblockId2BlockId ( ANALYZER::m_iCurSubblock++ );
-		}
-
-		if ( ANALYZER::m_iCurSubblock>=ANALYZER::m_iTotalSubblocks )
+		if ( !ANALYZER::RewindToNextBlock ( (ACCESSOR&)*this, iNextBlock ) )
 			return false;
 	}
 

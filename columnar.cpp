@@ -423,9 +423,6 @@ Analyzer_i * Columnar_c::CreateAnalyzer ( const Filter_t & tSettings, bool bHave
 	if ( !pHeader )
 		return nullptr;
 
-	if ( tSettings.m_eType!=FilterType_e::VALUES && tSettings.m_eType!=FilterType_e::RANGE && tSettings.m_eType!=FilterType_e::FLOATRANGE )
-		return nullptr;
-
 	std::unique_ptr<FileReader_c> pReader ( CreateFileReader() );
 	if ( !pReader )
 		return nullptr;
@@ -445,6 +442,9 @@ Analyzer_i * Columnar_c::CreateAnalyzer ( const Filter_t & tSettings, bool bHave
 	case AttrType_e::UINT32SET:
 	case AttrType_e::INT64SET:
 		return CreateAnalyzerMVA ( *pHeader, pReader.release(), tSettings, bHaveMatchingBlocks );
+
+	case AttrType_e::STRING:
+		return CreateAnalyzerStr ( *pHeader, pReader.release(), tSettings, bHaveMatchingBlocks );
 
 	default:
 		return nullptr;

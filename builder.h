@@ -22,9 +22,7 @@
 namespace columnar
 {
 
-static const uint32_t STORAGE_VERSION = 2;
-
-using StringHash_fn = uint64_t (*)( const uint8_t * pStr, int iLen, uint64_t uPrev );
+static const uint32_t STORAGE_VERSION = 5;
 
 struct SchemaAttr_t
 {

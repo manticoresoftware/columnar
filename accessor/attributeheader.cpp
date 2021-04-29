@@ -231,12 +231,12 @@ std::pair<int64_t,int64_t> AttributeHeader_Int_T<float>::GetMinMax ( int iLevel,
 
 //////////////////////////////////////////////////////////////////////////
 
-class AttributeHeader_String_c : public AttributeHeader_c
+class AttributeHeader_String_c : public AttributeHeader_Int_T<uint32_t>
 {
-	using BASE = AttributeHeader_c;
+	using BASE = AttributeHeader_Int_T<uint32_t>;
 
 public:
-			AttributeHeader_String_c ( uint32_t uTotalDocs );
+			AttributeHeader_String_c ( uint32_t uTotalDocs ) : BASE ( AttrType_e::STRING, uTotalDocs ) {}
 
 	bool	HaveStringHashes() const final { return m_bHaveHashes; }
 	bool	Load ( FileReader_c & tReader, std::string & sError ) override;
@@ -244,11 +244,6 @@ public:
 private:
 	bool	m_bHaveHashes = false;
 };
-
-
-AttributeHeader_String_c::AttributeHeader_String_c ( uint32_t uTotalDocs )
-	: BASE ( AttrType_e::STRING, uTotalDocs )
-{}
 
 
 bool AttributeHeader_String_c::Load ( FileReader_c & tReader, std::string & sError )

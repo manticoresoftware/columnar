@@ -28,6 +28,7 @@ class AttributeHeader_i;
 struct IteratorHints_t;
 
 Iterator_i * CreateIteratorStr ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const IteratorHints_t & tHints );
+Analyzer_i * CreateAnalyzerStr ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings, bool bHaveMatchingBlocks );
 
 } // namespace columnar
 
