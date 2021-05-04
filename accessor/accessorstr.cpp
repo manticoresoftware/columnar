@@ -292,7 +292,7 @@ public:
 	FORCE_INLINE Span_T<uint8_t> GetValue ( int iIdInSubblock );
 	FORCE_INLINE uint64_t	GetHash ( int iIdInSubblock ) const			{ return BASE::GetHash ( m_dValueIndexes[iIdInSubblock] ); }
 
-	FORCE_INLINE int		GetTableSize() const						{ return (int)m_dTableValueLengths.size(); }
+	FORCE_INLINE int		GetTableSize() const						{ return (int)m_dTableValues.size(); }
 	FORCE_INLINE uint64_t	GetTableValueHash ( int iId ) const			{ return BASE::GetHash(iId); }
 	FORCE_INLINE int		GetTableValueLength ( int iId ) const		{ return m_dTableValueLengths[iId]; }
 	FORCE_INLINE Span_T<const uint8_t> GetTableValue ( int iId ) const	{ return Span_T<const uint8_t> ( m_dTableValues[iId].data(), m_dTableValues[iId].size() ); }
@@ -343,7 +343,7 @@ void StoredBlock_StrTable_c::ReadHeader ( FileReader_c & tReader, int iValues, b
 	else
 	{
 		tReader.Seek ( tReader.GetPos() + uTotalSizeOfLengths + uTotalSizeOfValues );	// skip lengths and values
-		m_dTableValueLengths.resize(iValues);
+		m_dTableValueLengths.resize ( m_dTableValues.size() );
 	}
 
 	m_iBits = CalcNumBits ( m_dTableValues.size() );
