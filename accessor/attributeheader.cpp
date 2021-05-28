@@ -174,7 +174,9 @@ bool AttributeHeader_c::Load ( FileReader_c & tReader, std::string & sError )
 
 	m_dBlocks.resize ( tReader.Unpack_uint32() );
 
-	m_dBlocks[0] = uOffset;
+	if ( !m_dBlocks.empty() )
+		m_dBlocks[0] = uOffset;
+
 	for ( size_t i=1; i < m_dBlocks.size(); i++ )
 		m_dBlocks[i] = tReader.Unpack_uint64() + m_dBlocks[i-1];
 

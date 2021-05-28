@@ -23,7 +23,7 @@
 namespace columnar
 {
 
-static const int LIB_VERSION = 7;
+static const int LIB_VERSION = 8;
 
 class Iterator_i
 {
@@ -140,7 +140,6 @@ struct Settings_t
 	void		Save ( FileWriter_c & tWriter );
 };
 
-using GetAttrId_fn = std::function<int(std::string)>;
 
 class Columnar_i
 {
@@ -148,9 +147,10 @@ public:
 	virtual					~Columnar_i() = default;
 
 	virtual Iterator_i *	CreateIterator ( const std::string & sName, const IteratorHints_t & tHints, std::string & sError ) const = 0;
-	virtual std::vector<BlockIterator_i *> CreateAnalyzerOrPrefilter ( const std::vector<Filter_t> & dFilters, std::vector<int> & dDeletedFilters, const BlockTester_i & tBlockTester, const GetAttrId_fn & fnGetAttrId ) const = 0;
+	virtual std::vector<BlockIterator_i *> CreateAnalyzerOrPrefilter ( const std::vector<Filter_t> & dFilters, std::vector<int> & dDeletedFilters, const BlockTester_i & tBlockTester ) const = 0;
+	virtual int				GetAttributeId ( const std::string & sName ) const = 0;
 
-	virtual bool			EarlyReject ( const std::vector<Filter_t> & dFilters, const BlockTester_i & tBlockTester, const GetAttrId_fn & fnGetAttrId ) const = 0;
+	virtual bool			EarlyReject ( const std::vector<Filter_t> & dFilters, const BlockTester_i & tBlockTester ) const = 0;
 	virtual bool			IsFilterDegenerate ( const Filter_t & tFilter ) const = 0;
 };
 
