@@ -18,7 +18,7 @@ sudo wget https://repo.manticoresearch.com/manticore-dev-repo.noarch.deb
 sudo dpkg -i manticore-dev-repo.noarch.deb
 sudo apt-key adv --fetch-keys 'http://repo.manticoresearch.com/GPG-KEY-manticore'
 sudo apt update
-sudo apt install manticore manticore-columnar
+sudo apt install manticore manticore-columnar-lib
 ```
 
 #### Centos:
