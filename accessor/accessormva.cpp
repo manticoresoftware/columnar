@@ -597,6 +597,8 @@ public:
 template <typename T>
 uint32_t Iterator_MVA_T<T>::AdvanceTo ( uint32_t tRowID )
 {
+	assert ( tRowID < BASE::m_tHeader.GetNumDocs() );
+
 	uint32_t uBlockId = RowId2BlockId(tRowID);
 	if ( uBlockId!=BASE::m_uBlockId )
 		BASE::SetCurBlock(uBlockId);

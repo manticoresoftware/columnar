@@ -193,6 +193,8 @@ public:
 
 uint32_t Iterator_Bool_c::AdvanceTo ( uint32_t tRowID )
 {
+	assert ( tRowID < BASE::m_tHeader.GetNumDocs() );
+
 	uint32_t uBlockId = RowId2BlockId(tRowID);
 	if ( uBlockId!=BASE::m_uBlockId )
 		BASE::SetCurBlock(uBlockId);

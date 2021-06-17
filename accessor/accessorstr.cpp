@@ -650,6 +650,8 @@ int Accessor_String_c::ReadSubblock ( T & tSubblock )
 
 class Iterator_String_c : public Iterator_i, public Accessor_String_c
 {
+	using BASE = Accessor_String_c;
+
 public:
 				Iterator_String_c ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const IteratorHints_t & tHints );
 
@@ -673,6 +675,8 @@ Iterator_String_c::Iterator_String_c ( const AttributeHeader_i & tHeader, FileRe
 
 uint32_t Iterator_String_c::AdvanceTo ( uint32_t tRowID )
 {
+	assert ( tRowID < BASE::m_tHeader.GetNumDocs() );
+
 	if ( m_tRequestedRowID==tRowID ) // might happen on GetLength/Get calls
 		return tRowID;
 
