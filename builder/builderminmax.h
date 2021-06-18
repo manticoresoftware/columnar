@@ -14,8 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef _builderminmax_
-#define _builderminmax_
+#pragma once
 
 #include "attributeheader.h"
 
@@ -217,5 +216,3 @@ inline bool MinMaxBuilder_T<float>::SaveTreeLevels ( FileWriter_c & tWriter ) co
 }
 
 } // namespace columnar
-
-#endif // _builderminmax_

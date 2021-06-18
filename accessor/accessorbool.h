@@ -14,8 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef _accessorbool_
-#define _accessorbool_
+#pragma once
 
 #include "builder.h"
 #include "accessor.h"
@@ -32,5 +31,3 @@ Iterator_i * CreateIteratorBool ( const AttributeHeader_i & tHeader, FileReader_
 Analyzer_i * CreateAnalyzerBool ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings, bool bHaveMatchingBlocks );
 
 } // namespace columnar
-
-#endif // _columnaraccessorbool_

@@ -14,8 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef _interval_
-#define _interval_
+#pragma once
 
 namespace columnar
 {
@@ -48,5 +47,3 @@ inline bool ValueInInterval ( T tValue, T tMin, T tMax )
 }
 
 } // namespace columnar
-
-#endif // interval

@@ -14,8 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef _builder_
-#define _builder_
+#pragma once
 
 #include "columnar.h"
 
@@ -50,5 +49,3 @@ extern "C"
 {
 	DLLEXPORT columnar::Builder_i * CreateColumnarBuilder ( const columnar::Settings_t & tSettings, const columnar::Schema_t & tSchema, const std::string & sFile, std::string & sError );
 }
-
-#endif // _builder_

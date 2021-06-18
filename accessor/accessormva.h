@@ -14,8 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef _accessormva_
-#define _accessormva_
+#pragma once
 
 namespace columnar
 {
@@ -30,5 +29,3 @@ Iterator_i * CreateIteratorMVA ( const AttributeHeader_i & tHeader, FileReader_c
 Analyzer_i * CreateAnalyzerMVA ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings, bool bHaveMatchingBlocks );
 
 } // namespace columnar
-
-#endif // _accessormva_

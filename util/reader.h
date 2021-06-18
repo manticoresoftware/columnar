@@ -14,11 +14,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef _reader_
-#define _reader_
+#pragma once
 
 #include "util.h"
-#include "assert.h"
+#include <cassert>
 
 namespace columnar
 {
@@ -130,5 +129,3 @@ private:
 };
 
 } // namespace columnar
-
-#endif // reader

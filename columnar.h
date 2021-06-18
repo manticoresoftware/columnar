@@ -14,8 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef _columnar_
-#define _columnar_
+#pragma once
 
 #include "util/util.h"
 #include <functional>
@@ -164,5 +163,3 @@ extern "C"
 	DLLEXPORT int						GetColumnarLibVersion();
 	DLLEXPORT const char *				GetColumnarLibVersionStr();
 }
-
-#endif // _columnar_

@@ -14,8 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef _builderint_
-#define _builderint_
+#pragma once
 
 #include "util.h"
 
@@ -48,5 +47,3 @@ Packer_i * CreatePackerUint64 ( const Settings_t & tSettings, const std::string 
 Packer_i * CreatePackerFloat ( const Settings_t & tSettings, const std::string & sName );
 
 } // namespace columnar
-
-#endif // _builderint_

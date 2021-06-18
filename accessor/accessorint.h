@@ -14,8 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef _accessorint_
-#define _accessorint_
+#pragma once
 
 #include "builder.h"
 
@@ -32,5 +31,3 @@ Iterator_i * CreateIteratorUint64 ( const AttributeHeader_i & tHeader, FileReade
 Analyzer_i * CreateAnalyzerInt ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings );
 
 } // namespace columnar
-
-#endif // _accessorint_

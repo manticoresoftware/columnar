@@ -14,8 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef _accessor_
-#define _accessor_
+#pragma once
 
 #include "columnar.h"
 #include "builder.h"
@@ -51,5 +50,3 @@ public:
 bool	CheckEmptySpan ( uint32_t * pRowID, uint32_t * pRowIdStart, Span_T<uint32_t> & dRowIdBlock );
 
 } // namespace columnar
-
-#endif // _accessor_

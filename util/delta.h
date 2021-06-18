@@ -14,8 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef _delta_
-#define _delta_
+#pragma once
 
 #include "util.h"
 
@@ -30,5 +29,3 @@ void	ComputeInverseDeltas ( std::vector<uint32_t> & dData, bool bAsc );
 void	ComputeInverseDeltas ( std::vector<uint64_t> & dData, bool bAsc );
 
 }
-
-#endif // delta

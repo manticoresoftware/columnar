@@ -14,8 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef _builderbool_
-#define _builderbool_
+#pragma once
 
 #include "util.h"
 
@@ -36,5 +35,3 @@ struct Settings_t;
 Packer_i * CreatePackerBool ( const Settings_t & tSettings, const std::string & sName );
 
 } // namespace columnar
-
-#endif // _builderbool_

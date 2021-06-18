@@ -14,13 +14,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef _buildertraits_
-#define _buildertraits_
+#pragma once
 
-#include <assert.h>
 #include "builder.h"
 #include "util.h"
 #include "delta.h"
+#include <cassert>
 
 namespace columnar
 {
@@ -238,5 +237,3 @@ void WriteTableOrdinals ( UNIQ_VEC & dUniques, UNIQ_HASH & hUnique, COLLECTED & 
 IntCodec_i * CreateIntCodec ( const std::string & sCodec32, const std::string & sCodec64 );
 
 } // namespace columnar
-
-#endif // _buildertraits_

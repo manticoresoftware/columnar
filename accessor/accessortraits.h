@@ -14,15 +14,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef _accessortraits_
-#define _accessortraits_
+#pragma once
 
-#include <assert.h>
 #include "accessor.h"
 #include "buildertraits.h"
 #include "builderint.h"
 #include "reader.h"
 #include "delta.h"
+#include <cassert>
 
 #if _WIN32
 	#include "intrin.h"
@@ -383,5 +382,3 @@ FORCE_INLINE uint32_t PackValue ( const Span_T<T> & dValue, uint8_t * & pValue )
 }
 
 } // namespace columnar
-
-#endif // _accessortraits_

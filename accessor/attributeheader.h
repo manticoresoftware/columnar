@@ -14,8 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef _attributeheader_
-#define _attributeheader_
+#pragma once
 
 #include "columnar.h"
 
@@ -51,5 +50,3 @@ public:
 AttributeHeader_i * CreateAttributeHeader ( AttrType_e eType, uint32_t uTotalDocs, std::string & sError );
 
 } // namespace columnar
-
-#endif // _attributeheader_
