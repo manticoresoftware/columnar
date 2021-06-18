@@ -44,7 +44,7 @@ simple_tests:
     CACHEB: "../cache"
     CTEST_CMAKE_GENERATOR: "Ninja"
   script:
-    - ctest -V -S cmake/citest.cmake
+    - ctest -VV -S cmake/citest.cmake
   after_script:
     - cmake -P misc/junit/citestresult.cmake
   artifacts:
