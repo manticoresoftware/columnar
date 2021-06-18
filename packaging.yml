@@ -1,0 +1,209 @@
+# global settings will be applied to all jobs
+variables:
+  CMAKE_INTERPROCEDURAL_OPTIMIZATION: 1
+
+stages:
+  - build
+  - repoupload
+
+workflow:
+  rules:
+    - when: always
+
+.redhat_based:
+  stage: build
+  interruptible: true
+  tags:
+    - docker
+  variables:
+    CACHEB: "cache"
+  script:
+    - ln -s $(pwd) /manticore012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789/src
+    - cd /manticore012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789/src
+    - cmake -GNinja -DPACK=1 .
+    - cmake --build . --target package
+  artifacts:
+    paths:
+      - manticore*.rpm
+    when: on_success
+    expire_in: 12 hrs
+  cache:
+    paths:
+      - cache
+
+.debian_based:
+  stage: build
+  interruptible: true
+  tags:
+    - docker
+  variables:
+    CACHEB: "cache"
+  script:
+    - cmake -GNinja -DPACK=1 .
+    - cmake --build . --target package
+  artifacts:
+    paths:
+      - manticore*deb
+    when: on_success
+    expire_in: 12 hrs
+  cache:
+    paths:
+      - cache
+
+.collect_job:
+  variables:
+    GIT_STRATEGY: none
+  stage: repoupload
+  interruptible: true
+  cache: { }
+  tags:
+    - dev-host
+
+
+osx:
+  stage: build
+  interruptible: true
+  retry: 1
+  variables:
+    CACHEB: "cache"
+  tags:
+    - mac
+    - build
+  script:
+    - cmake -GNinja -DDISTR_BUILD=macos .
+    - cmake --build . --target package
+  artifacts:
+    paths:
+      - manticore-*.tar.gz
+    when: on_success
+    expire_in: 12 hrs
+  cache:
+    key: mojave_columnar
+    paths:
+      - cache
+
+collect_osx:
+  extends: [ .collect_job ]
+  needs: [ osx ]
+  script: [ ~/upload_repo_arc.sh ]
+
+windows:
+  stage: build
+  interruptible: true
+  tags:
+    - windev19
+    - build
+  variables:
+    CACHEB: "x:/cache"
+  script:
+    - 'net use x: \\\\VBOXSRV\\shared'
+    - cmake -DDISTR_BUILD=windows .
+    - cmake --build . --target package --config RelWithDebInfo
+  artifacts:
+    paths:
+      - manticore-*.zip
+    when: on_success
+    expire_in: 12 hrs
+
+collect_windows:
+  extends: [ .collect_job ]
+  needs: [ windows ]
+  script: [ ~/upload_repo_arc.sh ]
+
+
+rhel7:
+  extends: [ .redhat_based ]
+  image: registry.gitlab.com/manticoresearch/dev/centos7_cmake:320
+  cache:
+    key: rhel7_columnar
+
+collect_rhel7:
+  extends: [ .collect_job ]
+  script: [ ~/upload_repo_rpm.sh ]
+  variables:
+    DISTRO: 7
+  needs: [ rhel7 ]
+
+
+rhel8:
+  extends: [ .redhat_based ]
+  image: registry.gitlab.com/manticoresearch/dev/centos8_cmake:320
+  cache:
+    key: rhel8_columnar
+
+collect_rhel8:
+  extends: [ .collect_job ]
+  script: [ ~/upload_repo_rpm.sh ]
+  variables:
+    DISTRO: 8
+  needs: [ rhel8 ]
+
+
+stretch:
+  extends: [ .debian_based ]
+  image: registry.gitlab.com/manticoresearch/dev/stretch_cmake:320
+  cache:
+    key: stretch_columnar
+
+collect_stretch:
+  extends: [ .collect_job ]
+  script: [ ~/upload_repo_deb.sh ]
+  variables:
+    DISTRO: stretch
+  needs: [ stretch ]
+
+
+xenial:
+  extends: [ .debian_based ]
+  image: registry.gitlab.com/manticoresearch/dev/xenial_cmake:320
+  cache:
+    key: xenial_columnar
+
+collect_xenial:
+  extends: [ .collect_job ]
+  script: [ ~/upload_repo_deb.sh ]
+  variables:
+    DISTRO: xenial
+  needs: [ xenial ]
+
+
+bionic:
+  extends: [ .debian_based ]
+  image: registry.gitlab.com/manticoresearch/dev/bionic_cmake:320
+  cache:
+    key: bionic_columnar
+
+collect_bionic:
+  extends: [ .collect_job ]
+  script: [ ~/upload_repo_deb.sh ]
+  variables:
+    DISTRO: bionic
+  needs: [ bionic ]
+
+
+focal:
+  extends: [ .debian_based ]
+  image: registry.gitlab.com/manticoresearch/dev/focal_cmake:320
+  cache:
+    key: focal_columnar
+
+collect_focal:
+  extends: [ .collect_job ]
+  script: [ ~/upload_repo_deb.sh ]
+  variables:
+    DISTRO: focal
+  needs: [ focal ]
+
+
+buster:
+  extends: [ .debian_based ]
+  image: registry.gitlab.com/manticoresearch/dev/buster_cmake:320
+  cache:
+    key: buster_columnar
+
+collect_buster:
+  extends: [ .collect_job ]
+  script: [ ~/upload_repo_deb.sh ]
+  variables:
+    DISTRO: buster
+  needs: [ buster ]

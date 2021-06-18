@@ -1,17 +1,23 @@
+# global settings will be applied to all jobs
+variables:
+  VERBOSE: 1
+  DIAGNOSTIC: 1
+
 workflow:
   rules:
     - if: $CI_MERGE_REQUEST_ID
     - if: $CI_COMMIT_TAG
     - if: $CI_COMMIT_BRANCH == "master" && $CI_COMMIT_TITLE != $DOCS_AUTOCOMMIT_TITLE
-    - if: $CI_COMMIT_BRANCH =~ /^manticore-.*$/ && $CI_COMMIT_TITLE != $DOCS_AUTOCOMMIT_TITLE
-    - if: $TEST || $WHAT
+    - if: $CI_COMMIT_BRANCH =~ /^columnar-.*$/ && $CI_COMMIT_TITLE != $DOCS_AUTOCOMMIT_TITLE
+    - if: $TEST
 
 # to skip ci add [ci skip] or [skip ci] in commit message in any capitalization
 
 stages:
   - mirroring
-  - build
+  - routines
   - publish
+  - hooks
 
 job_mirror:
   stage: mirroring
@@ -24,110 +30,120 @@ job_mirror:
     - ~/gitsync_columnar.sh
   cache: {}
 
-osx:
-  stage: build
-  interruptible: true
-  retry: 1
+simple_tests:
+  stage: routines
+  needs: [ ]
+  rules:
+    - if: $TEST==null
+    - if: $TEST =~ /simple/
   tags:
-    - mac
-    - build
+    - docker
+  image: registry.gitlab.com/manticoresearch/dev/ubertests_public:320
+  variables:
+    CTEST_BUILD_CONFIGURATION: "Debug"
+    CACHEB: "../cache"
+    CTEST_CMAKE_GENERATOR: "Ninja"
   script:
-    - cmake -DBUILD_TAG=$RELEASE_TAG -DDISTR=macos -DPACK_COLUMNAR=1 .
-    - make -j2 package
+    - ctest -V -S cmake/citest.cmake
+  after_script:
+    - cmake -P misc/junit/citestresult.cmake
   artifacts:
-    paths:
-      - manticore-*.tar.gz
-    when: on_success
+    reports:
+      junit: build/junit_*.xml
     expire_in: 12 hrs
+    when: always
+  cache:
+    key: bionic
+    paths:
+      - cache
+  retry: 1
 
-windows:
-  stage: build
-  interruptible: true
+
+release_tests:
+  stage: routines
+  needs: [ ]
+  rules:
+    - if: $TEST==null
+    - if: $TEST =~ /release/
+  tags:
+    - docker
+  image: registry.gitlab.com/manticoresearch/dev/ubertests_public:320
+  variables:
+    CTEST_BUILD_CONFIGURATION: "RelWithDebInfo"
+    CACHEB: "../cache"
+    CTEST_CMAKE_GENERATOR: "Ninja"
+    CMAKE_INTERPROCEDURAL_OPTIMIZATION: 1
+  script:
+    - ctest -V -S cmake/citest.cmake
+  after_script:
+    - cmake -P misc/junit/citestresult.cmake
+  artifacts:
+    reports:
+      junit: build/junit_*.xml
+    expire_in: 12 hrs
+    when: always
+  cache:
+    key: bionic_release
+    paths:
+      - cache
+  retry: 1
+
+
+win_tests:
+  stage: routines
+  rules:
+    - if: $TEST==null
+    - if: $TEST =~ /windows/
   tags:
     - windev19
     - build
+  needs: [ ]
+  variables:
+    LIBS_BUNDLE: "x:/bundle"
+    CACHEB: "x:/cache"
+    BOOST_ROOT: "x:/boost_1_75_0"
+    CTEST_CMAKE_GENERATOR: "Visual Studio 16 2019"
   script:
     - 'net use x: \\\\VBOXSRV\\shared'
-    - cmake -DPACK=1 -DBUILD_TAG=$RELEASE_TAG -DDISTR=default -DPACK_COLUMNAR=1 .
-    - cmake --build . --target package
+    - ctest -V -S cmake/citest.cmake -C Debug
   artifacts:
     paths:
-      - manticore-*.zip
-    when: on_success
+      - build/Testing/2*/*.xml
     expire_in: 12 hrs
+    when: always
+  cache: { }
+  retry: 1
 
-.redhat_based:
-  stage: build
-  interruptible: true
-  tags:
-    - docker
-  script:
-    - ln -s $(pwd) /manticore012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789/src
-    - cd /manticore012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789/src
-    - cmake -DPACK=1 -DBUILD_TAG=$RELEASE_TAG -DPACK_COLUMNAR=1 .
-    - make -j4 package
-  artifacts:
-    paths:
-      - manticore*.rpm
-    when: on_success
-    expire_in: 12 hrs
-
-.debian_based:
-  stage: build
-  interruptible: true
-  tags:
-    - docker
-  script:
-    - cmake -DPACK=1 -DBUILD_TAG=$RELEASE_TAG -DPACK_COLUMNAR=1 .
-    - make -j4 package
-  artifacts:
-    paths:
-      - manticore*deb
-    when: on_success
-    expire_in: 12 hrs
-
-rhel7:
-  extends:
-    - .redhat_based
-  image: registry.gitlab.com/manticoresearch/dev/centos7_cmake:317
-
-rhel8:
-  extends:
-    - .redhat_based
-  image: registry.gitlab.com/manticoresearch/dev/centos8_cmake:317
-
-stretch:
-  extends:
-    - .debian_based
-  image: registry.gitlab.com/manticoresearch/dev/stretch_cmake:317
-
-xenial:
-  extends:
-    - .debian_based
-  image: registry.gitlab.com/manticoresearch/dev/xenial_cmake:317
-
-bionic:
-  extends:
-    - .debian_based
-  image: registry.gitlab.com/manticoresearch/dev/bionic_cmake:317
-
-focal:
-  extends:
-    - .debian_based
-  image: registry.gitlab.com/manticoresearch/dev/focal_cmake:317
-
-buster:
-  extends:
-    - .debian_based
-  image: registry.gitlab.com/manticoresearch/dev/buster_cmake:317
-
-collect_repo:
+# convert ctest reports from windows to junit (don't want to work with php/xslt there)
+push_win_results:
   stage: publish
-  interruptible: true
+  needs: [ win_tests ]
   tags:
-    - dev-host
+    - docker
+  image: registry.gitlab.com/manticoresearch/dev/ubertests_public:320
+  variables:
+    GIT_STRATEGY: fetch
   script:
-    - echo "Collected packages"
-    - ls -1
-    - ~/upload_repo.sh
-  dependencies: [rhel7, rhel8, stretch, xenial, bionic, buster, focal, osx, windows]
+    - cmake -P misc/junit/citestresult.cmake
+  artifacts:
+    reports:
+      junit: build/junit_*.xml
+  cache: { }
+  retry: 1
+  allow_failure: true
+
+
+deploy_hook:
+  stage: hooks
+  rules:
+    - if: $CI_COMMIT_TITLE !~ /^noci .*$/i
+      when: always
+  trigger:
+    include: packaging.yml
+  needs:
+    - job: simple_tests
+      artifacts: false
+    - job: release_tests
+      artifacts: false
+    - job: win_tests
+      artifacts: false
