@@ -1,4 +1,4 @@
-cmake_minimum_required ( VERSION 2.8.12 )
+cmake_minimum_required ( VERSION 3.17 )
 
 # guess version strings from current git repo
 function(guess_from_git)
@@ -22,7 +22,7 @@ function(guess_from_git)
 
 	# extract timestamp and make number YYMMDD from it
 	# it would be --date=format:%y%m%d, but old git on centos doesn't understand it
-	execute_process(COMMAND "${GIT_EXECUTABLE}" log -1 --date=short --format=%ad
+	execute_process(COMMAND "${GIT_EXECUTABLE}" log -1 --date=short --format=%cd
 			WORKING_DIRECTORY "${SOURCE_DIR}"
 			RESULT_VARIABLE res
 			OUTPUT_VARIABLE GIT_TIMESTAMP_ID
@@ -39,7 +39,7 @@ function(guess_from_git)
 			OUTPUT_VARIABLE GIT_EPOCH_ID
 			ERROR_QUIET
 			OUTPUT_STRIP_TRAILING_WHITESPACE)
-	set(SOURCE_DATE_EPOCH ${GIT_EPOCH_ID} PARENT_SCOPE)
+	set( ENV{SOURCE_DATE_EPOCH} ${GIT_EPOCH_ID} )
 
 	# extract branch name (top of 'git status -s -b'), throw out leading '## '
 	execute_process(COMMAND "${GIT_EXECUTABLE}" status -s -b
@@ -56,9 +56,7 @@ endfunction()
 # guess version strings from template header file (git archive mark it there)
 function(extract_from_git_slug HEADER)
 	if (EXISTS "${HEADER}")
-		FILE(READ "${HEADER}" _CONTENT)
-		# replace lf into ';' (it makes list from the line)
-		STRING(REGEX REPLACE "\n" ";" _CONTENT "${_CONTENT}")
+		FILE ( STRINGS "${HEADER}" _CONTENT )
 		foreach (LINE ${_CONTENT})
 			# match definitions like - // GIT_*_ID VALUE
 			if ("${LINE}" MATCHES "^//[ \t]+(GIT_.*_ID)[ \t]\"(.*)\"")
@@ -75,7 +73,7 @@ function(extract_from_git_slug HEADER)
 		string(SUBSTRING "${GIT_TIMESTAMP_ID}" 2 6 GIT_TIMESTAMP_ID)
 		set(GIT_TIMESTAMP_ID "${GIT_TIMESTAMP_ID}" PARENT_SCOPE)
 		# epoch for packaging
-		set(SOURCE_DATE_EPOCH ${GIT_EPOCH_ID} PARENT_SCOPE)
+		set( ENV{SOURCE_DATE_EPOCH} ${GIT_EPOCH_ID})
 		# branch id
 		set(GIT_BRANCH_ID "from tarball" PARENT_SCOPE)
 	endif ()
@@ -95,37 +93,7 @@ endif ()
 # nothing found
 if ( NOT GIT_COMMIT_ID )
 	set(GIT_TIMESTAMP_ID "000000")
-	set(GIT_COMMIT_ID "00000000")
+	set(GIT_COMMIT_ID "deadbeef")
 	set(GIT_BRANCH_ID "developer version")
-	set(SOURCE_DATE_EPOCH "1607089638")
+	set( ENV{SOURCE_DATE_EPOCH} "1607089638")
 endif ()
-
-# extract version number string from version.h.in
-if ( NOT VERSION_STR )
-	FILE ( STRINGS "${SOURCE_DIR}/util/version.h.in" _STRINGS LIMIT_COUNT 500
-			REGEX "^#define[ \t]+VERSION_STR.*" )
-	STRING ( REGEX REPLACE ".*\"(.*)\"(.*)$" "\\1" VERSION_STR "${_STRINGS}" )
-endif()
-
-# All info collected (we need GIT_COMMIT_ID, GIT_TIMESTAMP_ID and GIT_BRANCH_ID)
-set ( VERFILE "${BINARY_DIR}/config/gen_version.h" )
-
-configure_file ( "${SOURCE_DIR}/util/version.h.in" "${VERFILE}1" )
-file ( MD5 "${VERFILE}1" VERNEW )
-set ( NEED_NEWFILE TRUE )
-
-if ( EXISTS "${VERFILE}" )
-	file ( MD5 "${VERFILE}" VEROLD )
-	if ( VEROLD STREQUAL VERNEW )
-		set ( NEED_NEWFILE FALSE )
-	endif()
-endif()
-
-if ( NEED_NEWFILE )
-	message ( STATUS "Version ${VERSION_STR} ${GIT_COMMIT_ID}@${GIT_TIMESTAMP_ID}, ${GIT_BRANCH_ID}" )
-	configure_file ( "${VERFILE}1" "${VERFILE}" COPYONLY )
-	file ( REMOVE "${VERFILE}1" )
-	configure_file("${SOURCE_DIR}/cmake/CPackOptions.cmake.in" "${BINARY_DIR}/config/CPackOptions.cmake" @ONLY)
-else()
-	message ( STATUS "Version not changed: ${VERSION_STR} ${GIT_COMMIT_ID}@${GIT_TIMESTAMP_ID}, ${GIT_BRANCH_ID}" )
-endif()

@@ -1,4 +1,4 @@
-#define VERSION_STR "1.0.1"
+#define VERSION_STR "@VERSION_STR@"
 // GIT_COMMIT_ID "$Format:%h$"
 // GIT_TIMESTAMP_ID "$Format:%ai$"
 // GIT_EPOCH_ID "$Format:%ct$"

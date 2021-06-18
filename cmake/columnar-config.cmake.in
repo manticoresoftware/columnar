@@ -1,0 +1,13 @@
+@PACKAGE_INIT@
+
+if(NOT TARGET columnar::columnar)
+    include("${CMAKE_CURRENT_LIST_DIR}/columnar-targets.cmake")
+    if(TARGET columnar::columnar)
+        get_target_property ( configs columnar::columnar IMPORTED_CONFIGURATIONS )
+        foreach (config DEBUG RELEASE MINSIZEREL)
+            if (NOT ${config} IN_LIST configs)
+                set_property ( TARGET columnar::columnar PROPERTY MAP_IMPORTED_CONFIG_${config} RelWithDebInfo )
+            endif ()
+        endforeach ()
+    endif()
+endif()

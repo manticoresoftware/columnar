@@ -14,199 +14,192 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required ( VERSION 2.8 )
-include("CMakePrintHelpers")
+cmake_minimum_required ( VERSION 3.17 )
 
-# Set a default build type if none was specified
-set(default_build_type "RelWithDebInfo")
+FOREACH (policy CMP0048 CMP0090 CMP0092 CMP0117 )
+	IF (POLICY ${policy})
+		CMAKE_POLICY ( SET ${policy} NEW )
+	ENDIF ()
+ENDFOREACH ()
 
-if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
-  message(STATUS "Setting build type to '${default_build_type}' as none was specified.")
-  set(CMAKE_BUILD_TYPE "${default_build_type}" CACHE
-      STRING "Choose the type of build." FORCE)
-  # Set the possible values of build type for cmake-gui
-  set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
-    "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
-endif()
+set ( CMAKE_INTERPROCEDURAL_OPTIMIZATION $ENV{CMAKE_INTERPROCEDURAL_OPTIMIZATION})
 
-project ( columnar )
-SET ( columnar_CMAKE_DIR "${columnar_SOURCE_DIR}/cmake" )
+project ( columnar VERSION 1.8.1 )
+SET ( CMAKE_CXX_STANDARD 14 )
 SET ( CMAKE_MODULE_PATH "${columnar_SOURCE_DIR}/cmake" )
 
-# getting library version from version.h.in
-include( GetVersion )
-get_library_version( VERSION_STR "${CMAKE_CURRENT_SOURCE_DIR}/util/version.h.in" )
+# helpers vars to shorten generate lines
+set ( GNUCXX "$<COMPILE_LANG_AND_ID:CXX,Clang,AppleClang,GNU>" )
+set ( GNUC "$<COMPILE_LANG_AND_ID:C,Clang,AppleClang,GNU>" )
+set ( GNUC_CXX "$<OR:${GNUCXX},${GNUC}>" )
 
-set ( GCC_OR_CLANG 0 )
-if ( CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang" )
-	set ( GCC_OR_CLANG 1 )
-endif()
+# main interface target to export/expose headers
+# Note, first we provide headers which will be available even if build of the main lib itself will not succeed
+# (say, on aarch64 because of absent fastpfor). But as api target is already exposed, consumers still can use it.
+add_library ( columnar_api INTERFACE )
 
-# override default /MD
-if ( MSVC )
-	set ( CMAKE_CXX_FLAGS_DEBUG_INIT "/D_DEBUG /MTd /Zi /Ob0 /Od /RTC1 /GR-" )
-	set ( CMAKE_CXX_FLAGS_MINSIZEREL_INIT "/MT /O1 /Ob1 /D NDEBUG /GR-" )
-	set ( CMAKE_CXX_FLAGS_RELEASE_INIT "/MT /O2 /Ob2 /D NDEBUG /GR-" )
-	set ( CMAKE_CXX_FLAGS_RELWITHDEBINFO_INIT "/MT /Zi /O2 /Ob2 /D NDEBUG /GR-" )
-	set ( CMAKE_CXX_STANDARD_LIBRARIES_INIT "kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib" )
-elseif ( GCC_OR_CLANG )
-	add_definitions ( "-D_FILE_OFFSET_BITS=64" )
-endif()
-
-if (DEFINED ENV{LIBS_BUNDLE})
-	set(LIBS_BUNDLE "$ENV{LIBS_BUNDLE}")
-endif()
-
-if ( NOT LIBS_BUNDLE )
-	get_filename_component(LIBS_BUNDLE "${CMAKE_CURRENT_SOURCE_DIR}/../bundle" ABSOLUTE)
+# interface property, so that consumer will fire an error on configure time if API version is not match
+FILE ( STRINGS columnar.h _verlist LIMIT_COUNT 1 REGEX "LIB_VERSION" )
+STRING ( REGEX MATCH "[0-9]+" API_VER "${_verlist}" )
+set_property ( TARGET columnar_api PROPERTY INTERFACE_COLUMNAR_API_VERSION ${API_VER} ) # must be reconfigured if version in columnar.h changes
+set_property ( TARGET columnar_api APPEND PROPERTY COMPATIBLE_INTERFACE_STRING COLUMNAR_API_VERSION )
+if (NOT PROJECT_VERSION_MINOR EQUAL API_VER)
+	message ( FATAL_ERROR "Minor (${PROJECT_VERSION_MINOR}) of project version ${PROJECT_VERSION} is not equal to LIB_VERSION (${API_VER}) in file columnar.h, need to upgrade project version!" )
 endif ()
 
-if (NOT IS_ABSOLUTE ${LIBS_BUNDLE})
-	set(LIBS_BUNDLE "${CMAKE_CURRENT_BINARY_DIR}/${LIBS_BUNDLE}")
+include ( GNUInstallDirs )
+
+set ( CPACK_PACKAGE_NAME "manticore-columnar-lib" )
+target_include_directories ( columnar_api INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/${CPACK_PACKAGE_NAME}> )
+
+install ( TARGETS columnar_api EXPORT ColumnarExport COMPONENT module )
+
+# ensure ALL externally required headers are exported here
+install ( FILES builder.h columnar.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${CPACK_PACKAGE_NAME} COMPONENT dev )
+install ( FILES util/util.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${CPACK_PACKAGE_NAME}/util COMPONENT dev )
+
+add_library ( columnar::columnar_api ALIAS columnar_api )
+
+# helpers and parts
+if (NOT SKIP_COLUMNAR)
+	include ( GetFastPFOR )
+endif()
+
+# Set a default build type for single-configuration (for multi-config there are NO default settings anyway),
+# it should be selected with --config SOMETHING on build time
+if (NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
+	message ( STATUS "No config specified, forced to RelWithDebInfo" )
+	set ( CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Choose the type of build." FORCE )
 endif ()
 
+# if no faspfor, we're still useful as columnar_api is already created and points to correct headers
+if (TARGET FastPFOR::FastPFOR)
 
-include ( CheckFunctionExists )
-string ( TOUPPER "${it}" _it )
-check_function_exists ( "pread" "HAVE_PREAD" )
-message ( STATUS "Generating config.h file" )
-configure_file ( "${CMAKE_CURRENT_SOURCE_DIR}/config_cmake.h.in" "${CMAKE_CURRENT_BINARY_DIR}/config/config.h" ESCAPE_QUOTES )
-include_directories ( "${CMAKE_CURRENT_BINARY_DIR}/config" )
+	# main internal interface target to collect all includes/links/dependencies
+	add_library ( columnar_root INTERFACE )
 
+	if (COVERAGE_TEST)
+		target_compile_options ( columnar_root INTERFACE $<${GNUC_CXX}:-fprofile-arcs -ftest-coverage> )
+		target_link_options ( columnar_root INTERFACE
+				$<$<LINK_LANG_AND_ID:CXX,GNU>:-lgcov --coverage>
+				$<$<LINK_LANG_AND_ID:C,GNU>:-lgcov --coverage>
+				$<$<LINK_LANG_AND_ID:CXX,Clang,AppleClang>: --coverage>
+				$<$<LINK_LANG_AND_ID:C,Clang,AppleClang>: --coverage>
+				)
+	endif (COVERAGE_TEST)
 
-set ( ACCESSOR_H accessor/attributeheader.h accessor/accessor.h accessor/accessorbool.h accessor/accessorint.h accessor/accessormva.h
-	accessor/accessorstr.h accessor/accessortraits.h )
+	# options for clang/gcc c and c++
+	target_compile_options ( columnar_root INTERFACE $<${GNUC_CXX}:-D_FILE_OFFSET_BITS=64> )
+	target_compile_options ( columnar_root INTERFACE $<${GNUCXX}:-fno-rtti> $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/GR-> ) # no rtti
+	target_link_libraries ( columnar_root INTERFACE columnar_api )
+	target_include_directories ( columnar_root INTERFACE accessor builder util )
+	set_property ( TARGET columnar_root PROPERTY INTERFACE_POSITION_INDEPENDENT_CODE TRUE )
 
-set ( ACCESSOR_SRC accessor/attributeheader.cpp accessor/accessor.cpp accessor/accessorbool.cpp accessor/accessorint.cpp accessor/accessormva.cpp
-	accessor/accessorstr.cpp accessor/accessortraits.cpp )
+	add_subdirectory ( util )
+	add_subdirectory ( builder )
+	add_subdirectory ( accessor )
 
-set ( BUILDER_H builder/builderbool.h builder/builderint.h builder/builderminmax.h builder/buildermva.h builder/builderstr.h builder/buildertraits.h )
-set ( BUILDER_SRC builder/builderbool.cpp builder/builderint.cpp builder/buildermva.cpp builder/builderstr.cpp builder/buildertraits.cpp )
+	# main library
+	add_library ( columnar MODULE columnar.cpp builder.cpp columnar.h builder.h )
+	target_compile_options ( columnar PRIVATE $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:-D_CRT_SECURE_NO_WARNINGS -wd4996> )
+	target_link_libraries ( columnar PRIVATE columnar_root util builder accessor )
+	set_target_properties( columnar PROPERTIES PREFIX "" OUTPUT_NAME lib_manticore_columnar )
 
-set ( UTIL_H util/util.h util/interval.h util/reader.h util/delta.h )
-set ( UTIL_SRC util/util.cpp util/reader.cpp util/version.cpp util/delta.cpp )
+	SET ( MODULES_DIR "${CMAKE_INSTALL_DATADIR}/manticore/modules" )
 
-set ( COMMON_H columnar.h builder.h )
-set ( COMMON_SRC columnar.cpp builder.cpp )
-
-set ( ALL_HEADERS ${ACCESSOR_H} ${BUILDER_H} ${COMMON_H} ${UTIL_H} )
-set ( ALL_SOURCES ${ACCESSOR_SRC} ${BUILDER_SRC} ${COMMON_SRC} ${UTIL_SRC} )
-
-SET ( CMAKE_CXX_STANDARD 14 )
-
-if(NOT DEFINED CMAKE_INSTALL_LIBDIR)
-        set(CMAKE_INSTALL_LIBDIR lib)
-endif(NOT DEFINED CMAKE_INSTALL_LIBDIR)
-
-add_library ( columnar SHARED ${ALL_SOURCES} ${ALL_HEADERS} ${COMMON_SRC} )
-if (WIN32)
-	set_target_properties( columnar PROPERTIES OUTPUT_NAME lib_manticore_columnar VERSION "${VERSION_STR}" SOVERSION 1 )
-else()
-	set_target_properties( columnar PROPERTIES OUTPUT_NAME _manticore_columnar VERSION "${VERSION_STR}" SOVERSION 1 )
-endif()
-
-target_include_directories ( columnar PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} )
-target_include_directories ( columnar PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/util )
-target_include_directories ( columnar PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/accessor )
-target_include_directories ( columnar PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/builder )
-
-if (WIN32)
-	target_compile_options ( columnar PRIVATE "-wd4996" )
-endif()
-
-SET ( EXTRA_LIBRARIES )
-include ( ${CMAKE_CURRENT_SOURCE_DIR}/GetFastPFOR.cmake )
-
-target_link_libraries ( columnar ${EXTRA_LIBRARIES} )
-
-if (DEFINED DEBUG_COLUMNAR_DEST)
-	add_custom_command ( TARGET columnar POST_BUILD	COMMAND ${CMAKE_COMMAND} -E rm -f "${DEBUG_COLUMNAR_DEST}/$<TARGET_FILE_NAME:columnar>" )
-	add_custom_command ( TARGET columnar POST_BUILD	COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:columnar>" "${DEBUG_COLUMNAR_DEST}/."	)
-	if ( MSVC )
-		add_custom_command ( TARGET columnar POST_BUILD	COMMAND ${CMAKE_COMMAND} -E rm -f "${DEBUG_COLUMNAR_DEST}/$<TARGET_PDB_FILE_NAME:columnar>" )
-		add_custom_command ( TARGET columnar POST_BUILD	COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_PDB_FILE:columnar>" "${DEBUG_COLUMNAR_DEST}/." )
+	# simpler packages: provide -DPACK=1, and DISTR_BUILD will be set from env $DISTR, easier in dockers
+	if (PACK)
+		set ( DISTR_BUILD "$ENV{DISTR}" )
 	endif ()
-endif ()
 
-if (PACK_COLUMNAR)
-        # --------------- related with packaging -------------------
+	if (DISTR_BUILD)
+		# --------------- related with packaging -------------------
+		set ( BUILD_TESTING 0 CACHE BOOL "No testing on packaging" )
 
-        SET ( BINPREFIX "usr/" )
+		set ( CPACK_PACKAGE_VENDOR "Manticore Software LTD" )
+		set ( BUILD_TAG "$ENV{BUILD_TAG}" CACHE STRING "The tag which will be added to build" )
 
-        set ( PACKAGE_NAME "manticore-columnar-lib" )
-        set ( COMPANY_NAME "Manticore Software LTD" )
-        set ( BUILD_TAG "" CACHE STRING "The tag which will be added to build" )
-        set ( PKGSUFFIXES ) # list of suffixes which will be append to package name, will be '-'-separated and added to package file name along with DISTR_SUFFIX
+		# Make release build for the pointed distr
+		# That will override defaults and give possibility to build
+		# the distribution with minimal command line
+		# set default options to be included into build
+		set ( DISTR "${DISTR_BUILD}" CACHE STRING "Choose the distr." )
+		message ( STATUS "DISTR_BUILD applied. Package will be set to ${DISTR_BUILD}" )
 
-        # simpler packages: provide -DPACK=1, and DISTR_BUILD will be set from env $DISTR, easier in dockers
-        if (PACK)
-                set(DISTR_BUILD "$ENV{DISTR}")
-        endif ()
+		set ( CPACK_SOURCE_IGNORE_FILES "/\\\\.idea/" "/\\\\.git/"
+				"/\\\\.svn/" "/autom4te\\\\.cache/" "/bin/" "/junk/" "/win/" "/gmock/" "/gtest/" "/libtest"   "/pkgconfig/"
+				".swp$" ".orig$" ".log$" ".deps/" )
+		set ( CPACK_SOURCE_GENERATOR TGZ )
+		set ( CPACK_PACKAGE_RELOCATABLE ON )
+		set ( CPACK_PACKAGE_CONTACT "Manticore Team <build@manticoresearch.com>" )
+		set ( CMAKE_PROJECT_HOMEPAGE_URL "https://github.com/manticoresoftware/columnar/" )
+		set ( CPACK_PACKAGE_URL "https://github.com/manticoresoftware/columnar/" )
+		set ( CPACK_PACKAGE_DESCRIPTION_SUMMARY "Manticore Columnar Library is a column-oriented storage library, aiming to provide decent performance with low memory footprint at big data volume")
+		set ( CPACK_PACKAGE_DESCRIPTION "Manticore Columnar Library is a column-oriented storage library, aiming to provide decent performance with low memory footprint at big data volume. When used in combination with Manticore Search can be beneficial for faster / lower resource consumption log/metrics analytics and running log / metric analytics in docker / kubernetes")
+		set ( CPACK_RPM_PACKAGE_DESCRIPTION "${CPACK_PACKAGE_DESCRIPTION}" ) # the description will default to the default one (This is an installer created using CPack..." otherwise, i.e. it doesn't take CPACK_PACKAGE_DESCRIPTION as a default
+		set ( CPACK_PROJECT_CONFIG_FILE "${CMAKE_CURRENT_BINARY_DIR}/config/CPackOptions.cmake" )
+		SET ( CPACK_PACKAGE_LICENSE "Apache-2.0" )
 
+		set ( CPACK_COMPONENTS_ALL module dev )
+		set ( CPACK_COMPONENT_DEV_DEPENDS module )
 
-        # Make release build for the pointed distr
-        # That will override defaults and give possibility to build
-        # the distribution with minimal command line
-        if ( DISTR_BUILD )
-               # set default options to be included into build
-               set ( DISTR "${DISTR_BUILD}" CACHE STRING "Choose the distr." )
-               if ( NOT "${DISTR_BUILD}" STREQUAL "macosbrew" )
-                      SET ( CMAKE_INSTALL_PREFIX "/usr" CACHE FILEPATH "Forced install to /usr" FORCE )
-               endif ()
-               message ( STATUS "DISTR_BUILD applied. Package will be set to ${DISTR_BUILD}" )
-        endif ()
+		include ( SetBuildType )
 
-        include ( SetBuildType )
+		add_custom_target (
+				columnarpackver
+				COMMAND ${CMAKE_COMMAND}
+				-D SOURCE_DIR=${columnar_SOURCE_DIR}
+				-D BINARY_DIR=${columnar_BINARY_DIR}
+				-D BUILD_TAG=${BUILD_TAG}
+				-D DISTR=${DISTR}
+				-D CPACK_PACKAGE_NAME=${CPACK_PACKAGE_NAME}
+				-D CPACK_SUFFIX=${CPACK_SUFFIX}
+				-D VERSION_STR=${CMAKE_PROJECT_VERSION}
+				-D CMAKE_MODULE_PATH=${CMAKE_MODULE_PATH}
+				-D SRC=${CMAKE_MODULE_PATH}/CPackOptions.cmake.in
+				-D DST=${columnar_BINARY_DIR}/config/CPackOptions.cmake
+				-P ${columnar_SOURCE_DIR}/packversion.cmake
+				VERBATIM
+				COMMENT "Assign package version data"
+				BYPRODUCTS ${columnar_BINARY_DIR}/config/CPackOptions.cmake
+				SOURCES ${CMAKE_MODULE_PATH}/CPackOptions.cmake.in
+				DEPENDS ${CMAKE_MODULE_PATH}/CPackOptions.cmake.in
+		)
 
-        configure_file ( "LICENSE" "${CMAKE_CURRENT_BINARY_DIR}/LICENSE" COPYONLY )
+		add_dependencies ( columnar columnarpackver )
+	endif()
 
-        set ( CPACK_SOURCE_IGNORE_FILES "/\\\\.idea/" "/\\\\.git/"
-                "/\\\\.svn/" "/autom4te\\\\.cache/" "/bin/" "/junk/" "/win/" "/gmock/" "/gtest/" "/libtest"   "/pkgconfig/"
-                ".swp$" ".orig$" ".log$" ".deps/" )
-        set ( CPACK_SOURCE_GENERATOR TGZ )
-        set ( CPACK_PACKAGE_NAME "${PACKAGE_NAME}" )
-        set ( CPACK_PACKAGE_CONTACT "Manticore Team <build@manticoresearch.com>" )
-        set ( CMAKE_PROJECT_HOMEPAGE_URL "https://github.com/manticoresoftware/columnar/" )
-        set ( CPACK_PACKAGE_VENDOR "${COMPANY_NAME}" )
-        set ( CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_BINARY_DIR}/LICENSE" )
-        set ( CPACK_PACKAGE_DESCRIPTION_SUMMARY "Manticore Columnar Library is a column-oriented storage library, aiming to provide decent performance with low memory footprint at big data volume")
-        set ( CPACK_PACKAGE_DESCRIPTION "Manticore Columnar Library is a column-oriented storage library, aiming to provide decent performance with low memory footprint at big data volume. When used in combination with Manticore Search can be beneficial for faster / lower resource consumption log/metrics analytics and running log / metric analytics in docker / kubernetes")
-        set ( CPACK_RPM_PACKAGE_DESCRIPTION "${CPACK_PACKAGE_DESCRIPTION}" ) # the description will default to the default one (This is an installer created using CPack..." otherwise, i.e. it doesn't take CPACK_PACKAGE_DESCRIPTION as a default 
-        set ( CPACK_PROJECT_CONFIG_FILE "${CMAKE_CURRENT_BINARY_DIR}/config/CPackOptions.cmake" )
+	install ( TARGETS columnar EXPORT ColumnarExport RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT module )
 
-        include ( CPack )
-        cpack_add_component( columnar )
+	# aliases are in game when we plug columnar sources via add_subdirectory().
+	# We essentially need columnar_api (it provides correct path to includes), but module itself still need to be located.
+	# Suggest to build columnar as external project when you want 'just use' it, then install to the known prefix and
+	# plug via find_package (columnar CONFIG).
+	# In case of development, when it is added via add_subdirectory to manticore build tree, it may be manually provided via
+	# env LIB_MANTICORE_COLUMNAR in particular.
+	add_library ( columnar::columnar ALIAS columnar )
 
-        if ( WIN32 )
-                IF ( CMAKE_EXE_LINKER_FLAGS MATCHES "x64" )
-                       LIST ( APPEND PKGSUFFIXES "x64" )
-                else ()
-                       LIST ( APPEND PKGSUFFIXES "win32" )
-                endif ()
-        endif ()
-
-        set ( CPACK_SUFFIX "" )
-        FOREACH ( SUFFIX ${PKGSUFFIXES} )
-                set ( CPACK_SUFFIX "${CPACK_SUFFIX}-${SUFFIX}" )
-        endforeach ()
+else()
+	message (STATUS "FastPFOR is disabled or not available, only columnar::columnar_api target created")
 endif()
 
-add_custom_target (
-                columnarver
-                COMMAND ${CMAKE_COMMAND}
-                        -D SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
-                        -D BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
-                        -D BUILD_TAG=${BUILD_TAG}
-                        -D DISTR_SUFFIX=${DISTR_SUFFIX}
-                        -D PACKAGE_NAME=${PACKAGE_NAME}
-                        -D CPACK_SUFFIX=${CPACK_SUFFIX}
-                        -P ${CMAKE_CURRENT_SOURCE_DIR}/rev.cmake
-                COMMENT "Generate version from sources"
-                VERBATIM
-                SOURCES
-                        ${CMAKE_CURRENT_SOURCE_DIR}/rev.cmake
-                        ${CMAKE_CURRENT_SOURCE_DIR}/util/version.h.in
-                        ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CPackOptions.cmake.in
-)
+set (CMAKE_CMAKE_DIR "${CMAKE_INSTALL_LIBDIR}/cmake/columnar")
+install ( EXPORT ColumnarExport
+		FILE "columnar-targets.cmake"
+		DESTINATION "${CMAKE_CMAKE_DIR}"
+		NAMESPACE "columnar::"
+		COMPONENT dev
+		)
 
-add_dependencies ( columnar columnarver )
+# below is for support find_package
+include ( CMakePackageConfigHelpers )
+
+configure_package_config_file ( "${CMAKE_MODULE_PATH}/columnar-config.cmake.in"
+		"${CMAKE_CURRENT_BINARY_DIR}/columnar-config.cmake" INSTALL_DESTINATION "${CMAKE_CMAKE_DIR}" )
+install ( FILES "${CMAKE_CURRENT_BINARY_DIR}/columnar-config.cmake" DESTINATION "${CMAKE_CMAKE_DIR}" COMPONENT dev)
+
+write_basic_package_version_file ( "columnar-config-version.cmake" COMPATIBILITY SameMinorVersion )
+install ( FILES "${CMAKE_CURRENT_BINARY_DIR}/columnar-config-version.cmake" DESTINATION "${CMAKE_CMAKE_DIR}" COMPONENT dev)
+
+include ( CPack )
+include (testing.cmake)

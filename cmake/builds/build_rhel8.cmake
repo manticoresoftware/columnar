@@ -4,4 +4,3 @@
 
 message ( STATUS "Will create RPM for RedHat/Centos 8" )
 include ( builds/CommonRpm )
-LIST ( APPEND PKGSUFFIXES "rhel8" )

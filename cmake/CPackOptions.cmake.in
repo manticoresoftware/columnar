@@ -1,49 +1,21 @@
 # configured imports, add more here; avoid to add anything apart this block
 SET ( GIT_TIMESTAMP_ID "@GIT_TIMESTAMP_ID@" )
 SET ( GIT_COMMIT_ID "@GIT_COMMIT_ID@" )
-SET ( CPACK_PACKAGE_NAME "manticore-columnar-lib" )
 SET ( TAG "@BUILD_TAG@" ) # like 'my-super-puper-ver' or 'release'
 SET ( SUFFIX "@CPACK_SUFFIX@") # atogen, like '-osx' or '-rhel7'
-SET ( DISTR_SUFFIX "@DISTR_SUFFIX@" ) # like ~trusty_amd64, no- prefixed
-SET ( SOURCE_DIR "@SOURCE_DIR@" )
-SET ( BINARY_DIR "@BINARY_DIR@" )
 SET ( VERSION_STR "@VERSION_STR@" )
 SET ( ENV{SOURCE_DATE_EPOCH} @SOURCE_DATE_EPOCH@ ) # that makes builds reproducable
 
-
 SET ( CPACK_PACKAGE_VERSION "${VERSION_STR}-${GIT_TIMESTAMP_ID}-${GIT_COMMIT_ID}" )
-
-SET ( FULL_VERSION "${CPACK_PACKAGE_VERSION}" )
 string ( TOLOWER "${CPACK_PACKAGE_NAME}" CPACK_PACKAGE_NAME_LOWERCASE )
 
 if ( TAG )
-        SET ( FULL_VERSION "${FULL_VERSION}-${TAG}" )
+	SET ( TAG "-${TAG}" )
 endif ()
 
-SET ( TARBALL_VERSION "${FULL_VERSION}" )
-
-if ( SUFFIX )
-        SET ( FULL_VERSION "${FULL_VERSION}${SUFFIX}" )
-endif ()
-
-if ( DISTR_SUFFIX )
-	SET ( FULL_VERSION "${FULL_VERSION}${DISTR_SUFFIX}" )
-endif ()
-
-# delimiter between name and version
-set ( _d "-" )
-if ( CPACK_GENERATOR )
-	if ( ${CPACK_GENERATOR} STREQUAL "DEB" )
-		UNSET ( _d )
-		SET ( _d "_" )
-	endif()
-endif()
-
-set ( TARBALL_FILE_NAME "${CPACK_PACKAGE_NAME_LOWERCASE}-${TARBALL_VERSION}-source" )
-SET ( CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME_LOWERCASE}${_d}${FULL_VERSION}" )
-
-# deb specific
-set(CPACK_DEBIAN_FILE_NAME "${CPACK_PACKAGE_FILE_NAME}.deb")
+SET ( CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME_LOWERCASE}-${CPACK_PACKAGE_VERSION}${TAG}${SUFFIX}" )
+set ( CPACK_ARCHIVE_MODULE_FILE_NAME ${CPACK_PACKAGE_FILE_NAME} )
 
 # rpm specific (used inside .spec template)
 SET ( CPACK_RPM_PACKAGE_VERSION "${VERSION_STR}-${GIT_TIMESTAMP_ID}.${GIT_COMMIT_ID}" )
+
