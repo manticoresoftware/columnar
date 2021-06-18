@@ -1,0 +1,1 @@
+GIT_REPOSITORY https://github.com/klirichek/manticore.git GIT_TAG 461b1329767e0f47116058afe4255f13ac212c79
