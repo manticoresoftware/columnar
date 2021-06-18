@@ -37,7 +37,7 @@ else()
 	file ( READ "${columnar_SOURCE_DIR}/manticore_src.txt" MANTICORE_LOCATOR )
 endif ()
 string ( CONFIGURE "${MANTICORE_LOCATOR}" MANTICORE_LOCATOR ) # that is to expand possible inside variables
-message ( STATUS "Fetch rule is 'FetchContent_Declare ( manticore ${MANTICORE_LOCATOR} )'" )
+message ( STATUS "Fetch locator is '${MANTICORE_LOCATOR}'" )
 file ( WRITE "${columnar_BINARY_DIR}/manticore-get.cmake" "FetchContent_Declare ( manticore ${MANTICORE_LOCATOR} )\n" )
 
 include ( FetchContent )
