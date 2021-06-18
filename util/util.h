@@ -14,8 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef _util_
-#define _util_
+#pragma once
 
 #include <stdint.h>
 #include <string.h>
@@ -366,13 +365,3 @@ int     CalcNumBits ( uint64_t uNumber );
 bool    CopySingleFile ( const std::string & sSource, const std::string & sDest, std::string & sError, int iMode );
 
 } // namespace columnar
-
-
-#ifdef _MSC_VER
-void *	operator new ( size_t iSize );
-void *	operator new [] ( size_t iSize );
-void	operator delete ( void * pPtr ) throw();
-void	operator delete [] ( void * pPtr ) throw();
-#endif
-
-#endif // util
