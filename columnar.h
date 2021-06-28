@@ -22,7 +22,7 @@
 namespace columnar
 {
 
-static const int LIB_VERSION = 8;
+static const int LIB_VERSION = 9;
 
 class Iterator_i
 {
@@ -32,6 +32,8 @@ public:
 	virtual	uint32_t	AdvanceTo ( uint32_t tRowID ) = 0;
 
 	virtual	int64_t		Get() = 0;
+
+	virtual	void		Fetch ( const Span_T<uint32_t> & dRowIDs, Span_T<int64_t> & dValues ) = 0;
 
 	virtual	int			Get ( const uint8_t * & pData ) = 0;
 	virtual	uint8_t *	GetPacked() = 0;

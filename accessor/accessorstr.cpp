@@ -658,6 +658,7 @@ public:
 	uint32_t	AdvanceTo ( uint32_t tRowID ) final;
 
 	int64_t		Get() final						{ assert ( 0 && "INTERNAL ERROR: requesting int from string iterator" ); return 0; }
+	void		Fetch ( const Span_T<uint32_t> & dRowIDs, Span_T<int64_t> & dValues ) final { assert ( 0 && "INTERNAL ERROR: requesting batch int from string iterator" ); }
 
 	int			Get ( const uint8_t * & pData ) final;
 	uint8_t *	GetPacked() final;
