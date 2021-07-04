@@ -37,7 +37,7 @@ simple_tests:
     - if: $TEST==null
     - if: $TEST =~ /simple/
   tags:
-    - docker
+    - specdocker
   image: registry.gitlab.com/manticoresearch/dev/ubertests_public:320
   variables:
     CTEST_BUILD_CONFIGURATION: "Debug"
@@ -66,7 +66,7 @@ release_tests:
     - if: $TEST==null
     - if: $TEST =~ /release/
   tags:
-    - docker
+    - specdocker
   image: registry.gitlab.com/manticoresearch/dev/ubertests_public:320
   variables:
     CTEST_BUILD_CONFIGURATION: "RelWithDebInfo"

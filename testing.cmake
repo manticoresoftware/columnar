@@ -13,20 +13,27 @@ if (NOT TARGET columnar)
 	return()
 endif()
 
-# cb called by manticore ubertest - reject all non-columnar here.
-function ( ubertest_filter accept_var explain_var labels_list )
-	if (NOT COLUMNAR IN_LIST labels_list)
+# cb called by manticore ubertest adding tests - add special columnar-pass for rt tests
+function ( special_ubertest_addtest testN tst_name REQUIRES )
+	if (NOT NON-RT IN_LIST REQUIRES AND NOT NON-COLUMNAR IN_LIST REQUIRES)
+		add_ubertest ( "${testN}" "${tst_name}" "${REQUIRES}" "col" "COLUMNAR" "--rt --ignore-weights --columnar" )
+	endif ()
+endfunction()
+
+# cb called by manticore ubertest - filter out non-columnar here.
+function ( special_ubertest_filter accept_var explain_var REQUIRES )
+	if (NOT COLUMNAR IN_LIST REQUIRES)
 		set ( ${accept_var} 0 PARENT_SCOPE )
 		set ( ${explain_var} "not specially columnar" PARENT_SCOPE )
 	endif ()
 endfunction ()
 
-# cb called by manticore ubertest - modify given (filtered) test properties
-function ( ubertest_properties test )
+# cb called by manticore ubertest - append path to columnar to given test properties
+function ( special_ubertest_properties test )
 	set_property ( TEST "${test}" APPEND PROPERTY ENVIRONMENT "LIB_MANTICORE_COLUMNAR=$<TARGET_FILE:columnar>" )
 endfunction ()
 
-# set up env for configure, build and run manticore tests
+# this will switch off pure manticore-specific tests: google, api, keyword consistency and benches (we don't need them here)
 set ( TEST_SPECIAL_EXTERNAL ON )
 
 if (DEFINED ENV{MANTICORE_LOCATOR})
@@ -42,4 +49,7 @@ file ( WRITE "${columnar_BINARY_DIR}/manticore-get.cmake" "FetchContent_Declare 
 
 include ( FetchContent )
 include ( "${columnar_BINARY_DIR}/manticore-get.cmake" )
+
+# add manticore sources to the tree. All testing will be done on manticore size; necessary additional tests/properties will
+# be set by cb functions defined above.
 FetchContent_MakeAvailable ( manticore )
