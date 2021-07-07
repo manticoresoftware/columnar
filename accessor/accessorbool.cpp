@@ -178,9 +178,9 @@ class Iterator_Bool_c : public Iterator_i, public Accessor_Bool_c
 	using BASE::Accessor_Bool_c;
 
 public:
-	uint32_t	AdvanceTo ( uint32_t tRowID ) final		{ return DoAdvance(tRowID); }
-	int64_t		Get() final								{ return DoGet(); }
+	uint32_t	AdvanceTo ( uint32_t tRowID ) final;
 
+	int64_t		Get() final;
 	void		Fetch ( const Span_T<uint32_t> & dRowIDs, Span_T<int64_t> & dValues ) final;
 
 	int			Get ( const uint8_t * & pData ) final	{ assert ( 0 && "INTERNAL ERROR: requesting blob from bool iterator" ); return 0; }
@@ -196,7 +196,7 @@ private:
 };
 
 
-uint32_t Iterator_Bool_c::DoAdvance ( uint32_t tRowID )
+uint32_t Iterator_Bool_c::AdvanceTo ( uint32_t tRowID )
 {
 	assert ( tRowID < BASE::m_tHeader.GetNumDocs() );
 
@@ -210,23 +210,31 @@ uint32_t Iterator_Bool_c::DoAdvance ( uint32_t tRowID )
 }
 
 
+int64_t Iterator_Bool_c::Get()
+{
+	assert ( BASE::m_fnReadValue );
+	return (*this.*BASE::m_fnReadValue)();
+}
+
+
 void Iterator_Bool_c::Fetch ( const Span_T<uint32_t> & dRowIDs, Span_T<int64_t> & dValues )
 {
+	assert ( BASE::m_fnReadValue );
+
 	uint32_t * pRowID = dRowIDs.begin();
 	uint32_t * pRowIDEnd = dRowIDs.end();
 	int64_t * pValue = dValues.begin();
 	while ( pRowID<pRowIDEnd )
 	{
-		DoAdvance ( *pRowID++ );
-		*pValue++ = DoGet();
+		uint32_t tRowID = *pRowID++;
+
+		uint32_t uBlockId = RowId2BlockId(tRowID);
+		if ( uBlockId!=BASE::m_uBlockId )
+			BASE::SetCurBlock(uBlockId);
+
+		BASE::m_tRequestedRowID = tRowID;
+		*pValue++ = (*this.*BASE::m_fnReadValue)();
 	}
-}
-
-
-int64_t Iterator_Bool_c::DoGet()
-{
-	assert ( BASE::m_fnReadValue );
-	return (*this.*BASE::m_fnReadValue)();
 }
 
 //////////////////////////////////////////////////////////////////////////
