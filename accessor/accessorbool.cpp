@@ -43,7 +43,7 @@ public:
 							StoredBlock_Bool_Bitmap_c ( int iSubblockSize );
 
 	FORCE_INLINE void		ReadHeader ( FileReader_c & tReader, uint32_t uDocsInBlock );
-	void					ReadSubblock ( int iSubblockId, int iNumValues, FileReader_c & tReader );
+	FORCE_INLINE void		ReadSubblock ( int iSubblockId, int iNumValues, FileReader_c & tReader );
 	FORCE_INLINE int64_t	GetValue ( int iIdInSubblock );
 	FORCE_INLINE const Span_T<uint32_t> & GetValues() const { return m_tValuesRead; }
 
@@ -97,9 +97,9 @@ int64_t StoredBlock_Bool_Bitmap_c::GetValue ( int iIdInSubblock )
 class Accessor_Bool_c : public StoredBlockTraits_t
 {
 public:
-					Accessor_Bool_c ( const AttributeHeader_i & tHeader, FileReader_c * pReader );
+						Accessor_Bool_c ( const AttributeHeader_i & tHeader, FileReader_c * pReader );
 
-	void			SetCurBlock ( uint32_t uBlockId );
+	FORCE_INLINE void	SetCurBlock ( uint32_t uBlockId );
 
 protected:
 	const AttributeHeader_i &		m_tHeader;
@@ -110,7 +110,7 @@ protected:
 
 	int64_t (Accessor_Bool_c::*m_fnReadValue)() = nullptr;
 
-	BoolPacking_e	m_ePacking = BoolPacking_e::CONST;
+	BoolPacking_e		m_ePacking = BoolPacking_e::CONST;
 
 	int64_t			ReadValue_Const();
 	int64_t			ReadValue_Bitmap();
