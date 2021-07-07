@@ -64,7 +64,7 @@ private:
 	std::unique_ptr<FastPForLib::IntegerCODEC> m_pCodec64;
 
 	template <typename T>
-	FORCE_INLINE void	Encode ( const Span_T<T> & dUncompressed, std::vector<uint32_t> & dCompressed, FastPForLib::IntegerCODEC & tCodec );
+	void	Encode ( const Span_T<T> & dUncompressed, std::vector<uint32_t> & dCompressed, FastPForLib::IntegerCODEC & tCodec );
 
 	template <typename T>
 	FORCE_INLINE bool	Decode ( const Span_T<uint32_t> & dCompressed, SpanResizeable_T<T> & dDecompressed, FastPForLib::IntegerCODEC & tCodec );
