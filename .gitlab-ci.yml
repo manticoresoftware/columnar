@@ -139,8 +139,7 @@ push_win_results:
 deploy_hook:
   stage: hooks
   rules:
-    - if: $TEST==null
-    - if: $CI_COMMIT_TITLE !~ /^noci .*$/i
+    - if: $CI_COMMIT_TITLE !~ /^noci .*$/i && $TEST==null
       when: always
   trigger:
     include: packaging.yml
