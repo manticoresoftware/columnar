@@ -117,6 +117,9 @@ win_tests:
 # convert ctest reports from windows to junit (don't want to work with php/xslt there)
 push_win_results:
   stage: publish
+  rules:
+    - if: $TEST==null
+    - if: $TEST =~ /windows/
   needs: [ win_tests ]
   tags:
     - docker
@@ -136,6 +139,7 @@ push_win_results:
 deploy_hook:
   stage: hooks
   rules:
+    - if: $TEST==null
     - if: $CI_COMMIT_TITLE !~ /^noci .*$/i
       when: always
   trigger:
