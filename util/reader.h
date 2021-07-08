@@ -17,7 +17,7 @@
 #pragma once
 
 #include "util.h"
-#include "assert.h"
+#include <cassert>
 
 namespace columnar
 {
@@ -32,7 +32,7 @@ public:
 	bool					Open ( const std::string & sName, std::string & sError );
 	void					Close();
 
-	FORCE_INLINE int64_t	GetPos() const { return m_iFilePos+m_tPtr; }
+	int64_t					GetPos() const { return m_iFilePos+m_tPtr; }
 	int						GetFD() const { return m_iFD; }
 
 	void					Read ( uint8_t * pData, size_t tLen );
@@ -46,15 +46,15 @@ public:
 		return m_pData[m_tPtr++];
 	}
 
-	uint16_t				Read_uint16()   { return ReadValue<uint16_t>(); }
-	uint32_t				Read_uint32()   { return ReadValue<uint32_t>(); }
-	uint64_t				Read_uint64()   { return ReadValue<uint64_t>(); }
+	FORCE_INLINE uint16_t	Read_uint16()   { return ReadValue<uint16_t>(); }
+	FORCE_INLINE uint32_t	Read_uint32()   { return ReadValue<uint32_t>(); }
+	FORCE_INLINE uint64_t	Read_uint64()   { return ReadValue<uint64_t>(); }
 	std::string				Read_string();
 
 	uint32_t				Unpack_uint32();
 	uint64_t				Unpack_uint64();
 
-	bool					IsError() const { return m_bError; }
+	FORCE_INLINE bool		IsError() const { return m_bError; }
 	std::string				GetError() const { return m_sError; }
 
 	FORCE_INLINE bool		ReadFromBuffer ( uint8_t * & pData, size_t tLen )
@@ -120,7 +120,7 @@ private:
 	}
 
 	template <typename T>
-	T ReadValue()
+	FORCE_INLINE T ReadValue()
 	{
 		T tValue;
 		Read ( (uint8_t*)&tValue, sizeof(T) );
