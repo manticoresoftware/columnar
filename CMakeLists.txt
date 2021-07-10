@@ -91,6 +91,8 @@ if (TARGET FastPFOR::FastPFOR)
 	# options for clang/gcc c and c++
 	target_compile_options ( columnar_root INTERFACE $<${GNUC_CXX}:-D_FILE_OFFSET_BITS=64> )
 	target_compile_options ( columnar_root INTERFACE $<${GNUCXX}:-fno-rtti> $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/GR-> ) # no rtti
+	target_compile_options ( columnar_root INTERFACE $<$<COMPILE_LANG_AND_ID:CXX,MSVC,Clang>:-D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_WARNINGS> )
+
 	target_link_libraries ( columnar_root INTERFACE columnar_api )
 	target_include_directories ( columnar_root INTERFACE accessor builder util )
 	set_property ( TARGET columnar_root PROPERTY INTERFACE_POSITION_INDEPENDENT_CODE TRUE )
@@ -101,7 +103,7 @@ if (TARGET FastPFOR::FastPFOR)
 
 	# main library
 	add_library ( columnar MODULE columnar.cpp builder.cpp columnar.h builder.h )
-	target_compile_options ( columnar PRIVATE $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:-D_CRT_SECURE_NO_WARNINGS -wd4996> )
+	target_compile_options ( columnar PRIVATE $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:-wd4996> )
 	target_link_libraries ( columnar PRIVATE columnar_root util builder accessor )
 	set_target_properties( columnar PROPERTIES PREFIX "" OUTPUT_NAME lib_manticore_columnar )
 

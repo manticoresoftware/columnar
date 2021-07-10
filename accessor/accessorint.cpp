@@ -84,7 +84,6 @@ template <typename T>
 void StoredBlock_Int_Table_T<T>::ReadHeader ( FileReader_c & tReader )
 {
 	m_dTableValues.resize ( tReader.Read_uint8() );
-	T tCurValue = 0;
 
 	uint32_t uTotalSize = tReader.Unpack_uint32();
 	DecodeValues_Delta_PFOR ( m_dTableValues, tReader, *m_pCodec, m_dTmp, uTotalSize, false );
@@ -481,7 +480,8 @@ int AnalyzerBlock_Int_Table_c::ProcessSubblock_SingleValue ( uint32_t * & pRowID
 	// FIXME! use SSE here
 	if ( !EQ && m_iTableValueId==-1 ) // accept all values
 	{
-		for ( auto i : dValueIndexes )
+		uint32_t * pRowIDMax = pRowID + dValueIndexes.size();
+		while ( pRowID < pRowIDMax )
 			*pRowID++ = tRowID++;
 
 		return (int)dValueIndexes.size();
@@ -509,7 +509,8 @@ int AnalyzerBlock_Int_Table_c::ProcessSubblock_ValuesLinear ( uint32_t * & pRowI
 	// FIXME! use SSE here
 	if ( !EQ && m_dTableValues.empty() ) // accept all values
 	{
-		for ( auto i : dValueIndexes )
+		uint32_t * pRowIDMax = pRowID + dValueIndexes.size();
+		while ( pRowID < pRowIDMax )
 			*pRowID++ = tRowID++;
 
 		return (int)dValueIndexes.size();
@@ -555,7 +556,8 @@ int AnalyzerBlock_Int_Table_c::ProcessSubblock_ValuesBinary ( uint32_t * & pRowI
 	// FIXME! use SSE here
 	if ( !EQ && m_dTableValues.empty() ) // accept all values
 	{
-		for ( auto i : dValueIndexes )
+		uint32_t * pRowIDMax = pRowID + dValueIndexes.size();
+		while ( pRowID < pRowIDMax )
 			*pRowID++ = tRowID++;
 
 		return (int)dValueIndexes.size();
