@@ -578,8 +578,8 @@ Accessor_String_c::Accessor_String_c ( const AttributeHeader_i & tHeader, FileRe
 	: StoredBlockTraits_t ( tHeader.GetSettings().m_iSubblockSize )
 	, m_tHeader ( tHeader )
 	, m_pReader ( pReader )
-	, m_tBlockTable ( tHeader.GetSettings().m_sCompressionUINT32, tHeader.GetSettings().m_sCompressionUINT64, tHeader.GetSettings().m_iSubblockSize )
 	, m_tBlockConstLen ( tHeader.GetSettings().m_iSubblockSize )
+	, m_tBlockTable ( tHeader.GetSettings().m_sCompressionUINT32, tHeader.GetSettings().m_sCompressionUINT64, tHeader.GetSettings().m_iSubblockSize )
 	, m_tBlockGeneric ( tHeader.GetSettings().m_sCompressionUINT32, tHeader.GetSettings().m_sCompressionUINT64 )
 	, m_bNeedHashes ( bNeedHashes )
 {
