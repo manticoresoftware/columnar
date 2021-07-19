@@ -36,7 +36,7 @@ Manticore 3.6.1 70f08813c@210601 dev (columnar 1.0.1 583c36c@210528)
 ### Basic usage:
 1. Add a plain index to Manticore - https://manual.manticoresearch.com/Creating_an_index/Local_indexes/Plain_index#Plain-index
 2. Add `columnar_attrs = attr1, attr2, attr3, ..., attr4` to the plain index (section `index`). You can add `id` too.
-3. Build the index us usually - https://play.manticoresearch.com/mysql/
+3. Build the index as usually - https://play.manticoresearch.com/mysql/
 
 
 ## Benchmark "Hacker News comments"
