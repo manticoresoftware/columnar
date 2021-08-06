@@ -323,9 +323,10 @@ class Iterator_INT_T : public Iterator_i, public Accessor_INT_T<T>
 	using BASE::Accessor_INT_T;
 
 public:
-	uint32_t	AdvanceTo ( uint32_t tRowID ) final;
+	uint32_t	AdvanceTo ( uint32_t tRowID ) final		{ return DoAdvance(tRowID); }
+	int64_t		Get() final								{ return DoGet(); }
 
-	int64_t		Get() final;
+	void		Fetch ( const Span_T<uint32_t> & dRowIDs, Span_T<int64_t> & dValues ) final;
 
 	int			Get ( const uint8_t * & pData ) final	{ assert ( 0 && "INTERNAL ERROR: requesting blob from int iterator" ); return 0; }
 	uint8_t *	GetPacked() final						{ assert ( 0 && "INTERNAL ERROR: requesting blob from int iterator" ); return nullptr; }
@@ -333,11 +334,27 @@ public:
 
 	uint64_t	GetStringHash() final					{ return 0; }
 	bool		HaveStringHashes() const final			{ return false; }
+
+private:
+	FORCE_INLINE uint32_t	DoAdvance ( uint32_t tRowID );
+	FORCE_INLINE int64_t	DoGet();
 };
 
+template<typename T>
+void Iterator_INT_T<T>::Fetch ( const Span_T<uint32_t> & dRowIDs, Span_T<int64_t> & dValues )
+{
+	uint32_t * pRowID = dRowIDs.begin();
+	uint32_t * pRowIDEnd = dRowIDs.end();
+	int64_t * pValue = dValues.begin();
+	while ( pRowID<pRowIDEnd )
+	{
+		DoAdvance ( *pRowID++ );
+		*pValue++ = DoGet();
+	}
+}
 
 template<typename T>
-uint32_t Iterator_INT_T<T>::AdvanceTo ( uint32_t tRowID )
+uint32_t Iterator_INT_T<T>::DoAdvance ( uint32_t tRowID )
 {
 	assert ( tRowID < BASE::m_tHeader.GetNumDocs() );
 
@@ -351,7 +368,7 @@ uint32_t Iterator_INT_T<T>::AdvanceTo ( uint32_t tRowID )
 }
 
 template<typename T>
-int64_t Iterator_INT_T<T>::Get()
+int64_t Iterator_INT_T<T>::DoGet()
 {
 	assert ( BASE::m_fnReadValue );
 	return (*this.*BASE::m_fnReadValue)();
