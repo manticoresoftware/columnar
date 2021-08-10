@@ -29,9 +29,23 @@ SET ( CMAKE_CXX_STANDARD 14 )
 SET ( CMAKE_MODULE_PATH "${columnar_SOURCE_DIR}/cmake" )
 
 # helpers vars to shorten generate lines
-set ( GNUCXX "$<COMPILE_LANG_AND_ID:CXX,Clang,AppleClang,GNU>" )
-set ( GNUC "$<COMPILE_LANG_AND_ID:C,Clang,AppleClang,GNU>" )
+set ( CLANGCXX "$<COMPILE_LANG_AND_ID:CXX,Clang,AppleClang>" )
+set ( GNUCXX "$<COMPILE_LANG_AND_ID:CXX,GNU>" )
+set ( GNUCLANGCXX "$<COMPILE_LANG_AND_ID:CXX,Clang,AppleClang,GNU>" )
+set ( CLANGC "$<COMPILE_LANG_AND_ID:C,Clang,AppleClang>" )
+set ( GNUC "$<COMPILE_LANG_AND_ID:C,GNU>" )
+set ( GNUCLANGC "$<COMPILE_LANG_AND_ID:C,Clang,AppleClang,GNU>" )
 set ( GNUC_CXX "$<OR:${GNUCXX},${GNUC}>" )
+set ( CLANGC_CXX "$<OR:${CLANGCXX},${CLANGC}>" )
+set ( GNUCLANGC_CXX "$<OR:${GNUCLANGCXX},${GNUCLANGC}>" )
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+	set (CLANG_CL 1)
+else()
+	set (CLANG_CL 0)
+endif()
+set ( ONLYGNUCLANGCXX "$<AND:${GNUCLANGCXX},$<NOT:${CLANG_CL}>>" )
+set ( ONLYGNUCLANGC_CXX "$<AND:${GNUCLANGC_CXX},$<NOT:${CLANG_CL}>>" )
+set ( MSCXX "$<OR:$<COMPILE_LANG_AND_ID:CXX,MSVC>,${CLANG_CL}>")
 
 # main interface target to export/expose headers
 # Note, first we provide headers which will be available even if build of the main lib itself will not succeed
@@ -89,9 +103,9 @@ if (TARGET FastPFOR::FastPFOR)
 	endif (COVERAGE_TEST)
 
 	# options for clang/gcc c and c++
-	target_compile_options ( columnar_root INTERFACE $<${GNUC_CXX}:-D_FILE_OFFSET_BITS=64> )
-	target_compile_options ( columnar_root INTERFACE $<${GNUCXX}:-fno-rtti> $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:/GR-> ) # no rtti
-	target_compile_options ( columnar_root INTERFACE $<$<COMPILE_LANG_AND_ID:CXX,MSVC,Clang>:-D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_WARNINGS> )
+	target_compile_options ( columnar_root INTERFACE $<${ONLYGNUCLANGC_CXX}:-D_FILE_OFFSET_BITS=64> )
+	target_compile_options ( columnar_root INTERFACE $<${ONLYGNUCLANGCXX}:-fno-rtti>$<${MSCXX}:/GR-> ) # no rtti
+	target_compile_options ( columnar_root INTERFACE $<${MSCXX}:-D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_WARNINGS> )
 
 	target_link_libraries ( columnar_root INTERFACE columnar_api )
 	target_include_directories ( columnar_root INTERFACE accessor builder util )
