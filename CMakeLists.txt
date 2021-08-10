@@ -28,25 +28,6 @@ project ( columnar VERSION 1.9.1 )
 SET ( CMAKE_CXX_STANDARD 14 )
 SET ( CMAKE_MODULE_PATH "${columnar_SOURCE_DIR}/cmake" )
 
-# helpers vars to shorten generate lines
-set ( CLANGCXX "$<COMPILE_LANG_AND_ID:CXX,Clang,AppleClang>" )
-set ( GNUCXX "$<COMPILE_LANG_AND_ID:CXX,GNU>" )
-set ( GNUCLANGCXX "$<COMPILE_LANG_AND_ID:CXX,Clang,AppleClang,GNU>" )
-set ( CLANGC "$<COMPILE_LANG_AND_ID:C,Clang,AppleClang>" )
-set ( GNUC "$<COMPILE_LANG_AND_ID:C,GNU>" )
-set ( GNUCLANGC "$<COMPILE_LANG_AND_ID:C,Clang,AppleClang,GNU>" )
-set ( GNUC_CXX "$<OR:${GNUCXX},${GNUC}>" )
-set ( CLANGC_CXX "$<OR:${CLANGCXX},${CLANGC}>" )
-set ( GNUCLANGC_CXX "$<OR:${GNUCLANGCXX},${GNUCLANGC}>" )
-if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
-	set (CLANG_CL 1)
-else()
-	set (CLANG_CL 0)
-endif()
-set ( ONLYGNUCLANGCXX "$<AND:${GNUCLANGCXX},$<NOT:${CLANG_CL}>>" )
-set ( ONLYGNUCLANGC_CXX "$<AND:${GNUCLANGC_CXX},$<NOT:${CLANG_CL}>>" )
-set ( MSCXX "$<OR:$<COMPILE_LANG_AND_ID:CXX,MSVC>,${CLANG_CL}>")
-
 # main interface target to export/expose headers
 # Note, first we provide headers which will be available even if build of the main lib itself will not succeed
 # (say, on aarch64 because of absent fastpfor). But as api target is already exposed, consumers still can use it.
@@ -88,6 +69,28 @@ endif ()
 
 # if no faspfor, we're still useful as columnar_api is already created and points to correct headers
 if (TARGET FastPFOR::FastPFOR)
+
+	# helpers vars to shorten generate lines
+	set ( CLANGCXX "$<COMPILE_LANG_AND_ID:CXX,Clang,AppleClang>" )
+	set ( GNUCXX "$<COMPILE_LANG_AND_ID:CXX,GNU>" )
+	set ( GNUCLANGCXX "$<COMPILE_LANG_AND_ID:CXX,Clang,AppleClang,GNU>" )
+	set ( CLANGC "$<COMPILE_LANG_AND_ID:C,Clang,AppleClang>" )
+	set ( GNUC "$<COMPILE_LANG_AND_ID:C,GNU>" )
+	set ( GNUCLANGC "$<COMPILE_LANG_AND_ID:C,Clang,AppleClang,GNU>" )
+	set ( GNUC_CXX "$<OR:${GNUCXX},${GNUC}>" )
+	set ( CLANGC_CXX "$<OR:${CLANGCXX},${CLANGC}>" )
+	set ( GNUCLANGC_CXX "$<OR:${GNUCLANGCXX},${GNUCLANGC}>" )
+	if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+		set ( CLANG_CL 1 )
+		set ( ONLYGNUCLANGCXX 0 )
+		set ( ONLYGNUCLANGC_CXX 0 )
+		set ( MSCXX 1 )
+	else ()
+		set ( CLANG_CL 0 )
+		set ( ONLYGNUCLANGCXX "${GNUCLANGCXX}" )
+		set ( ONLYGNUCLANGC_CXX "${GNUCLANGC_CXX}" )
+		set ( MSCXX "$<COMPILE_LANG_AND_ID:CXX,MSVC>" )
+	endif ()
 
 	# main internal interface target to collect all includes/links/dependencies
 	add_library ( columnar_root INTERFACE )
