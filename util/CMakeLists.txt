@@ -29,7 +29,6 @@ ADD_LIBRARY ( util OBJECT
 		)
 
 include ( CheckFunctionExists )
-set ( HAVE_PREAD 0 )
 check_function_exists ( pread HAVE_PREAD )
 set_source_files_properties ( reader.cpp PROPERTIES COMPILE_DEFINITIONS HAVE_PREAD=${HAVE_PREAD} )
 
