@@ -27,7 +27,8 @@ class Analyzer_i;
 class AttributeHeader_i;
 class FileReader_c;
 
-Iterator_i * CreateIteratorBool ( const AttributeHeader_i & tHeader, FileReader_c * pReader );
-Analyzer_i * CreateAnalyzerBool ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings, bool bHaveMatchingBlocks );
+Iterator_i *	CreateIteratorBool ( const AttributeHeader_i & tHeader, FileReader_c * pReader );
+Analyzer_i *	CreateAnalyzerBool ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings, bool bHaveMatchingBlocks );
+Checker_i *		CreateCheckerBool ( const AttributeHeader_i & tHeader, FileReader_c * pReader, Reporter_fn & fnProgress, Reporter_fn & fnError );
 
 } // namespace columnar

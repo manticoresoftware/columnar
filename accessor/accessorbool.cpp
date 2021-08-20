@@ -19,6 +19,7 @@
 #include "builderbool.h"
 
 #include "columnar.h"
+#include "check.h"
 #include "interval.h"
 #include "reader.h"
 #include <algorithm>
@@ -470,6 +471,37 @@ Analyzer_i * CreateAnalyzerBool ( const AttributeHeader_i & tHeader, FileReader_
 		return new Analyzer_Bool_T<true> ( tHeader, pReader, tSettings );
 	else
 		return new Analyzer_Bool_T<false> ( tHeader, pReader, tSettings );
+}
+
+//////////////////////////////////////////////////////////////////////////
+
+class Checker_Bool_c : public Checker_c
+{
+	using BASE=Checker_c;
+	using BASE::BASE;
+
+private:
+	bool	CheckBlockHeader ( uint32_t uBlockId ) override;
+};
+
+
+bool Checker_Bool_c::CheckBlockHeader ( uint32_t uBlockId )
+{
+	uint32_t uPacking = m_pReader->Unpack_uint32();
+	if ( uPacking!=(uint32_t)BoolPacking_e::CONST && uPacking!=(uint32_t)BoolPacking_e::BITMAP )
+	{
+		m_fnError ( FormatStr ( "Unknown encoding of block %u: %u", uBlockId, uPacking ).c_str() );
+		return false;
+	}
+
+	return true;
+}
+
+//////////////////////////////////////////////////////////////////////////
+
+Checker_i * CreateCheckerBool ( const AttributeHeader_i & tHeader, FileReader_c * pReader, Reporter_fn & fnProgress, Reporter_fn & fnError )
+{
+	return new Checker_Bool_c ( tHeader, pReader, fnProgress, fnError );
 }
 
 } // namespace columnar

@@ -17,14 +17,19 @@
 #include "reader.h"
 #include "assert.h"
 #include <errno.h>
+#include <sys/stat.h>
 
 #ifdef _MSC_VER
 	#define WIN32_LEAN_AND_MEAN
 	#define NOMINMAX
 	#include <windows.h>
 	#include <io.h>
+	#define stat		_stat64
+	#define fstat		_fstat64
+	#define struct_stat	struct _stat64
 #else
 	#include <unistd.h>
+	#define struct_stat        struct stat
 #endif
 
 
@@ -179,6 +184,25 @@ bool FileReader_c::ReadToBuffer()
 	m_iFilePos = iNewFilePos;
 
 	return true;
+}
+
+
+int64_t FileReader_c::GetFileSize()
+{
+	if ( m_iFD<0 )
+	{
+		m_sError = FormatStr ( "invalid FD: %d", m_iFD );
+		return -1;
+	}
+
+	struct_stat tStat;
+	if ( fstat ( m_iFD, &tStat )<0 )
+	{
+		m_sError = FormatStr ( "fstat failed for %d: '%s'", m_iFD, strerror(errno) );
+		return -1;
+	}
+
+	return tStat.st_size;
 }
 
 } // namespace columnar

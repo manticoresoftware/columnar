@@ -35,6 +35,8 @@ public:
 	int64_t					GetPos() const { return m_iFilePos+m_tPtr; }
 	int						GetFD() const { return m_iFD; }
 
+	int64_t					GetFileSize();
+
 	void					Read ( uint8_t * pData, size_t tLen );
 
 	FORCE_INLINE uint8_t	Read_uint8()

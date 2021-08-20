@@ -18,6 +18,7 @@
 #include "accessortraits.h"
 #include "builderstr.h"
 #include "reader.h"
+#include "check.h"
 
 namespace columnar
 {
@@ -1110,6 +1111,39 @@ Analyzer_i * CreateAnalyzerStr ( const AttributeHeader_i & tHeader, FileReader_c
 	case 7:	return new Analyzer_String_T<true, true, true>  ( tHeader, pReader, tSettings );
 	default: return nullptr;
 	}
+}
+
+//////////////////////////////////////////////////////////////////////////
+
+class Checker_String_c : public Checker_c
+{
+	using BASE=Checker_c;
+	using BASE::BASE;
+
+private:
+	bool	CheckBlockHeader ( uint32_t uBlockId ) override;
+};
+
+
+bool Checker_String_c::CheckBlockHeader ( uint32_t uBlockId )
+{
+	uint32_t uPacking = m_pReader->Unpack_uint32();
+	if ( uPacking!=(uint32_t)StrPacking_e::CONST && uPacking!=(uint32_t)StrPacking_e::CONSTLEN && uPacking!=(uint32_t)StrPacking_e::TABLE && uPacking!=(uint32_t)StrPacking_e::GENERIC )
+	{
+		m_fnError ( FormatStr ( "Unknown encoding of block %u: %u", uBlockId, uPacking ).c_str() );
+		return false;
+	}
+
+	// fixme: add block data checks once encodings are finalized
+
+	return true;
+}
+
+//////////////////////////////////////////////////////////////////////////
+
+Checker_i * CreateCheckerStr ( const AttributeHeader_i & tHeader, FileReader_c * pReader, Reporter_fn & fnProgress, Reporter_fn & fnError )
+{
+	return new Checker_String_c ( tHeader, pReader, fnProgress, fnError );
 }
 
 } // namespace columnar

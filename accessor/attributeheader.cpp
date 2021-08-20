@@ -17,6 +17,7 @@
 #include "attributeheader.h"
 #include "buildertraits.h"
 #include "reader.h"
+#include "check.h"
 
 namespace columnar
 {
@@ -32,6 +33,7 @@ public:
 	inline Element_t	Get ( int iLevel, int iBlock ) const	{ return m_dTreeLevels[iLevel].second[iBlock]; }
 
 	bool				Load ( FileReader_c & tReader, std::string & sError );
+	bool				Check ( FileReader_c & tReader, Reporter_fn & fnError );
 
 private:
 	using TreeLevel_t = std::pair<int,Element_t*>;
@@ -74,6 +76,37 @@ bool MinMax_T<T>::Load ( FileReader_c & tReader, std::string & sError )
 	{
 		sError = tReader.GetError();
 		return false;
+	}
+
+	return true;
+}
+
+template <typename T>
+bool MinMax_T<T>::Check ( FileReader_c & tReader, Reporter_fn & fnError )
+{
+	int iTreeLevels = 0;
+	if ( !CheckInt32Packed ( tReader, 0, 128, "Number of minmax tree levels", iTreeLevels, fnError ) ) return false;
+
+	int iTotalElements = 0;
+	int iLastElements = 0;
+	for ( int i = 0; i < iTreeLevels; i++ )
+	{
+		int iElementsOnLevel = (int)tReader.Unpack_uint32();
+		if ( iElementsOnLevel < iLastElements )
+		{
+			fnError ( "Decreasing number of elements on minmax tree levels" );
+			return false;
+		}
+
+		iLastElements = iElementsOnLevel;
+		iTotalElements += iElementsOnLevel;
+	}
+
+	// fixme: maybe add minmax tree verification (opposite of construction process)
+	for ( int i = 0; i < iTotalElements; i++ )
+	{
+		tReader.Unpack_uint64();
+		tReader.Unpack_uint64();
 	}
 
 	return true;
@@ -136,6 +169,7 @@ public:
 	bool					HaveStringHashes() const override { return false; }
 
 	bool					Load ( FileReader_c & tReader, std::string & sError ) override;
+	bool					Check ( FileReader_c & tReader, Reporter_fn & fnError ) override;
 
 private:
 	std::string				m_sName;
@@ -189,6 +223,30 @@ bool AttributeHeader_c::Load ( FileReader_c & tReader, std::string & sError )
 	return true;
 }
 
+
+bool AttributeHeader_c::Check ( FileReader_c & tReader, Reporter_fn & fnError )
+{
+	int iBlocks = 0;
+	int64_t iOffset = 0;
+	int64_t iFileSize = tReader.GetFileSize();
+	if ( !m_tSettings.Check ( tReader, fnError ) ) return false;
+	if ( !CheckString ( tReader, 0, 1024, "Attribute name", fnError ) ) return false;
+	if ( !CheckInt64 ( tReader, 0, iFileSize, "Header offset", iOffset, fnError ) ) return false;
+	if ( !CheckInt32Packed ( tReader, 0, int ( m_uTotalDocs/65536 )+1, "Number of blocks", iBlocks, fnError ) ) return false;
+
+	for ( int i = 0; i < iBlocks-1; i++ )
+	{
+		iOffset += (int64_t)tReader.Unpack_uint64();
+		if ( iOffset<0 || iOffset>iFileSize )
+		{
+			fnError ( FormatStr ( "Block offset out of bounds: %lld", iOffset ).c_str() );
+			return false;
+		}
+	}
+
+	return true;
+}
+
 //////////////////////////////////////////////////////////////////////////
 
 template <typename T>
@@ -203,6 +261,7 @@ public:
 	std::pair<int64_t,int64_t> GetMinMax ( int iLevel, int iBlock ) const override;
 
 	bool			Load ( FileReader_c & tReader, std::string & sError ) override;
+	bool			Check ( FileReader_c & tReader, Reporter_fn & fnError ) override;
 
 private:
 	MinMax_T<T>		m_tMinMax;
@@ -215,6 +274,15 @@ bool AttributeHeader_Int_T<T>::Load ( FileReader_c & tReader, std::string & sErr
 		return false;
 
 	return m_tMinMax.Load ( tReader, sError );
+}
+
+template <typename T>
+bool AttributeHeader_Int_T<T>::Check ( FileReader_c & tReader, Reporter_fn & fnError )
+{
+	if ( !BASE::Check ( tReader, fnError ) )
+		return false;
+
+	return m_tMinMax.Check ( tReader, fnError );
 }
 
 template <typename T>
@@ -242,6 +310,7 @@ public:
 
 	bool	HaveStringHashes() const final { return m_bHaveHashes; }
 	bool	Load ( FileReader_c & tReader, std::string & sError ) override;
+	bool	Check ( FileReader_c & tReader, Reporter_fn & fnError ) override;
 
 private:
 	bool	m_bHaveHashes = false;
@@ -261,6 +330,16 @@ bool AttributeHeader_String_c::Load ( FileReader_c & tReader, std::string & sErr
 		return false;
 	}
 
+	return true;
+}
+
+
+bool AttributeHeader_String_c::Check ( FileReader_c & tReader, Reporter_fn & fnError )
+{
+	if ( !BASE::Check ( tReader, fnError ) )
+		return false;
+
+	tReader.Read_uint8();
 	return true;
 }
 

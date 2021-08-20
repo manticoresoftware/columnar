@@ -16,16 +16,17 @@
 
 #pragma once
 
+#include "buildertraits.h"
+
 namespace columnar
 {
 
-struct Filter_t;
-class Iterator_i;
 class Analyzer_i;
+class Checker_i;
 class AttributeHeader_i;
-class FileReader_c;
 
-Iterator_i * CreateIteratorMVA ( const AttributeHeader_i & tHeader, FileReader_c * pReader );
-Analyzer_i * CreateAnalyzerMVA ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings, bool bHaveMatchingBlocks );
+Iterator_i *	CreateIteratorMVA ( const AttributeHeader_i & tHeader, FileReader_c * pReader );
+Analyzer_i *	CreateAnalyzerMVA ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings, bool bHaveMatchingBlocks );
+Checker_i *		CreateCheckerMva ( const AttributeHeader_i & tHeader, FileReader_c * pReader, Reporter_fn & fnProgress, Reporter_fn & fnError );
 
 } // namespace columnar

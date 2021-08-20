@@ -18,6 +18,7 @@
 #include "accessortraits.h"
 #include "buildermva.h"
 #include "reader.h"
+#include "check.h"
 
 #include <algorithm>
 
@@ -1108,6 +1109,38 @@ Analyzer_i * CreateAnalyzerMVA ( const AttributeHeader_i & tHeader, FileReader_c
 	case 7:		return CreateAnalyzerMVA < MvaAny_T<true, true, true >, MvaAll_T<true, true, true > > ( tHeader, pReader, tSettings, bHaveMatchingBlocks );
 	default:	return nullptr;
 	}
+}
+
+//////////////////////////////////////////////////////////////////////////
+
+class Checker_Mva_c : public Checker_c
+{
+	using BASE = Checker_c;
+	using BASE::BASE;
+
+private:
+	bool	CheckBlockHeader ( uint32_t uBlockId ) override;
+};
+
+bool Checker_Mva_c::CheckBlockHeader ( uint32_t uBlockId )
+{
+	uint32_t uPacking = m_pReader->Unpack_uint32();
+	if ( uPacking!=(uint32_t)MvaPacking_e::CONST && uPacking!=(uint32_t)MvaPacking_e::CONSTLEN && uPacking!=(uint32_t)MvaPacking_e::TABLE && uPacking!=(uint32_t)MvaPacking_e::DELTA_PFOR )
+	{
+		m_fnError ( FormatStr ( "Unknown encoding of block %u: %u", uBlockId, uPacking ).c_str() );
+		return false;
+	}
+
+	// fixme: add block data checks once encodings are finalized
+
+	return true;
+}
+
+//////////////////////////////////////////////////////////////////////////
+
+Checker_i * CreateCheckerMva ( const AttributeHeader_i & tHeader, FileReader_c * pReader, Reporter_fn & fnProgress, Reporter_fn & fnError )
+{
+	return new Checker_Mva_c ( tHeader, pReader, fnProgress, fnError );
 }
 
 } // namespace columnar

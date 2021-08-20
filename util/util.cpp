@@ -27,16 +27,6 @@
 
 namespace columnar
 {
-static Malloc_fn g_fnMalloc = nullptr;
-static Free_fn g_fnFree  = nullptr;
-
-
-void SetupAlloc ( columnar::Malloc_fn fnMalloc, columnar::Free_fn fnFree )
-{
-	columnar::g_fnMalloc = fnMalloc;
-	columnar::g_fnFree = fnFree;
-}
-
 
 int CalcNumBits ( uint64_t uNumber )
 {

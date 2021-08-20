@@ -20,6 +20,7 @@
 #include "accessorint.h"
 #include "accessorstr.h"
 #include "accessormva.h"
+#include "check.h"
 #include "reader.h"
 
 #include <unordered_map>
@@ -155,6 +156,19 @@ void Settings_t::Save ( FileWriter_c & tWriter )
 
 	tWriter.Write_string(m_sCompressionUINT32);
 	tWriter.Write_string(m_sCompressionUINT64);
+}
+
+
+bool Settings_t::Check ( FileReader_c & tReader, Reporter_fn & fnError )
+{
+	if ( !CheckInt32 ( tReader, 0, 2048, "Subblock size", fnError ) )		return false;	// m_iSubblockSize
+	if ( !CheckInt32 ( tReader, 0, 2048, "MVA subblock size", fnError ) )	return false;	// m_iSubblockSizeMva
+	if ( !CheckInt32 ( tReader, 0, 2048, "Minmax leaf size", fnError ) )	return false;	// m_iMinMaxLeafSize
+
+	if ( !CheckString ( tReader, 0, 128, "Uint32 compression algo", fnError ) )	return false;	// m_sCompressionUINT32
+	if ( !CheckString ( tReader, 0, 128, "Uint64 compression algo", fnError ) )	return false;	// m_sCompressionUINT64
+
+	return true;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -330,7 +344,7 @@ public:
 private:
 	std::string							m_sFilename;
 	uint32_t							m_uTotalDocs;
-	std::vector<AttributeHeader_i*>		m_dHeaders;
+	std::vector<std::unique_ptr<AttributeHeader_i>>	m_dHeaders;
 	std::unordered_map<std::string, HeaderWithLocator_t> m_hHeaders;
 	FileReader_c						m_tReader;
 
@@ -596,8 +610,8 @@ bool Columnar_c::LoadHeaders ( FileReader_c & tReader, int iNumAttrs, std::strin
 		if ( !pHeader->Load ( tReader, sError ) )
 			return false;
 
-		m_dHeaders[i] = pHeader.release();
-		m_hHeaders.insert ( { m_dHeaders[i]->GetName(), { m_dHeaders[i], (int)i } } );
+		m_dHeaders[i] = std::move(pHeader);
+		m_hHeaders.insert ( { m_dHeaders[i]->GetName(), { m_dHeaders[i].get(), (int)i } } );
 		tReader.Seek ( tReader.Read_uint64() );
 	}
 
@@ -617,9 +631,9 @@ columnar::Columnar_i * CreateColumnarStorageReader ( const std::string & sFilena
 }
 
 
-void SetupColumnar ( columnar::Malloc_fn fnMalloc, columnar::Free_fn fnFree )
+void CheckColumnarStorage ( const std::string & sFilename, uint32_t uNumRows, columnar::Reporter_fn & fnError, columnar::Reporter_fn & fnProgress )
 {
-	columnar::SetupAlloc ( fnMalloc, fnFree );
+	columnar::CheckStorage ( sFilename, uNumRows, fnError, fnProgress );
 }
 
 

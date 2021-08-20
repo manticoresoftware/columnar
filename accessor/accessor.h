@@ -47,6 +47,15 @@ public:
 };
 
 
+class Checker_i
+{
+public:
+	virtual			~Checker_i() = default;
+
+	virtual bool	Check() = 0;
+};
+
+
 bool	CheckEmptySpan ( uint32_t * pRowID, uint32_t * pRowIdStart, Span_T<uint32_t> & dRowIdBlock );
 
 } // namespace columnar

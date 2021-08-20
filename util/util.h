@@ -359,10 +359,6 @@ inline float to_type<float> ( int64_t iValue )
 	return UintToFloat ( (uint32_t)iValue );
 }
 
-using Malloc_fn = void * (*)(size_t);
-using Free_fn = void (*)(void *);
-
-void    SetupAlloc ( columnar::Malloc_fn fnMalloc, columnar::Free_fn fnFree );
 int     CalcNumBits ( uint64_t uNumber );
 bool    CopySingleFile ( const std::string & sSource, const std::string & sDest, std::string & sError, int iMode );
 

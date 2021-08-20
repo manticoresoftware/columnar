@@ -22,7 +22,7 @@
 namespace columnar
 {
 
-static const int LIB_VERSION = 9;
+static const int LIB_VERSION = 10;
 
 class Iterator_i
 {
@@ -124,9 +124,12 @@ enum class AttrType_e : uint32_t
 	FLOAT,
 	STRING,
 	UINT32SET,
-	INT64SET
+	INT64SET,
+
+	TOTAL
 };
 
+using Reporter_fn = std::function<void (const char*)>;
 class FileReader_c;
 
 struct Settings_t
@@ -139,6 +142,7 @@ struct Settings_t
 
 	void		Load ( FileReader_c & tReader );
 	void		Save ( FileWriter_c & tWriter );
+	bool		Check ( FileReader_c & tReader, Reporter_fn & fnError );
 };
 
 
@@ -161,7 +165,7 @@ public:
 extern "C"
 {
 	DLLEXPORT columnar::Columnar_i *	CreateColumnarStorageReader ( const std::string & sFilename, uint32_t uTotalDocs, std::string & sError );
-	DLLEXPORT void						SetupColumnar ( columnar::Malloc_fn fnMalloc, columnar::Free_fn fnFree );
+	DLLEXPORT void						CheckColumnarStorage ( const std::string & sFilename, uint32_t uNumRows, columnar::Reporter_fn & fnError, columnar::Reporter_fn & fnProgress );
 	DLLEXPORT int						GetColumnarLibVersion();
 	DLLEXPORT const char *				GetColumnarLibVersionStr();
 }

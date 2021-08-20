@@ -24,6 +24,7 @@ ADD_LIBRARY ( accessor OBJECT
 		accessormva.cpp
 		accessorstr.cpp
 		accessortraits.cpp
+		check.cpp
 		attributeheader.h
 		accessor.h
 		accessorbool.h
@@ -31,6 +32,7 @@ ADD_LIBRARY ( accessor OBJECT
 		accessormva.h
 		accessorstr.h
 		accessortraits.h
+		check.h
 		)
 
 target_link_libraries ( accessor PRIVATE columnar_root )

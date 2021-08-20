@@ -44,6 +44,7 @@ public:
 	virtual bool				HaveStringHashes() const = 0;
 
 	virtual bool				Load ( FileReader_c & tReader, std::string & sError ) = 0;
+	virtual bool				Check ( FileReader_c & tReader, Reporter_fn & fnError ) = 0;
 };
 
 
