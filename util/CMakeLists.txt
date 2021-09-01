@@ -22,10 +22,12 @@ ADD_LIBRARY ( util OBJECT
 		version.cpp
 		delta.cpp
 		reader.cpp
+		codec.cpp
 		util.h
 		interval.h
 		delta.h
 		reader.h
+		codec.h
 		)
 
 include ( CheckFunctionExists )
