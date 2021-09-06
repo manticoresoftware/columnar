@@ -648,3 +648,9 @@ const char * GetColumnarLibVersionStr()
 {
 	return LIB_VERSION;
 }
+
+
+int GetColumnarStorageVersion()
+{
+	return columnar::STORAGE_VERSION;
+}
