@@ -113,7 +113,7 @@ collect_windows:
 
 rhel7:
   extends: [ .redhat_based ]
-  image: registry.gitlab.com/manticoresearch/dev/centos7_cmake:320
+  image: registry.gitlab.com/manticoresearch/dev/centos7_clang:7
   cache:
     key: rhel7_columnar
 
@@ -127,7 +127,7 @@ collect_rhel7:
 
 rhel8:
   extends: [ .redhat_based ]
-  image: registry.gitlab.com/manticoresearch/dev/centos8_cmake:320
+  image: registry.gitlab.com/manticoresearch/dev/centos8_clang:11
   cache:
     key: rhel8_columnar
 
@@ -141,7 +141,7 @@ collect_rhel8:
 
 stretch:
   extends: [ .debian_based ]
-  image: registry.gitlab.com/manticoresearch/dev/stretch_cmake:320
+  image: registry.gitlab.com/manticoresearch/dev/stretch_clang:12
   cache:
     key: stretch_columnar
 
@@ -155,7 +155,7 @@ collect_stretch:
 
 xenial:
   extends: [ .debian_based ]
-  image: registry.gitlab.com/manticoresearch/dev/xenial_cmake:320
+  image: registry.gitlab.com/manticoresearch/dev/xenial_clang:12
   cache:
     key: xenial_columnar
 
@@ -169,7 +169,7 @@ collect_xenial:
 
 bionic:
   extends: [ .debian_based ]
-  image: registry.gitlab.com/manticoresearch/dev/bionic_cmake:320
+  image: registry.gitlab.com/manticoresearch/dev/bionic_clang:12
   cache:
     key: bionic_columnar
 
@@ -183,7 +183,7 @@ collect_bionic:
 
 focal:
   extends: [ .debian_based ]
-  image: registry.gitlab.com/manticoresearch/dev/focal_cmake:320
+  image: registry.gitlab.com/manticoresearch/dev/focal_clang:12
   cache:
     key: focal_columnar
 
@@ -197,7 +197,7 @@ collect_focal:
 
 buster:
   extends: [ .debian_based ]
-  image: registry.gitlab.com/manticoresearch/dev/buster_cmake:320
+  image: registry.gitlab.com/manticoresearch/dev/buster_clang:12
   cache:
     key: buster_columnar
 
