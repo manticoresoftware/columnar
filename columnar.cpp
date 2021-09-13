@@ -31,10 +31,11 @@ namespace columnar
 
 using HeaderWithLocator_t = std::pair<const AttributeHeader_i*, int>;
 
-class MinMaxEval_c
+template <bool ROWID_LIMITS>
+class MinMaxEval_T
 {
 public:
-			MinMaxEval_c ( const std::vector<HeaderWithLocator_t> & dHeaders, const BlockTester_i & tBlockTester, SharedBlocks_c & pMatchingBlocks );
+			MinMaxEval_T ( const std::vector<HeaderWithLocator_t> & dHeaders, const BlockTester_i & tBlockTester, SharedBlocks_c & pMatchingBlocks, uint32_t uMinRowID, uint32_t uMaxRowID );
 
 	void	Eval();
 	bool	EvalAll();
@@ -47,37 +48,47 @@ private:
 	std::vector<int>		m_dBlocksOnLevel;
 	MinMaxVec_t				m_dMinMax;
 	int						m_iNumLevels = 0;
+	int						m_iMinMaxLeafShift = 0;
+	uint32_t				m_uMinRowID = 0;
+	uint32_t				m_uMaxRowID = INVALID_ROW_ID;
 
 	void					DoEval ( int iLevel, int iBlock );
 	void					ResizeMinMax();
 	FORCE_INLINE bool		FillMinMax ( int iLevel, int iBlock );
+	FORCE_INLINE uint32_t	MinMaxBlockId2RowId ( int iBlockId ) const;
+	FORCE_INLINE uint32_t	MinMaxBlockId2RowId ( int iBlockId, int iLevel ) const;
+	FORCE_INLINE bool		RangesOverlap ( uint32_t uMin, uint32_t uMax ) const;
 };
 
-
-MinMaxEval_c::MinMaxEval_c ( const std::vector<HeaderWithLocator_t> & dHeaders, const BlockTester_i & tBlockTester, SharedBlocks_c & pMatchingBlocks )
+template <bool ROWID_LIMITS>
+MinMaxEval_T<ROWID_LIMITS>::MinMaxEval_T ( const std::vector<HeaderWithLocator_t> & dHeaders, const BlockTester_i & tBlockTester, SharedBlocks_c & pMatchingBlocks, uint32_t uMinRowID, uint32_t uMaxRowID )
 	: m_dHeaders ( dHeaders )
 	, m_tBlockTester ( tBlockTester )
 	, m_pMatchingBlocks ( pMatchingBlocks )
+	, m_uMinRowID ( uMinRowID )
+	, m_uMaxRowID ( uMaxRowID )
 {
 	assert ( !dHeaders.empty() );
 
 	// do this to avoid multiple vcalls when evaluating
 	m_iNumLevels = m_dHeaders[0].first->GetNumMinMaxLevels();
+	m_iMinMaxLeafShift = CalcNumBits ( m_dHeaders[0].first->GetSettings().m_iMinMaxLeafSize ) - 1;
+
 	m_dBlocksOnLevel.resize(m_iNumLevels);
 
 	for ( size_t i=0; i <m_dBlocksOnLevel.size(); i++ )
 		m_dBlocksOnLevel[i] = m_dHeaders[0].first->GetNumMinMaxBlocks ( (int)i );
 }
 
-
-void MinMaxEval_c::Eval()
+template <bool ROWID_LIMITS>
+void MinMaxEval_T<ROWID_LIMITS>::Eval()
 {
 	ResizeMinMax();
 	DoEval ( 0, 0 );
 }
 
-
-bool MinMaxEval_c::EvalAll()
+template <bool ROWID_LIMITS>
+bool MinMaxEval_T<ROWID_LIMITS>::EvalAll()
 {
 	ResizeMinMax();
 	if ( !FillMinMax ( 0, 0 ) )
@@ -86,8 +97,14 @@ bool MinMaxEval_c::EvalAll()
 	return m_tBlockTester.Test(m_dMinMax);
 }
 
+template <bool ROWID_LIMITS>
+bool MinMaxEval_T<ROWID_LIMITS>::RangesOverlap ( uint32_t uMin, uint32_t uMax ) const
+{
+	return uMin<=m_uMaxRowID && uMax>=m_uMinRowID;
+}
 
-void MinMaxEval_c::DoEval ( int iLevel, int iBlock )
+template <bool ROWID_LIMITS>
+void MinMaxEval_T<ROWID_LIMITS>::DoEval ( int iLevel, int iBlock )
 {
 	if ( !FillMinMax ( iLevel, iBlock ) )
 		return;
@@ -95,19 +112,47 @@ void MinMaxEval_c::DoEval ( int iLevel, int iBlock )
 	if ( m_tBlockTester.Test ( m_dMinMax ) )
 	{
 		if ( iLevel==m_iNumLevels-1 )
-			m_pMatchingBlocks->Add(iBlock);
+		{
+			if ( ROWID_LIMITS )
+			{
+				uint32_t uMinBlockRowID = MinMaxBlockId2RowId(iBlock);
+				uint32_t uMaxBlockRowID = MinMaxBlockId2RowId(iBlock+1) - 1;
+
+				if ( RangesOverlap ( uMinBlockRowID, uMaxBlockRowID ) )
+					m_pMatchingBlocks->Add(iBlock);
+			}
+			else
+				m_pMatchingBlocks->Add(iBlock);
+		}
 		else
 		{
 			int iLeftBlock = iBlock<<1;
 			int iRightBlock = iLeftBlock+1;
-			DoEval ( iLevel+1, iLeftBlock );
-			DoEval ( iLevel+1, iRightBlock );
+
+			if ( ROWID_LIMITS )
+			{
+				uint32_t uMinLeftBlockRowID = MinMaxBlockId2RowId ( iLeftBlock, iLevel+1 );
+				uint32_t uMaxLeftBlockRowID = MinMaxBlockId2RowId ( iLeftBlock+1, iLevel+1 ) - 1;
+				uint32_t uMinRightBlockRowID = MinMaxBlockId2RowId ( iRightBlock, iLevel+1 );
+				uint32_t uMaxRightBlockRowID = MinMaxBlockId2RowId ( iRightBlock+1, iLevel+1 ) - 1;
+
+				if ( RangesOverlap ( uMinLeftBlockRowID, uMaxLeftBlockRowID ) )
+					DoEval ( iLevel+1, iLeftBlock );
+
+				if ( RangesOverlap ( uMinRightBlockRowID, uMaxRightBlockRowID ) )
+					DoEval ( iLevel+1, iRightBlock );
+			}
+			else
+			{
+				DoEval ( iLevel+1, iLeftBlock );
+				DoEval ( iLevel+1, iRightBlock );
+			}
 		}
 	}
 }
 
-
-void MinMaxEval_c::ResizeMinMax()
+template <bool ROWID_LIMITS>
+void MinMaxEval_T<ROWID_LIMITS>::ResizeMinMax()
 {
 	int iMaxLocator = 0;
 	for ( const auto & i : m_dHeaders )
@@ -118,8 +163,8 @@ void MinMaxEval_c::ResizeMinMax()
 		i = {0,0};
 }
 
-
-bool MinMaxEval_c::FillMinMax ( int iLevel, int iBlock )
+template <bool ROWID_LIMITS>
+bool MinMaxEval_T<ROWID_LIMITS>::FillMinMax ( int iLevel, int iBlock )
 {
 	int iNumBlocksOnLevel = m_dBlocksOnLevel[iLevel];
 	if ( iBlock>=iNumBlocksOnLevel )
@@ -132,6 +177,18 @@ bool MinMaxEval_c::FillMinMax ( int iLevel, int iBlock )
 	}
 
 	return true;
+}
+
+template <bool ROWID_LIMITS>
+uint32_t MinMaxEval_T<ROWID_LIMITS>::MinMaxBlockId2RowId ( int iBlockId ) const
+{
+	return iBlockId<<m_iMinMaxLeafShift;
+}
+
+template <bool ROWID_LIMITS>
+uint32_t MinMaxEval_T<ROWID_LIMITS>::MinMaxBlockId2RowId ( int iBlockId, int iLevel ) const
+{
+	return iBlockId << ( m_iNumLevels - iLevel - 1 + m_iMinMaxLeafShift );
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -201,8 +258,8 @@ private:
 	int			m_iNumLevels = 0;
 
 	inline bool	SetCurBlock ( int iBlock );
-	inline int	GetNumDocs ( int iBlock ) const;
-	inline int	MinMaxBlockId2RowId ( int iBlockId ) const;
+	FORCE_INLINE int GetNumDocs ( int iBlock ) const;
+	FORCE_INLINE uint32_t MinMaxBlockId2RowId ( int iBlockId ) const;
 };
 
 
@@ -320,7 +377,7 @@ int BlockIterator_c::GetNumDocs ( int iBlock ) const
 }
 
 
-int BlockIterator_c::MinMaxBlockId2RowId ( int iBlockId ) const
+uint32_t BlockIterator_c::MinMaxBlockId2RowId ( int iBlockId ) const
 {
 	return iBlockId<<m_iMinMaxLeafShift;
 }
@@ -492,20 +549,69 @@ std::vector<HeaderWithLocator_t> Columnar_c::GetHeadersForMinMax ( const std::ve
 }
 
 
+static void FetchRowIdLimits ( const Filter_t & tFilter, uint32_t uNumDocs, uint32_t & uMinRowID, uint32_t & uMaxRowID )
+{
+	uint32_t uMin = (uint32_t)tFilter.m_iMinValue;
+	uint32_t uMax = (uint32_t)tFilter.m_iMaxValue;
+	double fDelta = (double)uNumDocs / uMax;
+	uMinRowID = uint32_t ( fDelta*uMin );
+	uMaxRowID = (uMin==uMax-1) ? uNumDocs : uint32_t ( fDelta*(uMin+1) )-1;
+}
+
+
+static void PopulateMatchingBlocks ( MatchingBlocks_c & tBlocks, int iBlockSize, uint32_t uMinRowID, uint32_t uMaxRowID )
+{
+	int iStart = uMinRowID / iBlockSize;
+	int iEnd = uMaxRowID / iBlockSize + 1;
+	for ( int i = iStart; i < iEnd; i++ )
+		tBlocks.Add(i);
+}
+
+
 std::vector<BlockIterator_i *> Columnar_c::CreateAnalyzerOrPrefilter ( const std::vector<Filter_t> & dFilters, std::vector<int> & dDeletedFilters, const BlockTester_i & tBlockTester ) const
 {
 	std::vector<HeaderWithLocator_t> dHeaders = GetHeadersForMinMax(dFilters);
 	SharedBlocks_c pMatchingBlocks ( dHeaders.empty() ? nullptr : new MatchingBlocks_c );
 
-	if ( pMatchingBlocks.get() )
+	const Filter_t * pRowIdFilter = nullptr;
+	for ( auto & i : dFilters )
+		if ( i.m_sName=="@rowid" )
+		{
+			pRowIdFilter = &i;
+			break;
+		}
+
+	uint32_t uMinRowID = 0;
+	uint32_t uMaxRowID = INVALID_ROW_ID;
+	if ( pRowIdFilter )
+		FetchRowIdLimits ( *pRowIdFilter, m_dHeaders[0]->GetNumDocs(), uMinRowID, uMaxRowID );
+
+	bool bMinMaxBlocks = !!pMatchingBlocks;
+	if ( bMinMaxBlocks )
 	{
-		MinMaxEval_c tMinMaxEval ( dHeaders, tBlockTester, pMatchingBlocks );
-		tMinMaxEval.Eval();
+		if ( pRowIdFilter )
+		{
+			MinMaxEval_T<true> tMinMaxEval ( dHeaders, tBlockTester, pMatchingBlocks, uMinRowID, uMaxRowID );
+			tMinMaxEval.Eval();
+		}
+		else
+		{
+			MinMaxEval_T<false> tMinMaxEval ( dHeaders, tBlockTester, pMatchingBlocks, uMinRowID, uMaxRowID );
+			tMinMaxEval.Eval();
+		}
+	}
+	else
+	{
+		pMatchingBlocks = SharedBlocks_c ( new MatchingBlocks_c );
+		PopulateMatchingBlocks ( *pMatchingBlocks, m_dHeaders[0]->GetSettings().m_iMinMaxLeafSize, uMinRowID, uMaxRowID );
 	}
 
 	std::vector<BlockIterator_i *> dAnalyzers = TryToCreateAnalyzers ( dFilters, dDeletedFilters, pMatchingBlocks );
 	if ( !dAnalyzers.empty() )
 		return dAnalyzers;
+
+	if ( !bMinMaxBlocks )
+		return {};
 
 	return TryToCreatePrefilter ( dHeaders, pMatchingBlocks );
 }
@@ -525,7 +631,7 @@ bool Columnar_c::EarlyReject ( const std::vector<Filter_t> & dFilters, const Blo
 		return false;
 
 	SharedBlocks_c pShared(nullptr);
-	MinMaxEval_c tMinMaxEval ( dHeaders, tBlockTester, pShared );
+	MinMaxEval_T<false> tMinMaxEval ( dHeaders, tBlockTester, pShared, 0, INVALID_ROW_ID );
 	return !tMinMaxEval.EvalAll();
 }
 

@@ -145,7 +145,6 @@ bool Builder_c::WriteHeaders ( FileWriter_c & tWriter, std::string & sError )
 
 bool Builder_c::WriteBodies ( std::string & sError )
 {
-	
 	return std::all_of ( m_dPackers.cbegin(), m_dPackers.cend(), [this, &sError]( auto & i ){ return i->WriteBody ( m_sFile, sError ); } );
 }
 
