@@ -1,6 +1,12 @@
-# Manticore Columnar Library
+<p align="center">
+  <a href="https://manticoresearch.com" target="_blank" rel="noopener">
+    <img src="https://manticoresearch.com/wp-content/uploads/2019/12/manticore-logo-central-M-1.png" width="140" alt="Manicore Search Logo">
+  </a>
+</p>
 
-⚠️ PLEASE NOTE: This library is currently in beta and should be used in production with caution! The library is being actively developed and data formats can and will be changed.
+<h1 align="center">
+  Manticore Columnar Library 1.11.2
+</h1>
 
 Manticore Columnar Library is a column-oriented storage library, aiming to provide **decent performance with low memory footprint at big data volume**.
 When used in combination with [Manticore Search](https://github.com/manticoresoftware/manticoresearch) can be beneficial for those looking for:
