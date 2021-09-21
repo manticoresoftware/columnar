@@ -17,12 +17,11 @@ When used in combination with [Manticore Search](https://github.com/manticoresof
 
 ## Getting started
 
-### Installation from dev yum/apt repositories
+### Installation from yum/apt repositories
 #### Ubuntu, Debian:
 ```bash
-sudo wget https://repo.manticoresearch.com/manticore-dev-repo.noarch.deb
-sudo dpkg -i manticore-dev-repo.noarch.deb
-sudo apt-key adv --fetch-keys 'http://repo.manticoresearch.com/GPG-KEY-manticore'
+wget https://repo.manticoresearch.com/manticore-repo.noarch.deb
+sudo dpkg -i manticore-repo.noarch.deb
 sudo apt update
 sudo apt install manticore manticore-columnar-lib
 ```
@@ -30,20 +29,18 @@ sudo apt install manticore manticore-columnar-lib
 #### Centos:
 ```bash
 sudo yum install https://repo.manticoresearch.com/manticore-repo.noarch.rpm
-sudo yum --enablerepo manticore-dev install manticore manticore-columnar-lib
+sudo yum install manticore manticore-columnar-lib
 ```
 
 `searchd -v` should include `columnar x.y.z`, e.g.:
 ```bash
 root@srv# searchd -v
-Manticore 3.6.1 70f08813c@210601 dev (columnar 1.0.1 583c36c@210528)
+Manticore 4.0.2 af497f245@210921 release (columnar 1.11.2 69d3780@210921)
 ```
 
 ### Basic usage:
-1. Add a plain index to Manticore - https://manual.manticoresearch.com/Creating_an_index/Local_indexes/Plain_index#Plain-index
-2. Add `columnar_attrs = attr1, attr2, attr3, ..., attr4` to the plain index (section `index`). You can add `id` too.
-3. Build the index as usually - https://play.manticoresearch.com/mysql/
-
+1. Read https://manual.manticoresearch.com/Creating_an_index/Data_types#How-to-switch-between-the-storages
+2. Create plain or real-time index specifying that the columnar storage should be used
 
 ## Benchmark "Hacker News comments"
 
