@@ -137,7 +137,7 @@ struct Settings_t
 	int			m_iSubblockSize = 128;
 	int			m_iSubblockSizeMva = 128;
 	int			m_iMinMaxLeafSize = 128;
-	std::string	m_sCompressionUINT32 = "simdfastpfor128";
+	std::string	m_sCompressionUINT32 = "streamvbyte";
 	std::string	m_sCompressionUINT64 = "fastpfor128";
 
 	void		Load ( FileReader_c & tReader );
