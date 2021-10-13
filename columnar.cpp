@@ -72,7 +72,7 @@ MinMaxEval_T<ROWID_LIMITS>::MinMaxEval_T ( const std::vector<HeaderWithLocator_t
 
 	// do this to avoid multiple vcalls when evaluating
 	m_iNumLevels = m_dHeaders[0].first->GetNumMinMaxLevels();
-	m_iMinMaxLeafShift = CalcNumBits ( m_dHeaders[0].first->GetSettings().m_iMinMaxLeafSize ) - 1;
+	m_iMinMaxLeafShift = CalcNumBits ( m_dHeaders[0].first->GetSettings().m_iSubblockSize ) - 1;
 
 	m_dBlocksOnLevel.resize(m_iNumLevels);
 
@@ -196,8 +196,6 @@ uint32_t MinMaxEval_T<ROWID_LIMITS>::MinMaxBlockId2RowId ( int iBlockId, int iLe
 void Settings_t::Load ( FileReader_c & tReader )
 {
 	m_iSubblockSize		= tReader.Read_uint32();
-	m_iSubblockSizeMva	= tReader.Read_uint32();
-	m_iMinMaxLeafSize	= tReader.Read_uint32();
 
 	// FIXME: should be removed before release
 	m_sCompressionUINT32 = tReader.Read_string();
@@ -208,9 +206,6 @@ void Settings_t::Load ( FileReader_c & tReader )
 void Settings_t::Save ( FileWriter_c & tWriter )
 {
 	tWriter.Write_uint32(m_iSubblockSize);
-	tWriter.Write_uint32(m_iSubblockSizeMva);
-	tWriter.Write_uint32(m_iMinMaxLeafSize);
-
 	tWriter.Write_string(m_sCompressionUINT32);
 	tWriter.Write_string(m_sCompressionUINT64);
 }
@@ -218,10 +213,7 @@ void Settings_t::Save ( FileWriter_c & tWriter )
 
 bool Settings_t::Check ( FileReader_c & tReader, Reporter_fn & fnError )
 {
-	if ( !CheckInt32 ( tReader, 0, 2048, "Subblock size", fnError ) )		return false;	// m_iSubblockSize
-	if ( !CheckInt32 ( tReader, 0, 2048, "MVA subblock size", fnError ) )	return false;	// m_iSubblockSizeMva
-	if ( !CheckInt32 ( tReader, 0, 2048, "Minmax leaf size", fnError ) )	return false;	// m_iMinMaxLeafSize
-
+	if ( !CheckInt32 ( tReader, 0, 65536, "Subblock size", fnError ) )			return false;	// m_iSubblockSize
 	if ( !CheckString ( tReader, 0, 128, "Uint32 compression algo", fnError ) )	return false;	// m_sCompressionUINT32
 	if ( !CheckString ( tReader, 0, 128, "Uint64 compression algo", fnError ) )	return false;	// m_sCompressionUINT64
 
@@ -271,7 +263,7 @@ bool BlockIterator_c::Setup ( const std::vector<HeaderWithLocator_t> & dHeaders,
 	m_iTotalDocs = pFirstAttr->GetNumDocs();
 	m_iNumLevels = pFirstAttr->GetNumMinMaxLevels();
 	m_iNumBlocks = pFirstAttr->GetNumMinMaxBlocks ( m_iNumLevels-1 );
-	m_iDocsPerBlock = pFirstAttr->GetSettings().m_iMinMaxLeafSize;
+	m_iDocsPerBlock = pFirstAttr->GetSettings().m_iSubblockSize;
 	m_iMinMaxLeafShift = CalcNumBits(m_iDocsPerBlock)-1;
 
 	int iLeftover = m_iTotalDocs % m_iDocsPerBlock;
@@ -603,7 +595,7 @@ std::vector<BlockIterator_i *> Columnar_c::CreateAnalyzerOrPrefilter ( const std
 	else
 	{
 		pMatchingBlocks = SharedBlocks_c ( new MatchingBlocks_c );
-		PopulateMatchingBlocks ( *pMatchingBlocks, m_dHeaders[0]->GetSettings().m_iMinMaxLeafSize, uMinRowID, uMaxRowID );
+		PopulateMatchingBlocks ( *pMatchingBlocks, m_dHeaders[0]->GetSettings().m_iSubblockSize, uMinRowID, uMaxRowID );
 	}
 
 	std::vector<BlockIterator_i *> dAnalyzers = TryToCreateAnalyzers ( dFilters, dDeletedFilters, pMatchingBlocks );
@@ -665,9 +657,6 @@ std::vector<BlockIterator_i *> Columnar_c::TryToCreateAnalyzers ( const std::vec
 		const AttributeHeader_i * pHeader = GetHeader ( tFilter.m_sName );
 		if ( pHeader )
 		{
-			// assume that minmax leaf size is the same as subblock size, it makes things easier
-			assert ( pHeader->GetSettings().m_iMinMaxLeafSize == pHeader->GetSettings().m_iSubblockSize );
-
 			Analyzer_i * pAnalyzer = CreateAnalyzer ( tFilter, !!pMatchingBlocks );
 			if ( pAnalyzer )
 			{

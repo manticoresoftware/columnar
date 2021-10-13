@@ -366,7 +366,7 @@ void StoredBlock_MvaTable_T<T>::ReadSubblock ( int iSubblockId, int iNumValues, 
 	size_t uPackedSize = m_dEncoded.size()*sizeof ( m_dEncoded[0] );
 	tReader.Seek ( m_iValuesOffset + uPackedSize*iSubblockId );
 	tReader.Read ( (uint8_t*)m_dEncoded.data(), uPackedSize );
-	BitUnpack128 ( m_dEncoded, m_dValueIndexes, m_iBits );
+	BitUnpack ( m_dEncoded, m_dValueIndexes, m_iBits );
 
 	m_tValuesRead = { m_dValueIndexes.data(), (size_t)iNumValues };
 }
@@ -504,12 +504,12 @@ protected:
 
 template<typename T>
 Accessor_MVA_T<T>::Accessor_MVA_T ( const AttributeHeader_i & tHeader, FileReader_c * pReader )
-	: StoredBlockTraits_t ( tHeader.GetSettings().m_iSubblockSizeMva )
+	: StoredBlockTraits_t ( tHeader.GetSettings().m_iSubblockSize )
 	, m_tHeader ( tHeader )
 	, m_pReader ( pReader )
 	, m_tBlockConst ( tHeader.GetSettings().m_sCompressionUINT32, tHeader.GetSettings().m_sCompressionUINT64 )
 	, m_tBlockConstLen ( tHeader.GetSettings().m_sCompressionUINT32, tHeader.GetSettings().m_sCompressionUINT64 )
-	, m_tBlockTable ( tHeader.GetSettings().m_sCompressionUINT32, tHeader.GetSettings().m_sCompressionUINT64, tHeader.GetSettings().m_iSubblockSizeMva )
+	, m_tBlockTable ( tHeader.GetSettings().m_sCompressionUINT32, tHeader.GetSettings().m_sCompressionUINT64, tHeader.GetSettings().m_iSubblockSize )
 	, m_tBlockPFOR ( tHeader.GetSettings().m_sCompressionUINT32, tHeader.GetSettings().m_sCompressionUINT64 )
 {
 	assert(pReader);
@@ -913,7 +913,7 @@ private:
 
 template <typename T, typename T_COMP, typename FUNC, bool HAVE_MATCHING_BLOCKS>
 Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::Analyzer_MVA_T ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings )
-	: ANALYZER ( tHeader.GetSettings().m_iSubblockSizeMva )
+	: ANALYZER ( tHeader.GetSettings().m_iSubblockSize )
 	, ACCESSOR ( tHeader, pReader )
 	, m_tBlockConst ( ANALYZER::m_tRowID )
 	, m_tBlockTable ( ANALYZER::m_tRowID )

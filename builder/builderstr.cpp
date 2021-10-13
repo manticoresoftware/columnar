@@ -122,7 +122,7 @@ Packer_String_c::Packer_String_c ( const Settings_t & tSettings, const std::stri
 	, m_fnHashCalc ( fnHashCalc )
 {
 	m_tHeader.SetHashFlag ( !!fnHashCalc );
-	m_dTableIndexes.resize(128);
+	m_dTableIndexes.resize ( tSettings.m_iSubblockSize );
 }
 
 
@@ -277,7 +277,7 @@ void Packer_String_c::WritePacked_Table()
 	for ( const auto & i : m_dUniques )
 		m_tWriter.Write ( (const uint8_t*)i.c_str(), i.length() );
 
-	WriteTableOrdinals ( m_dUniques, m_hUnique, m_dCollected, m_dTableIndexes, m_dCompressed, m_tWriter );
+	WriteTableOrdinals ( m_dUniques, m_hUnique, m_dCollected, m_dTableIndexes, m_dCompressed, m_tHeader.GetSettings().m_iSubblockSize, m_tWriter );
 }
 
 
@@ -295,6 +295,8 @@ void Packer_String_c::WritePacked_ConstLen()
 template <typename WRITER>
 bool Packer_String_c::WriteNullMap ( const Span_T<std::string> & dStrings, WRITER & tWriter, bool bNoNullMap )
 {
+	int iSubblockSize = BASE::m_tHeader.GetSettings().m_iSubblockSize;
+
 	int iNumNonEmpty = 0;
 	for ( const auto & i : dStrings )
 		if ( !i.empty() )
@@ -305,25 +307,25 @@ bool Packer_String_c::WriteNullMap ( const Span_T<std::string> & dStrings, WRITE
 	// is the total size of 8-byte hashes of empty strings greater that map size (by, say, 4x)?
 	const int COEFF = 4;
 	bool bNeedNullMap = (tNumValues-iNumNonEmpty)*sizeof(uint64_t) > COEFF*(tNumValues/8);
-	bNeedNullMap &= !bNoNullMap && tNumValues==BASE::m_tHeader.GetSettings().m_iSubblockSize;
+	bNeedNullMap &= !bNoNullMap && tNumValues==iSubblockSize;
 
-	// if we want subblocks of more than 256 values, we should change storage format here
-	assert ( BASE::m_tHeader.GetSettings().m_iSubblockSize<=256 && iNumNonEmpty<=255 );
-	tWriter.Write_uint8 ( bNeedNullMap ? (uint8_t)iNumNonEmpty : (uint8_t)tNumValues );
+	assert ( iSubblockSize<=65536 && iNumNonEmpty<=65535 );
+	tWriter.Write_uint16 ( bNeedNullMap ? (uint16_t)iNumNonEmpty : (uint16_t)tNumValues );
+
 	if ( !bNeedNullMap )
 		return false;
 
-	m_dUncompressed32.resize(128);
+	m_dUncompressed32.resize(iSubblockSize);
 	m_dCompressed.resize ( m_dUncompressed32.size() >> 5 );
 
 	int iNullMapId = 0;
 	for ( const auto & i : dStrings )
 	{
 		m_dUncompressed32[iNullMapId++] = i.empty() ? 0 : 1;
-		if ( iNullMapId!=128 )
+		if ( iNullMapId!=iSubblockSize )
 			continue;
 
-		BitPack128 ( m_dUncompressed32, m_dCompressed, 1 );
+		BitPack ( m_dUncompressed32, m_dCompressed, 1 );
 		tWriter.Write ( (uint8_t*)m_dCompressed.data(), m_dCompressed.size()*sizeof(m_dCompressed[0]) );
 		iNullMapId = 0;
 	}

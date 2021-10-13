@@ -115,7 +115,7 @@ void IntCodec_c::Encode ( const Span_T<T> & dUncompressed, std::vector<uint32_t>
 template <typename T>
 bool IntCodec_c::Decode ( const Span_T<uint32_t> & dCompressed, SpanResizeable_T<T> & dDecompressed, FastPForLib::IntegerCODEC & tCodec )
 {
-	const int MAX_DECODED_SIZE = 1024;
+	const int MAX_DECODED_SIZE = 32768;
 	if ( dDecompressed.size()<MAX_DECODED_SIZE )
 		dDecompressed.resize(MAX_DECODED_SIZE);
 
@@ -170,24 +170,49 @@ FastPForLib::IntegerCODEC * IntCodec_c::CreateCodec ( const std::string & sName 
 
 //////////////////////////////////////////////////////////////////////////
 
-void BitPack128 ( const std::vector<uint32_t> & dValues, std::vector<uint32_t> & dPacked, int iBits )
+void BitPack ( const std::vector<uint32_t> & dValues, std::vector<uint32_t> & dPacked, int iBits )
 {
-	assert ( dValues.size()==128 );
-	FastPForLib::SIMD_fastpack_32 ( dValues.data(), (__m128i *)dPacked.data(), iBits );
+	assert ( !( dValues.size() & 127 ) );
+
+	int iNumPacks = dValues.size()>>7;
+	int iStep = iBits<<2;
+	const uint32_t * pIn = &dValues[0];
+	uint32_t * pOut = &dPacked[0];
+
+	for ( int i = 0; i < iNumPacks; i++ )
+	{
+		FastPForLib::SIMD_fastpack_32 ( pIn, (__m128i *)pOut, iBits );
+		pIn += 128;
+		pOut += iStep;
+	}
 }
 
 
-void BitUnpack128 ( const std::vector<uint32_t> & dPacked, std::vector<uint32_t> & dValues, int iBits )
+static FORCE_INLINE void BitUnpack ( const uint32_t * pIn, uint32_t * pOut, int iNumValues, int iBits )
 {
-	assert ( dValues.size()==128 );
-	FastPForLib::SIMD_fastunpack_32 ( (__m128i *)dPacked.data(), dValues.data(), iBits );
+	assert ( !(iNumValues & 127 ) );
+
+	int iNumPacks = iNumValues>>7;
+	int iStep = iBits<<2;
+
+	for ( int i = 0; i < iNumPacks; i++ )
+	{
+		FastPForLib::SIMD_fastunpack_32 ( (__m128i *)pIn, pOut, iBits );
+		pIn += iStep;
+		pOut += 128;
+	}
 }
 
 
-void BitUnpack128 ( const Span_T<uint32_t> & dPacked, Span_T<uint32_t> & dValues, int iBits )
+void BitUnpack ( const std::vector<uint32_t> & dPacked, std::vector<uint32_t> & dValues, int iBits )
 {
-	assert ( dValues.size()==128 );
-	FastPForLib::SIMD_fastunpack_32 ( (__m128i *)dPacked.data(), dValues.data(), iBits );
+	BitUnpack ( &dPacked[0], &dValues[0], (int)dValues.size(), iBits );
+}
+
+
+void BitUnpack ( const Span_T<uint32_t> & dPacked, Span_T<uint32_t> & dValues, int iBits )
+{
+	BitUnpack ( &dPacked[0], &dValues[0], (int)dValues.size(), iBits );
 }
 
 

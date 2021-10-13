@@ -134,9 +134,7 @@ class FileReader_c;
 
 struct Settings_t
 {
-	int			m_iSubblockSize = 128;
-	int			m_iSubblockSizeMva = 128;
-	int			m_iMinMaxLeafSize = 128;
+	int			m_iSubblockSize = 1024;
 	std::string	m_sCompressionUINT32 = "streamvbyte";
 	std::string	m_sCompressionUINT64 = "fastpfor128";
 

@@ -33,9 +33,9 @@ public:
 };
 
 
-void BitPack128 ( const std::vector<uint32_t> & dValues, std::vector<uint32_t> & dPacked, int iBits );
-void BitUnpack128 ( const std::vector<uint32_t> & dPacked, std::vector<uint32_t> & dValues, int iBits );
-void BitUnpack128 ( const Span_T<uint32_t> & dPacked, Span_T<uint32_t> & dValues, int iBits );
+void BitPack ( const std::vector<uint32_t> & dValues, std::vector<uint32_t> & dPacked, int iBits );
+void BitUnpack ( const std::vector<uint32_t> & dPacked, std::vector<uint32_t> & dValues, int iBits );
+void BitUnpack ( const Span_T<uint32_t> & dPacked, Span_T<uint32_t> & dValues, int iBits );
 
 IntCodec_i * CreateIntCodec ( const std::string & sCodec32, const std::string & sCodec64 );
 

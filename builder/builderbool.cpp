@@ -88,7 +88,7 @@ protected:
 Packer_Bool_c::Packer_Bool_c ( const Settings_t & tSettings, const std::string & sName )
 	: BASE ( tSettings, sName, AttrType_e::BOOLEAN )
 {
-	assert ( tSettings.m_iSubblockSize==128 );
+	assert ( !( tSettings.m_iSubblockSize & 127 ) );
 	m_dValues.resize ( tSettings.m_iSubblockSize );
 	m_dPacked.resize ( tSettings.m_iSubblockSize >> 5 );
 }
@@ -187,13 +187,15 @@ void Packer_Bool_c::WritePacked_Const()
 
 void Packer_Bool_c::WritePacked_Bitmap()
 {
+	const int iSubblockSize = m_tHeader.GetSettings().m_iSubblockSize;
+
 	int iId = 0;
 	for ( size_t i=0; i < m_dCollected.size(); i++ )
 	{
 		m_dValues[iId++] = m_dCollected[i] ? 1 : 0;
-		if ( iId==128 )
+		if ( iId==iSubblockSize )
 		{
-			BitPack128 ( m_dValues, m_dPacked, 1 );
+			BitPack ( m_dValues, m_dPacked, 1 );
 			m_tWriter.Write ( (uint8_t*)m_dPacked.data(), m_dPacked.size()*sizeof(m_dPacked[0]) );
 			iId = 0;
 		}
@@ -203,7 +205,7 @@ void Packer_Bool_c::WritePacked_Bitmap()
 	{
 		// zero out unused values
 		memset ( m_dValues.data()+iId, 0, (m_dValues.size()-iId)*sizeof(m_dValues[0]) );
-		BitPack128 ( m_dValues, m_dPacked, 1 );
+		BitPack ( m_dValues, m_dPacked, 1 );
 		m_tWriter.Write ( (uint8_t*)m_dValues.data(), m_dValues.size()*sizeof(m_dValues[0]) );
 	}
 }

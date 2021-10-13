@@ -59,7 +59,7 @@ private:
 
 StoredBlock_Bool_Bitmap_c::StoredBlock_Bool_Bitmap_c ( int iSubblockSize )
 {
-	assert ( iSubblockSize==128 );
+	assert ( !( iSubblockSize & 127 ) );
 	m_dValues.resize(iSubblockSize);
 	m_dEncoded.resize ( iSubblockSize >> 5 );
 }
@@ -82,7 +82,7 @@ void StoredBlock_Bool_Bitmap_c::ReadSubblock ( int iSubblockId, int iNumValues, 
 	size_t uPackedSize = m_dEncoded.size()*sizeof ( m_dEncoded[0] );
 	tReader.Seek ( m_iValuesOffset + uPackedSize*iSubblockId );
 	tReader.Read ( (uint8_t*)m_dEncoded.data(), uPackedSize );
-	BitUnpack128 ( m_dEncoded, m_dValues, 1 );
+	BitUnpack ( m_dEncoded, m_dValues, 1 );
 
 	m_tValuesRead = { m_dValues.data(), (size_t)iNumValues };
 }

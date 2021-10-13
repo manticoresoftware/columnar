@@ -41,11 +41,11 @@ private:
 
 void StrHashReader_c::ReadHashesWithNullMap ( FileReader_c & tReader, int iValues, int iNumHashes )
 {
-	assert ( iValues==128 );
+	assert ( !(iValues & 127 ) );
 	m_dTmp.resize ( iValues >> 5 );
 	m_dNullMap.resize(iValues);
 	tReader.Read ( (uint8_t*)m_dTmp.data(), m_dTmp.size()*sizeof(m_dTmp[0]) );
-	BitUnpack128 ( m_dTmp, m_dNullMap, 1 );
+	BitUnpack ( m_dTmp, m_dNullMap, 1 );
 	tReader.Read ( (uint8_t*)m_dHashes.data(), iNumHashes*sizeof(uint64_t) );
 
 	const uint32_t * pNullMap = m_dNullMap.end()-1;
@@ -67,7 +67,7 @@ void StrHashReader_c::ReadHashesWithNullMap ( FileReader_c & tReader, int iValue
 
 void StrHashReader_c::ReadHashes ( FileReader_c & tReader, int iValues, bool bNeedHashes )
 {
-	int iNumHashes = tReader.Read_uint8();
+	int iNumHashes = tReader.Read_uint16();
 	bool bHaveNullMap = iValues!=iNumHashes;
 	size_t tTotalHashSize = iNumHashes*sizeof(uint64_t);
 
@@ -365,7 +365,7 @@ void StoredBlock_StrTable_c::ReadSubblock ( int iSubblockId, int iNumValues, Fil
 	size_t uPackedSize = m_dEncoded.size()*sizeof ( m_dEncoded[0] );
 	tReader.Seek ( m_iValuesOffset + uPackedSize*iSubblockId );
 	tReader.Read ( (uint8_t*)m_dEncoded.data(), uPackedSize );
-	BitUnpack128 ( m_dEncoded, m_dValueIndexes, m_iBits );
+	BitUnpack ( m_dEncoded, m_dValueIndexes, m_iBits );
 
 	m_tValuesRead = { m_dValueIndexes.data(), (size_t)iNumValues };
 }

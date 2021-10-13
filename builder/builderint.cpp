@@ -140,7 +140,7 @@ Packer_Int_T<T,HEADER>::Packer_Int_T ( const Settings_t & tSettings, const std::
 	: BASE ( tSettings, sName, eType )
 	, m_pCodec ( CreateIntCodec ( tSettings.m_sCompressionUINT32, tSettings.m_sCompressionUINT64 ) )
 {
-	assert ( tSettings.m_iSubblockSize==128 );
+	assert ( !(tSettings.m_iSubblockSize & 127) );
 	m_dTableIndexes.resize ( tSettings.m_iSubblockSize );
 }
 
@@ -289,7 +289,7 @@ void Packer_Int_T<T,HEADER>::WritePacked_Table()
 	// write the table
 	m_tWriter.Write_uint8 ( (uint8_t)m_dUniques.size() );
 	WriteValues_Delta_PFOR ( Span_T<T>(m_dUniques), m_dUncompressed, m_dCompressed, m_tWriter, m_pCodec.get() );
-	WriteTableOrdinals ( m_dUniques, m_hUnique, m_dCollected, m_dTableIndexes, m_dTablePacked, m_tWriter );
+	WriteTableOrdinals ( m_dUniques, m_hUnique, m_dCollected, m_dTableIndexes, m_dTablePacked, m_tHeader.GetSettings().m_iSubblockSize, m_tWriter );
 }
 
 template <typename T, typename HEADER>

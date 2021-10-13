@@ -185,11 +185,34 @@ bool Builder_c::Done ( std::string & sError )
 	return true;
 }
 
+
+bool CheckSubblockSize ( int iSubblockSize, std::string & sError )
+{
+	const int MIN_SUBBLOCK_SIZE = 128;
+
+	if ( iSubblockSize < MIN_SUBBLOCK_SIZE )
+	{
+		FormatStr ( "Subblock sizes less than %d are not supported (%d specified)", MIN_SUBBLOCK_SIZE, iSubblockSize );
+		return false;
+	}
+
+	if ( iSubblockSize & ( MIN_SUBBLOCK_SIZE-1 ) )
+	{
+		FormatStr ( "Subblock size should be a multiple of %d (%d specified)", MIN_SUBBLOCK_SIZE, iSubblockSize );
+		return false;
+	}
+
+	return true;
+}
+
 } // namespace columnar
 
 
 columnar::Builder_i * CreateColumnarBuilder ( const columnar::Settings_t & tSettings, const columnar::Schema_t & tSchema, const std::string & sFile, std::string & sError )
 {
+	if ( !columnar::CheckSubblockSize ( tSettings.m_iSubblockSize, sError ) )
+		return nullptr;
+
 	std::unique_ptr<columnar::Builder_c> pBuilder ( new columnar::Builder_c );
 	if ( !pBuilder->Setup ( tSettings, tSchema, sFile, sError ) )
 		return nullptr;

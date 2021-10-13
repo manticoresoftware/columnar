@@ -21,7 +21,7 @@
 namespace columnar
 {
 
-static const uint32_t STORAGE_VERSION = 5;
+static const uint32_t STORAGE_VERSION = 6;
 
 struct SchemaAttr_t
 {

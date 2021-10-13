@@ -75,7 +75,7 @@ template <typename T>
 StoredBlock_Int_Table_T<T>::StoredBlock_Int_Table_T ( int iSubblockSize, const std::string & sCodec32, const std::string & sCodec64 )
 	: m_pCodec ( CreateIntCodec ( sCodec32, sCodec64 ) )
 {
-	assert ( iSubblockSize==128 );
+	assert ( !( iSubblockSize & 127 ) );
 	m_dValueIndexes.resize(iSubblockSize);
 }
 
@@ -105,7 +105,7 @@ void StoredBlock_Int_Table_T<T>::ReadSubblock ( int iSubblockId, int iNumValues,
 	size_t uPackedSize = m_dEncoded.size()*sizeof ( m_dEncoded[0] );
 	tReader.Seek ( m_iValuesOffset + uPackedSize*iSubblockId );
 	tReader.Read ( (uint8_t*)m_dEncoded.data(), uPackedSize );
-	BitUnpack128 ( m_dEncoded, m_dValueIndexes, m_iBits );
+	BitUnpack ( m_dEncoded, m_dValueIndexes, m_iBits );
 
 	m_tValuesRead = { m_dValueIndexes.data(), (size_t)iNumValues };
 }

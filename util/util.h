@@ -229,6 +229,7 @@ public:
 	void        SeekAndWrite ( int64_t iOffset, uint64_t uValue );
 	void        Write_string ( const std::string & sStr );
 	void        Write_uint8 ( uint8_t uValue )      { Write ( (uint8_t*)&uValue, sizeof(uValue) ); }
+	void        Write_uint16 ( uint16_t uValue )    { Write ( (uint8_t*)&uValue, sizeof(uValue) ); }
 	void        Write_uint32 ( uint32_t uValue )    { Write ( (uint8_t*)&uValue, sizeof(uValue) ); }
 	void        Write_uint64 ( uint64_t uValue )    { Write ( (uint8_t*)&uValue, sizeof(uValue) ); }
 
@@ -277,6 +278,7 @@ public:
 	int64_t GetPos() const { return (int64_t)m_dData.size(); }
 
 	void    Write_uint8 ( uint8_t uValue ) { m_dData.push_back(uValue); }
+	void    Write_uint16 ( uint16_t uValue ) { WriteValue(uValue); }
 	void    Write_uint32 ( uint64_t uValue ) { WriteValue(uValue); }
 	void    Write_uint64 ( uint64_t uValue ) { WriteValue(uValue); }
 

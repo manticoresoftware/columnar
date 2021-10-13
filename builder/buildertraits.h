@@ -187,7 +187,7 @@ static void WriteValues_PFOR ( const Span_T<T> & dValues, std::vector<T> & dTmpU
 }
 
 template <typename UNIQ_VEC, typename UNIQ_HASH, typename COLLECTED>
-void WriteTableOrdinals ( UNIQ_VEC & dUniques, UNIQ_HASH & hUnique, COLLECTED & dCollected, std::vector<uint32_t> & dTableIndexes, std::vector<uint32_t> & dCompressed, FileWriter_c & tWriter )
+void WriteTableOrdinals ( UNIQ_VEC & dUniques, UNIQ_HASH & hUnique, COLLECTED & dCollected, std::vector<uint32_t> & dTableIndexes, std::vector<uint32_t> & dCompressed, int iSubblockSize, FileWriter_c & tWriter )
 {
 	// write the ordinals
 	int iBits = CalcNumBits ( dUniques.size() );
@@ -201,9 +201,9 @@ void WriteTableOrdinals ( UNIQ_VEC & dUniques, UNIQ_HASH & hUnique, COLLECTED & 
 		assert ( tFound->second<256 );
 
 		dTableIndexes[iId++] = tFound->second;
-		if ( iId==128 )
+		if ( iId==iSubblockSize )
 		{
-			BitPack128 ( dTableIndexes, dCompressed, iBits );
+			BitPack ( dTableIndexes, dCompressed, iBits );
 			tWriter.Write ( (uint8_t*)dCompressed.data(), dCompressed.size()*sizeof(dCompressed[0]) );
 			iId = 0;
 		}
@@ -213,7 +213,7 @@ void WriteTableOrdinals ( UNIQ_VEC & dUniques, UNIQ_HASH & hUnique, COLLECTED & 
 	{
 		// zero out unused values
 		memset ( dTableIndexes.data()+iId, 0, (dTableIndexes.size()-iId)*sizeof(dTableIndexes[0]) );
-		BitPack128 ( dTableIndexes, dCompressed, iBits );
+		BitPack ( dTableIndexes, dCompressed, iBits );
 		tWriter.Write ( (uint8_t*)dCompressed.data(), dCompressed.size()*sizeof(dCompressed[0]) );
 	}
 }

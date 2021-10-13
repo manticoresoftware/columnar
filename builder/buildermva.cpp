@@ -122,7 +122,7 @@ Packer_MVA_T<T>::Packer_MVA_T ( const Settings_t & tSettings, const std::string 
 	: BASE ( tSettings, sName, eAttr )
 	, m_pCodec ( CreateIntCodec ( tSettings.m_sCompressionUINT32, tSettings.m_sCompressionUINT64 ) )
 {
-	assert ( tSettings.m_iSubblockSize==128 );
+	assert ( !(tSettings.m_iSubblockSize & 127) );
 	m_dTableIndexes.resize ( tSettings.m_iSubblockSize );
 }
 
@@ -290,6 +290,8 @@ void Packer_MVA_T<T>::WritePacked_Table()
 	int iBits = CalcNumBits ( m_hUnique.size() );
 	m_dTablePacked.resize ( ( m_dTableIndexes.size()*iBits + 31 ) >> 5 );
 
+	const int iSubblockSize = BASE::m_tHeader.GetSettings().m_iSubblockSize;
+
 	uint32_t uOffset = 0;
 	int iId = 0;
 	for ( auto i : m_dCollectedLengths )
@@ -301,9 +303,9 @@ void Packer_MVA_T<T>::WritePacked_Table()
 		assert ( tFound->second < 256 );
 
 		m_dTableIndexes[iId++] = tFound->second;
-		if ( iId==128 )
+		if ( iId==iSubblockSize )
 		{
-			BitPack128 ( m_dTableIndexes, m_dTablePacked, iBits );
+			BitPack ( m_dTableIndexes, m_dTablePacked, iBits );
 			BASE::m_tWriter.Write ( (uint8_t*)m_dTablePacked.data(), m_dTablePacked.size()*sizeof(m_dTablePacked[0]) );
 			iId = 0;
 		}
@@ -315,7 +317,7 @@ void Packer_MVA_T<T>::WritePacked_Table()
 	{
 		// zero out unused values
 		memset ( m_dTableIndexes.data()+iId, 0, (m_dTableIndexes.size()-iId)*sizeof(m_dTableIndexes[0]) );
-		BitPack128 ( m_dTableIndexes, m_dTablePacked, iBits );
+		BitPack ( m_dTableIndexes, m_dTablePacked, iBits );
 		BASE::m_tWriter.Write ( (uint8_t*)m_dTablePacked.data(), m_dTablePacked.size()*sizeof(m_dTablePacked[0]) );
 	}
 }
@@ -323,7 +325,7 @@ void Packer_MVA_T<T>::WritePacked_Table()
 template <typename T>
 void Packer_MVA_T<T>::WritePacked_DeltaPFOR ( bool bWriteLengths )
 {
-	int iSubblockSize = BASE::m_tHeader.GetSettings().m_iSubblockSizeMva;
+	int iSubblockSize = BASE::m_tHeader.GetSettings().m_iSubblockSize;
 	int iBlocks = ( (int)m_dCollectedLengths.size() + iSubblockSize - 1 ) / iSubblockSize;
 
 	m_dSubblockSizes.resize(iBlocks);
