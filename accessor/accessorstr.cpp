@@ -171,12 +171,12 @@ StoredBlock_StrConstLen_c::StoredBlock_StrConstLen_c ( int iSubblockSize )
 
 void StoredBlock_StrConstLen_c::ReadHeader ( FileReader_c & tReader, int iValues, bool bHaveStringHashes )
 {
-	size_t tLength = tReader.Unpack_uint64();
+	size_t tLength = tReader.Unpack_uint32();
 
 	if ( bHaveStringHashes )
 	{
 		m_tHashOffset = tReader.GetPos();
-		m_tValuesOffset = m_tHashOffset + iValues*sizeof(uint64_t);
+		m_tValuesOffset = m_tHashOffset + iValues*sizeof(uint64_t) + sizeof(uint16_t);
 	}
 	else
 		m_tValuesOffset = tReader.GetPos();
