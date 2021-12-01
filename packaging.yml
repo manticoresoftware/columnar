@@ -207,3 +207,16 @@ collect_buster:
   variables:
     DISTRO: buster
   needs: [ buster ]
+
+bullseye:
+  extends: [ .debian_based ]
+  image: registry.gitlab.com/manticoresearch/dev/bullseye_clang:12
+  cache:
+    key: bullseye_columnar
+
+collect_bullseye:
+  extends: [ .collect_job ]
+  script: [ ~/upload_repo_deb.sh ]
+  variables:
+    DISTRO: bullseye
+  needs: [ bullseye ]
