@@ -337,7 +337,7 @@ const T * binary_search ( const CONTAINER & dValues, const T & tValue )
 	auto tFirst = dValues.begin();
 	auto tLast = dValues.end();
 	auto tFound = std::lower_bound ( tFirst, tLast, tValue );
-	if ( tFound==tLast || tValue < *tFirst )
+	if ( tFound==tLast || tValue < *tFound )
 		return nullptr;
 
 	return &(*tFound);
