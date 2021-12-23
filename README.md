@@ -5,7 +5,7 @@
 </p>
 
 <h1 align="center">
-  Manticore Columnar Library 1.11.2
+  Manticore Columnar Library 1.11.4
 </h1>
 
 Manticore Columnar Library is a column-oriented storage library, aiming to provide **decent performance with low memory footprint at big data volume**.
