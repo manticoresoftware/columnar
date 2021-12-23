@@ -591,9 +591,6 @@ public:
 	int			Get ( const uint8_t * & pData ) final;
 	uint8_t *	GetPacked() final;
 	int			GetLength() final;
-
-	uint64_t	GetStringHash() final			{ return 0; }
-	bool		HaveStringHashes() const final	{ return false; }
 };
 
 template <typename T>

@@ -98,6 +98,8 @@ public:
 	void				AddDoc ( const int64_t * pData, int iLength ) override;
 	void				Flush() override;
 
+	void				OverridePacking ( IntPacking_e eSrc, IntPacking_e eDst );
+
 private:
 	T						m_tMin = T(0);
 	T						m_tMax = T(0);
@@ -121,6 +123,8 @@ private:
 	std::vector<uint8_t>	m_dTmpBuffer2;
 	std::vector<uint32_t>	m_dSubblockSizes;
 
+	IntPacking_e			m_dPackingOverrides[to_underlying(IntPacking_e::TOTAL)];
+
 	void				AnalyzeCollected ( int64_t tAttr );
 	IntPacking_e		ChoosePacking() const;
 	void				WriteToFile ( IntPacking_e ePacking );
@@ -131,8 +135,14 @@ private:
 	template <typename U, typename WRITER>
 	void				WriteSubblock_Delta ( const Span_T<U> & dSubblockValues, WRITER & tWriter, std::vector<U> & dTmp, bool bWriteFlag );
 
+	template <typename U>
+	bool				WriteNullMap ( const Span_T<U> & dSubblockValues, MemWriter_c & tWriter );
+
+	template <typename U>
+	void				WriteSubblock_Hash ( const Span_T<U> & dSubblockValues, MemWriter_c & tWriter );
+
 	template <typename WRITESUBBLOCK>
-	void				WritePacked_PFOR ( IntPacking_e ePacking, WRITESUBBLOCK && fnWriteSubblock );
+	void				WritePackedSubblocks ( IntPacking_e ePacking, WRITESUBBLOCK && fnWriteSubblock );
 };
 
 template <typename T, typename HEADER>
@@ -142,6 +152,9 @@ Packer_Int_T<T,HEADER>::Packer_Int_T ( const Settings_t & tSettings, const std::
 {
 	assert ( !(tSettings.m_iSubblockSize & 127) );
 	m_dTableIndexes.resize ( tSettings.m_iSubblockSize );
+
+	for ( auto i = to_underlying(IntPacking_e::CONST); i < to_underlying(IntPacking_e::TOTAL); i++ )
+		m_dPackingOverrides[i] = IntPacking_e(i);
 }
 
 template <typename T, typename HEADER>
@@ -201,15 +214,15 @@ template <typename T, typename HEADER>
 IntPacking_e Packer_Int_T<T,HEADER>::ChoosePacking() const
 {
 	if ( m_iUniques==1 )
-		return IntPacking_e::CONST;
+		return m_dPackingOverrides[to_underlying(IntPacking_e::CONST)];
 
 	if ( m_iUniques<256 )
-		return IntPacking_e::TABLE;
+		return m_dPackingOverrides[to_underlying(IntPacking_e::TABLE)];
 
 	if ( m_bMonoAsc || m_bMonoDesc )
-		return IntPacking_e::DELTA;
+		return m_dPackingOverrides[to_underlying(IntPacking_e::DELTA)];
 
-	return IntPacking_e::GENERIC;
+	return m_dPackingOverrides[to_underlying(IntPacking_e::GENERIC)];
 }
 
 template <typename T, typename HEADER>
@@ -228,14 +241,20 @@ void Packer_Int_T<T,HEADER>::WriteToFile ( IntPacking_e ePacking )
 		break;
 
 	case IntPacking_e::DELTA:
-		WritePacked_PFOR ( ePacking, [this]( const Span_T<T> & dSubblockValues, MemWriter_c & tWriter )
+		WritePackedSubblocks ( ePacking, [this]( const Span_T<T> & dSubblockValues, MemWriter_c & tWriter )
 			{ WriteSubblock_Delta ( dSubblockValues, tWriter, m_dUncompressed, true ); }
 		);
 		break;
 
 	case IntPacking_e::GENERIC:
-		WritePacked_PFOR ( ePacking, [this]( const Span_T<T> & dSubblockValues, MemWriter_c & tWriter )
+		WritePackedSubblocks ( ePacking, [this]( const Span_T<T> & dSubblockValues, MemWriter_c & tWriter )
 			{ WriteValues_PFOR ( dSubblockValues, m_dUncompressed, m_dCompressed, tWriter, m_pCodec.get(), false ); }
+		);
+		break;
+
+	case IntPacking_e::HASH:
+		WritePackedSubblocks ( ePacking, [this]( const Span_T<T> & dSubblockValues, MemWriter_c & tWriter )
+			{ WriteSubblock_Hash ( dSubblockValues, tWriter ); }
 		);
 		break;
 
@@ -260,6 +279,12 @@ void Packer_Int_T<T,HEADER>::Flush()
 	m_tPrevValue = 0;
 	m_iUniques = 0;
 	m_bMonoAsc = m_bMonoDesc = true;
+}
+
+template <typename T, typename HEADER>
+void Packer_Int_T<T,HEADER>::OverridePacking ( IntPacking_e eSrc, IntPacking_e eDst )
+{
+	m_dPackingOverrides[to_underlying(eSrc)] = eDst;
 }
 
 template <typename T, typename HEADER>
@@ -312,8 +337,57 @@ void Packer_Int_T<T,HEADER>::WriteSubblock_Delta ( const Span_T<U> & dSubblockVa
 }
 
 template <typename T, typename HEADER>
+template <typename U>
+bool Packer_Int_T<T,HEADER>::WriteNullMap ( const Span_T<U> & dSubblockValues, MemWriter_c & tWriter )
+{
+	int iSubblockSize = BASE::m_tHeader.GetSettings().m_iSubblockSize;
+
+	int iNumNonEmpty = 0;
+	for ( const auto i : dSubblockValues )
+		if ( i )
+			iNumNonEmpty++;
+
+	size_t tNumValues = dSubblockValues.size();
+
+	// is the total size of 8-byte hashes of empty strings greater that map size (by, say, 4x)?
+	const int COEFF = 4;
+	bool bNeedNullMap = (tNumValues-iNumNonEmpty)*sizeof(uint64_t) > COEFF*(tNumValues/8);
+	bNeedNullMap &= tNumValues==iSubblockSize;
+
+	assert ( iSubblockSize<=65536 && iNumNonEmpty<=65535 );
+	tWriter.Write_uint16 ( bNeedNullMap ? (uint16_t)iNumNonEmpty : (uint16_t)tNumValues );
+
+	if ( !bNeedNullMap )
+		return false;
+
+	m_dUncompressed32.resize(iSubblockSize);
+	m_dCompressed.resize ( m_dUncompressed32.size() >> 5 );
+
+	int iNullMapId = 0;
+	for ( const auto i : dSubblockValues )
+		m_dUncompressed32[iNullMapId++] = i ? 1 : 0;
+
+	BitPack ( m_dUncompressed32, m_dCompressed, 1 );
+	tWriter.Write ( (uint8_t*)m_dCompressed.data(), m_dCompressed.size()*sizeof(m_dCompressed[0]) );
+
+	return true;
+}
+
+template <typename T, typename HEADER>
+template <typename U>
+void Packer_Int_T<T,HEADER>::WriteSubblock_Hash ( const Span_T<U> & dSubblockValues, MemWriter_c & tWriter )
+{
+	bool bHaveNullMap = WriteNullMap ( dSubblockValues, tWriter );
+
+	// fixme: maybe try compressing the hashes?
+	for ( const auto i : dSubblockValues )
+		if ( !bHaveNullMap || i ) // skip empty hashes if we have a null map
+			tWriter.Write_uint64(i);
+}
+
+template <typename T, typename HEADER>
 template <typename WRITESUBBLOCK>
-void Packer_Int_T<T,HEADER>::WritePacked_PFOR ( IntPacking_e ePacking, WRITESUBBLOCK && fnWriteSubblock )
+void Packer_Int_T<T,HEADER>::WritePackedSubblocks ( IntPacking_e ePacking, WRITESUBBLOCK && fnWriteSubblock )
 {
 	int iSubblockSize = m_tHeader.GetSettings().m_iSubblockSize;
 	int iBlocks = ( (int)m_dCollected.size() + iSubblockSize - 1 ) / iSubblockSize;
@@ -352,7 +426,6 @@ void Packer_Int_T<T,HEADER>::WritePacked_PFOR ( IntPacking_e ePacking, WRITESUBB
 	m_tWriter.Write ( m_dTmpBuffer.data(), m_dTmpBuffer.size()*sizeof ( m_dTmpBuffer[0] ) );
 }
 
-
 //////////////////////////////////////////////////////////////////////////
 
 class Packer_Float_c : public Packer_Int_T<uint32_t, AttributeHeaderBuilder_Float_c>
@@ -365,6 +438,38 @@ public:
 
 //////////////////////////////////////////////////////////////////////////
 
+class Packer_Hash_c : public Packer_Int_T<uint64_t,AttributeHeaderBuilder_Int_T<uint64_t>>
+{
+	using BASE = Packer_Int_T<uint64_t,AttributeHeaderBuilder_Int_T<uint64_t>>;
+
+public:
+			Packer_Hash_c ( const Settings_t & tSettings, const std::string & sName, StringHash_fn fnCalcHash );
+
+	void	AddDoc ( int64_t tAttr ) override { assert ( 0 && "INTERNAL ERROR: sending int to string hash packer" ); }
+	void	AddDoc ( const uint8_t * pData, int iLength ) override;
+
+private:
+	static const uint64_t STR_HASH_SEED = 0xCBF29CE484222325ULL;
+	StringHash_fn m_fnCalcHash = nullptr;
+};
+
+
+Packer_Hash_c::Packer_Hash_c ( const Settings_t & tSettings, const std::string & sName, StringHash_fn fnCalcHash )
+	: BASE ( tSettings, sName, AttrType_e::INT64 )
+	, m_fnCalcHash ( fnCalcHash )
+{
+	assert(fnCalcHash);
+	OverridePacking ( IntPacking_e::GENERIC, IntPacking_e::HASH );
+}
+
+
+void Packer_Hash_c::AddDoc ( const uint8_t * pData, int iLength )
+{
+	BASE::AddDoc ( iLength ? m_fnCalcHash ( pData, iLength, STR_HASH_SEED ) : 0 );
+}
+
+//////////////////////////////////////////////////////////////////////////
+
 Packer_i * CreatePackerUint32 ( const Settings_t & tSettings, const std::string & sName )
 {
 	return new Packer_Int_T<uint32_t,AttributeHeaderBuilder_Int_T<uint32_t>> ( tSettings, sName, AttrType_e::UINT32 );
@@ -374,6 +479,12 @@ Packer_i * CreatePackerUint32 ( const Settings_t & tSettings, const std::string 
 Packer_i * CreatePackerUint64 ( const Settings_t & tSettings, const std::string & sName )
 {
 	return new Packer_Int_T<uint64_t,AttributeHeaderBuilder_Int_T<uint64_t>> ( tSettings, sName, AttrType_e::INT64 );
+}
+
+
+Packer_i * CreatePackerHash ( const Settings_t & tSettings, const std::string & sName, StringHash_fn fnCalcHash )
+{
+	return new Packer_Hash_c ( tSettings, sName, fnCalcHash );
 }
 
 

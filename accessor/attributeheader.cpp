@@ -166,8 +166,6 @@ public:
 	int						GetNumMinMaxBlocks ( int iLevel ) const override { return 0; }
 	std::pair<int64_t,int64_t> GetMinMax ( int iLevel, int iBlock ) const override { return {0, 0}; }
 
-	bool					HaveStringHashes() const override { return false; }
-
 	bool					Load ( FileReader_c & tReader, std::string & sError ) override;
 	bool					Check ( FileReader_c & tReader, Reporter_fn & fnError ) override;
 
@@ -301,50 +299,6 @@ std::pair<int64_t,int64_t> AttributeHeader_Int_T<float>::GetMinMax ( int iLevel,
 
 //////////////////////////////////////////////////////////////////////////
 
-class AttributeHeader_String_c : public AttributeHeader_Int_T<uint32_t>
-{
-	using BASE = AttributeHeader_Int_T<uint32_t>;
-
-public:
-			AttributeHeader_String_c ( uint32_t uTotalDocs ) : BASE ( AttrType_e::STRING, uTotalDocs ) {}
-
-	bool	HaveStringHashes() const final { return m_bHaveHashes; }
-	bool	Load ( FileReader_c & tReader, std::string & sError ) override;
-	bool	Check ( FileReader_c & tReader, Reporter_fn & fnError ) override;
-
-private:
-	bool	m_bHaveHashes = false;
-};
-
-
-bool AttributeHeader_String_c::Load ( FileReader_c & tReader, std::string & sError )
-{
-	if ( !BASE::Load ( tReader, sError ) )
-		return false;
-
-	m_bHaveHashes = !!tReader.Read_uint8();
-
-	if ( tReader.IsError() )
-	{
-		sError = tReader.GetError();
-		return false;
-	}
-
-	return true;
-}
-
-
-bool AttributeHeader_String_c::Check ( FileReader_c & tReader, Reporter_fn & fnError )
-{
-	if ( !BASE::Check ( tReader, fnError ) )
-		return false;
-
-	tReader.Read_uint8();
-	return true;
-}
-
-//////////////////////////////////////////////////////////////////////////
-
 AttributeHeader_i * CreateAttributeHeader ( AttrType_e eType, uint32_t uTotalDocs, std::string & sError )
 {
 	switch ( eType )
@@ -363,7 +317,7 @@ AttributeHeader_i * CreateAttributeHeader ( AttrType_e eType, uint32_t uTotalDoc
 		return new AttributeHeader_Int_T<float> ( eType, uTotalDocs );
 
 	case AttrType_e::STRING:
-		return new AttributeHeader_String_c(uTotalDocs);
+		return new AttributeHeader_Int_T<uint32_t> (eType, uTotalDocs);
 
 	case AttrType_e::UINT32SET:
 		return new AttributeHeader_Int_T<uint32_t> ( eType, uTotalDocs );

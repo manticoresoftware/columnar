@@ -383,7 +383,7 @@ public:
 
 	bool								Setup ( std::string & sError );
 
-	Iterator_i *						CreateIterator ( const std::string & sName, const IteratorHints_t & tHints, std::string & sError ) const final;
+	Iterator_i *						CreateIterator ( const std::string & sName, const IteratorHints_t & tHints, columnar::IteratorCapabilities_t * pCapabilities, std::string & sError ) const final;
 	std::vector<BlockIterator_i *>		CreateAnalyzerOrPrefilter ( const std::vector<Filter_t> & dFilters, std::vector<int> & dDeletedFilters, const BlockTester_i & tBlockTester ) const;
 	int									GetAttributeId ( const std::string & sName ) const;
 
@@ -444,7 +444,7 @@ bool Columnar_c::Setup ( std::string & sError )
 }
 
 
-Iterator_i * Columnar_c::CreateIterator ( const std::string & sName, const IteratorHints_t & tHints, std::string & sError ) const
+Iterator_i * Columnar_c::CreateIterator ( const std::string & sName, const IteratorHints_t & tHints, columnar::IteratorCapabilities_t * pCapabilities, std::string & sError ) const
 {
 	const AttributeHeader_i * pHeader = GetHeader(sName);
 	if ( !pHeader )
@@ -463,7 +463,20 @@ Iterator_i * Columnar_c::CreateIterator ( const std::string & sName, const Itera
 
 	case AttrType_e::INT64:		return CreateIteratorUint64 ( *pHeader, pReader.release() );
 	case AttrType_e::BOOLEAN:	return CreateIteratorBool ( *pHeader, pReader.release() );
-	case AttrType_e::STRING:	return CreateIteratorStr ( *pHeader, pReader.release(), tHints );
+	case AttrType_e::STRING:
+		if ( tHints.m_bNeedStringHashes )
+		{
+			const AttributeHeader_i * pHashHeader = GetHeader ( GenerateHashAttrName(sName) );
+			if ( pHashHeader )
+			{
+				if ( pCapabilities )
+					pCapabilities->m_bStringHashes = true;
+
+				return CreateIteratorUint64 ( *pHashHeader, pReader.release() );
+			}
+		}
+		return CreateIteratorStr ( *pHeader, pReader.release() );
+	
 	case AttrType_e::UINT32SET:
 	case AttrType_e::INT64SET:
 		return CreateIteratorMVA ( *pHeader, pReader.release() );

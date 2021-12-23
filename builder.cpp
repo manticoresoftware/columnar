@@ -37,8 +37,9 @@ public:
 	bool	Done ( std::string & sError ) final;
 
 private:
-	std::string m_sFile;
-	std::vector<std::shared_ptr<Packer_i>> m_dPackers;
+	std::string	m_sFile;
+	std::vector<std::vector<std::shared_ptr<Packer_i>>> m_dPackers;
+	std::vector<std::shared_ptr<Packer_i>> m_dFlatPackers;
 
 	bool	WriteHeaders ( FileWriter_c & tWriter, std::string & sError );
 	bool	WriteBodies ( std::string & sError );
@@ -50,51 +51,60 @@ bool Builder_c::Setup ( const Settings_t & tSettings, const Schema_t & tSchema, 
 {
 	m_sFile = sFile;
 
+	int iPackers = 0;
+
 	for ( const auto & i : tSchema )
 	{
-		std::shared_ptr<Packer_i> pPacker;
+		std::vector<std::shared_ptr<Packer_i>> dPackers;
+
 		switch ( i.m_eType )
 		{
 		case AttrType_e::UINT32:
 		case AttrType_e::TIMESTAMP:
-			pPacker = std::shared_ptr<Packer_i> ( CreatePackerUint32 ( tSettings, i.m_sName ) );
+			dPackers.push_back ( std::shared_ptr<Packer_i> ( CreatePackerUint32 ( tSettings, i.m_sName ) ) );
 			break;
 
 		case AttrType_e::INT64:
-			pPacker = std::shared_ptr<Packer_i> ( CreatePackerUint64 ( tSettings, i.m_sName ) );
+			dPackers.push_back ( std::shared_ptr<Packer_i> ( CreatePackerUint64 ( tSettings, i.m_sName ) ) );
 			break;
 
 		case AttrType_e::BOOLEAN:
-			pPacker = std::shared_ptr<Packer_i> ( CreatePackerBool ( tSettings, i.m_sName ) );
+			dPackers.push_back ( std::shared_ptr<Packer_i> ( CreatePackerBool ( tSettings, i.m_sName ) ) );
 			break;
 
 		case AttrType_e::FLOAT:
-			pPacker = std::shared_ptr<Packer_i> ( CreatePackerFloat ( tSettings, i.m_sName ) );
+			dPackers.push_back ( std::shared_ptr<Packer_i> ( CreatePackerFloat ( tSettings, i.m_sName ) ) );
 			break;
 
 		case AttrType_e::STRING:
-			pPacker = std::shared_ptr<Packer_i> ( CreatePackerStr ( tSettings, i.m_sName, i.m_fnCalcHash ) );
+			if ( i.m_fnCalcHash )
+				dPackers.push_back ( std::shared_ptr<Packer_i> ( CreatePackerHash ( tSettings, GenerateHashAttrName ( i.m_sName ), i.m_fnCalcHash ) ) );
+
+			dPackers.push_back ( std::shared_ptr<Packer_i> ( CreatePackerStr ( tSettings, i.m_sName ) ) );
 			break;
 
 		case AttrType_e::UINT32SET:
-			pPacker = std::shared_ptr<Packer_i> ( CreatePackerMva32 ( tSettings, i.m_sName ) );
+			dPackers.push_back ( std::shared_ptr<Packer_i> ( CreatePackerMva32 ( tSettings, i.m_sName ) ) );
 			break;
 
 		case AttrType_e::INT64SET:
-			pPacker = std::shared_ptr<Packer_i> ( CreatePackerMva64 ( tSettings, i.m_sName ) );
+			dPackers.push_back ( std::shared_ptr<Packer_i> ( CreatePackerMva64 ( tSettings, i.m_sName ) ) );
 			break;
 
 		default:
 			break;
 		}
 
-		if ( pPacker )
+		if ( !dPackers.empty() )
 		{
-			std::string sFilename = FormatStr ( "%s.%zu", sFile.c_str(), m_dPackers.size() );
-			if ( pPacker->Setup ( sFilename, sError ) )
-				m_dPackers.push_back(pPacker);
-			else
-				return false;
+			for ( auto & i : dPackers )
+			{
+				std::string sFilename = FormatStr ( "%s.%d", sFile.c_str(), iPackers++ );
+				if ( !i->Setup ( sFilename, sError ) )
+					return false;
+			}
+
+			m_dPackers.push_back ( std::move(dPackers) );
 		}
 		else
 		{
@@ -103,39 +113,46 @@ bool Builder_c::Setup ( const Settings_t & tSettings, const Schema_t & tSchema, 
 		}
 	}
 
+	for ( auto & i : m_dPackers )
+		for ( auto & j : i )
+			m_dFlatPackers.push_back(j);
+
 	return true;
 }
 
 
 void Builder_c::SetAttr ( int iAttr, int64_t tAttr )
 {
-	m_dPackers[iAttr]->AddDoc(tAttr);
+	for ( auto & i : m_dPackers[iAttr] )
+		i->AddDoc(tAttr);
 }
 
 
 void Builder_c::SetAttr ( int iAttr, const uint8_t * pData, int iLength )
 {
-	m_dPackers[iAttr]->AddDoc ( pData, iLength );
+	for ( auto & i : m_dPackers[iAttr] )
+		i->AddDoc ( pData, iLength );
 }
 
 
 void Builder_c::SetAttr ( int iAttr, const int64_t * pData, int iLength )
 {
-	m_dPackers[iAttr]->AddDoc ( pData, iLength );
+	for ( auto & i : m_dPackers[iAttr] )
+		i->AddDoc ( pData, iLength );
 }
 
 
 bool Builder_c::WriteHeaders ( FileWriter_c & tWriter, std::string & sError )
 {
 	tWriter.Write_uint32 ( STORAGE_VERSION );
-	tWriter.Write_uint32 ( (uint32_t)m_dPackers.size() );
-	for ( size_t i=0; i < m_dPackers.size(); i++ )
+	tWriter.Write_uint32 ( (uint32_t)m_dFlatPackers.size() );
+	for ( size_t i=0; i < m_dFlatPackers.size(); i++ )
 	{
-		auto & pPacker = m_dPackers[i];
+		auto & pPacker = m_dFlatPackers[i];
 		if ( !pPacker->WriteHeader ( tWriter, sError ) )
 			return false;
 
-		int64_t tNextOffset = i<m_dPackers.size()-1 ? tWriter.GetPos() : 0;
+		int64_t tNextOffset = i<m_dFlatPackers.size()-1 ? tWriter.GetPos() : 0;
 		tWriter.Write_uint64 ( tNextOffset + sizeof(int64_t) );
 	}
 
@@ -145,19 +162,19 @@ bool Builder_c::WriteHeaders ( FileWriter_c & tWriter, std::string & sError )
 
 bool Builder_c::WriteBodies ( std::string & sError )
 {
-	return std::all_of ( m_dPackers.cbegin(), m_dPackers.cend(), [this, &sError]( auto & i ){ return i->WriteBody ( m_sFile, sError ); } );
+	return std::all_of ( m_dFlatPackers.cbegin(), m_dFlatPackers.cend(), [this, &sError]( auto & i ){ return i->WriteBody ( m_sFile, sError ); } );
 }
 
 
 void Builder_c::Cleanup()
 {
-	std::for_each ( m_dPackers.cbegin(), m_dPackers.cend(), []( auto & i ){ return i->Cleanup(); } );
+	std::for_each ( m_dFlatPackers.cbegin(), m_dFlatPackers.cend(), []( auto & i ){ return i->Cleanup(); } );
 }
 
 
 bool Builder_c::Done ( std::string & sError )
 {
-	std::for_each ( m_dPackers.cbegin(), m_dPackers.cend(), []( auto & i ){ i->Done(); } );
+	std::for_each ( m_dFlatPackers.cbegin(), m_dFlatPackers.cend(), []( auto & i ){ i->Done(); } );
 
 	// [N][header0][offset_of_header1]...[body0]...
 
@@ -170,7 +187,7 @@ bool Builder_c::Done ( std::string & sError )
 			return false;
 
 		int64_t tBodyOffset = tWriter.GetPos();
-		for ( auto & i : m_dPackers )
+		for ( auto & i : m_dFlatPackers )
 		{
 			i->CorrectOffset ( tWriter, tBodyOffset );
 			tBodyOffset += i->GetBodySize();

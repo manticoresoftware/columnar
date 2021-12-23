@@ -188,9 +188,6 @@ public:
 	uint8_t *	GetPacked() final						{ assert ( 0 && "INTERNAL ERROR: requesting blob from bool iterator" ); return nullptr; }
 	int			GetLength() final						{ assert ( 0 && "INTERNAL ERROR: requesting string length from bool iterator" ); return 0; }
 
-	uint64_t	GetStringHash() final					{ return 0; }
-	bool		HaveStringHashes() const final			{ return false; }
-
 private:
 	FORCE_INLINE uint32_t	DoAdvance ( uint32_t tRowID );
 	FORCE_INLINE int64_t	DoGet();

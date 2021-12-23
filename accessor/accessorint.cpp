@@ -137,6 +137,7 @@ public:
 	FORCE_INLINE void		ReadHeader ( FileReader_c & tReader );
 	FORCE_INLINE void		ReadSubblock_Delta ( int iSubblockId, FileReader_c & tReader );
 	FORCE_INLINE void		ReadSubblock_Generic ( int iSubblockId, FileReader_c & tReader );
+	FORCE_INLINE void		ReadSubblock_Hash ( int iSubblockId, FileReader_c & tReader, int iNumSubblockValues );
 	FORCE_INLINE T			GetValue ( int iIdInSubblock ) const;
 	FORCE_INLINE const Span_T<T> & GetAllValues() const { return m_dSubblockValues; }
 
@@ -144,6 +145,8 @@ private:
 	std::unique_ptr<IntCodec_i>	m_pCodec;
 	SpanResizeable_T<uint32_t>	m_dSubblockCumulativeSizes;
 	SpanResizeable_T<uint32_t>	m_dTmp;
+	SpanResizeable_T<uint64_t>	m_dTmp64;
+	SpanResizeable_T<uint32_t>	m_dNullMap;
 	int64_t						m_tValuesOffset = 0;
 
 	int							m_iSubblockId = -1;
@@ -151,6 +154,8 @@ private:
 
 	template <typename DECOMPRESS>
 	FORCE_INLINE void		ReadSubblock ( int iSubblockId, FileReader_c & tReader, DECOMPRESS && fnDecompress );
+	FORCE_INLINE void		DecodeValues_Hash ( SpanResizeable_T<T> & dValues, FileReader_c & tReader, int iNumSubblockValues );
+	FORCE_INLINE void		ReadHashesWithNullMap ( FileReader_c & tReader, int iValues, int iNumHashes );
 };
 
 template <typename T>
@@ -176,6 +181,14 @@ void StoredBlock_Int_PFOR_T<T>::ReadSubblock_Generic ( int iSubblockId, FileRead
 {
 	ReadSubblock ( iSubblockId, tReader, [this] ( SpanResizeable_T<T> & dValues, FileReader_c & tReader, uint32_t uTotalSize )
 		{ DecodeValues_PFOR ( dValues, tReader, *m_pCodec, m_dTmp, uTotalSize); }
+	);
+}
+
+template <typename T>
+void StoredBlock_Int_PFOR_T<T>::ReadSubblock_Hash ( int iSubblockId, FileReader_c & tReader, int iNumSubblockValues )
+{
+	ReadSubblock ( iSubblockId, tReader, [this,iNumSubblockValues] ( SpanResizeable_T<T> & dValues, FileReader_c & tReader, uint32_t uTotalSize )
+		{ DecodeValues_Hash ( dValues, tReader, iNumSubblockValues ); }
 	);
 }
 
@@ -206,6 +219,47 @@ T StoredBlock_Int_PFOR_T<T>::GetValue ( int iIdInSubblock ) const
 	return m_dSubblockValues[iIdInSubblock];
 }
 
+template <typename T>
+void StoredBlock_Int_PFOR_T<T>::DecodeValues_Hash ( SpanResizeable_T<T> & dValues, FileReader_c & tReader, int iNumSubblockValues )
+{
+	int iNumHashes = tReader.Read_uint16();
+	bool bHaveNullMap = iNumSubblockValues!=iNumHashes;
+	size_t tTotalHashSize = iNumHashes*sizeof(uint64_t);
+
+	m_dSubblockValues.resize(iNumSubblockValues);
+	if ( bHaveNullMap )
+		ReadHashesWithNullMap ( tReader, iNumSubblockValues, iNumHashes );
+	else
+		tReader.Read ( (uint8_t*)m_dSubblockValues.data(), tTotalHashSize );
+}
+
+template <typename T>
+void StoredBlock_Int_PFOR_T<T>::ReadHashesWithNullMap ( FileReader_c & tReader, int iValues, int iNumHashes )
+{
+	assert ( !(iValues & 127 ) );
+	m_dTmp.resize ( iValues >> 5 );
+	m_dNullMap.resize(iValues);
+	tReader.Read ( (uint8_t*)m_dTmp.data(), m_dTmp.size()*sizeof(m_dTmp[0]) );
+	BitUnpack ( m_dTmp, m_dNullMap, 1 );
+
+	m_dTmp64.resize ( iNumHashes );
+	tReader.Read ( (uint8_t*)m_dTmp64.data(), iNumHashes*sizeof(uint64_t) );
+
+	memset ( m_dSubblockValues.data(), 0, m_dSubblockValues.size()*sizeof(m_dSubblockValues[0]) );
+	uint64_t * pHash = m_dTmp64.data();
+	uint64_t * pHashEnd = m_dTmp64.end();
+	T * pDst = m_dSubblockValues.data();
+	const uint32_t * pNullMap = m_dNullMap.data();
+	while ( pHash!=pHashEnd )
+	{
+		if ( *pNullMap )
+			*pDst = (T)*pHash++;
+
+		pDst++;
+		pNullMap++;
+	}
+}
+
 //////////////////////////////////////////////////////////////////////////
 
 template<typename T>
@@ -232,6 +286,7 @@ protected:
 	int64_t			ReadValue_Table();
 	int64_t			ReadValue_Delta();
 	int64_t			ReadValue_Generic();
+	int64_t			ReadValue_Hash();
 };
 
 template<typename T>
@@ -275,6 +330,11 @@ void Accessor_INT_T<T>::SetCurBlock ( uint32_t uBlockId )
 		m_tBlockPFOR.ReadHeader ( *m_pReader );
 		break;
 
+	case IntPacking_e::HASH:
+		m_fnReadValue = &Accessor_INT_T<T>::ReadValue_Hash;
+		m_tBlockPFOR.ReadHeader ( *m_pReader );
+		break;
+
 	default:
 		assert ( 0 && "Packing not implemented yet" );
 	}
@@ -313,6 +373,15 @@ int64_t Accessor_INT_T<T>::ReadValue_Generic()
 	return m_tBlockPFOR.GetValue ( GetValueIdInSubblock(uIdInBlock) );
 }
 
+template<typename T>
+int64_t Accessor_INT_T<T>::ReadValue_Hash()
+{
+	uint32_t uIdInBlock = m_tRequestedRowID - m_tStartBlockRowId;
+	int iSubblockId = GetSubblockId(uIdInBlock);
+	m_tBlockPFOR.ReadSubblock_Hash ( iSubblockId, *m_pReader, StoredBlockTraits_t::GetNumSubblockValues(iSubblockId) );
+	return m_tBlockPFOR.GetValue ( GetValueIdInSubblock(uIdInBlock) );
+}
+
 //////////////////////////////////////////////////////////////////////////
 
 template<typename T>
@@ -330,9 +399,6 @@ public:
 	int			Get ( const uint8_t * & pData ) final	{ assert ( 0 && "INTERNAL ERROR: requesting blob from int iterator" ); return 0; }
 	uint8_t *	GetPacked() final						{ assert ( 0 && "INTERNAL ERROR: requesting blob from int iterator" ); return nullptr; }
 	int			GetLength() final						{ assert ( 0 && "INTERNAL ERROR: requesting blob length from int iterator" ); return 0; }
-
-	uint64_t	GetStringHash() final					{ return 0; }
-	bool		HaveStringHashes() const final			{ return false; }
 
 private:
 	FORCE_INLINE uint32_t	DoAdvance ( uint32_t tRowID );

@@ -41,8 +41,6 @@ public:
 	virtual int					GetNumMinMaxBlocks ( int iLevel ) const = 0;
 	virtual std::pair<int64_t,int64_t> GetMinMax ( int iLevel, int iBlock ) const = 0;
 
-	virtual bool				HaveStringHashes() const = 0;
-
 	virtual bool				Load ( FileReader_c & tReader, std::string & sError ) = 0;
 	virtual bool				Check ( FileReader_c & tReader, Reporter_fn & fnError ) = 0;
 };

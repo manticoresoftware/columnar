@@ -218,4 +218,6 @@ void WriteTableOrdinals ( UNIQ_VEC & dUniques, UNIQ_HASH & hUnique, COLLECTED & 
 	}
 }
 
+std::string GenerateHashAttrName ( const std::string & sAttr );
+
 } // namespace columnar

@@ -22,7 +22,7 @@
 namespace columnar
 {
 
-static const int LIB_VERSION = 11;
+static const int LIB_VERSION = 12;
 
 class Iterator_i
 {
@@ -38,9 +38,6 @@ public:
 	virtual	int			Get ( const uint8_t * & pData ) = 0;
 	virtual	uint8_t *	GetPacked() = 0;
 	virtual	int			GetLength() = 0;
-
-	virtual uint64_t	GetStringHash() = 0;
-	virtual bool		HaveStringHashes() const = 0;
 };
 
 
@@ -69,6 +66,12 @@ public:
 struct IteratorHints_t
 {
 	bool	m_bNeedStringHashes = false;
+};
+
+
+struct IteratorCapabilities_t
+{
+	bool	m_bStringHashes = false;
 };
 
 
@@ -149,7 +152,7 @@ class Columnar_i
 public:
 	virtual					~Columnar_i() = default;
 
-	virtual Iterator_i *	CreateIterator ( const std::string & sName, const IteratorHints_t & tHints, std::string & sError ) const = 0;
+	virtual Iterator_i *	CreateIterator ( const std::string & sName, const IteratorHints_t & tHints, columnar::IteratorCapabilities_t * pCapabilities, std::string & sError ) const = 0;
 	virtual std::vector<BlockIterator_i *> CreateAnalyzerOrPrefilter ( const std::vector<Filter_t> & dFilters, std::vector<int> & dDeletedFilters, const BlockTester_i & tBlockTester ) const = 0;
 	virtual int				GetAttributeId ( const std::string & sName ) const = 0;
 

@@ -35,11 +35,6 @@ public:
 			AttributeHeaderBuilder_String_c ( const Settings_t & tSettings, const std::string & sName, AttrType_e eType );
 
 	bool	Save ( FileWriter_c & tWriter, int64_t & tBaseOffset, std::string & sError );
-	void	SetHashFlag ( bool bSet ) { m_bHaveHashes = bSet; }
-	bool	HaveStringHashes() const { return m_bHaveHashes; }
-
-protected:
-	bool	m_bHaveHashes = false;
 };
 
 
@@ -57,8 +52,6 @@ bool AttributeHeaderBuilder_String_c::Save ( FileWriter_c & tWriter, int64_t & t
 	if ( !m_tMinMax.Save ( tWriter, sError ) )
 		return false;
 
-	tWriter.Write_uint8 ( m_bHaveHashes ? 1 : 0 );
-
 	return !tWriter.IsError();
 }
 
@@ -68,7 +61,7 @@ class Packer_String_c : public PackerTraits_T<AttributeHeaderBuilder_String_c>
 	using BASE = PackerTraits_T<AttributeHeaderBuilder_String_c>;
 
 public:
-							Packer_String_c ( const Settings_t & tSettings, const std::string & sName, StringHash_fn fnHashCalc );
+							Packer_String_c ( const Settings_t & tSettings, const std::string & sName );
 
 	void					AddDoc ( int64_t tAttr ) final;
 	void					AddDoc ( const uint8_t * pData, int iLength ) final;
@@ -90,8 +83,6 @@ protected:
 	std::vector<uint64_t>	m_dUncompressed;
 	std::vector<uint32_t>	m_dCompressed;
 
-	StringHash_fn			m_fnHashCalc = nullptr;
-
 	int						m_iUniques = 0;
 	int						m_iConstLength = -1;
 
@@ -110,18 +101,13 @@ protected:
 	void					WritePacked_Generic();
 
 	void					WriteOffsets();
-
-	template <typename WRITER> bool WriteNullMap ( const Span_T<std::string> & dStrings, WRITER & tWriter, bool bNoNullMap );
-	template <typename WRITER> void	WriteHashes ( const Span_T<std::string> & dStrings, WRITER & tWriter, bool bNoNullMap );
 };
 
 
-Packer_String_c::Packer_String_c ( const Settings_t & tSettings, const std::string & sName, StringHash_fn fnHashCalc )
+Packer_String_c::Packer_String_c ( const Settings_t & tSettings, const std::string & sName )
 	: BASE ( tSettings, sName, AttrType_e::STRING )
 	, m_pCodec ( CreateIntCodec ( tSettings.m_sCompressionUINT32, tSettings.m_sCompressionUINT64 ) )
-	, m_fnHashCalc ( fnHashCalc )
 {
-	m_tHeader.SetHashFlag ( !!fnHashCalc );
 	m_dTableIndexes.resize ( tSettings.m_iSubblockSize );
 }
 
@@ -237,7 +223,6 @@ void Packer_String_c::WritePacked_Const()
 {
 	assert ( m_iUniques==1 );
 
-	WriteHashes ( Span_T<std::string>(m_dCollected.data(), 1), m_tWriter, true );
 	m_tWriter.Pack_uint32(m_iConstLength);
 	m_tWriter.Write ( (const uint8_t*)m_dCollected[0].c_str(), m_dCollected[0].length() );
 }
@@ -270,7 +255,6 @@ void Packer_String_c::WritePacked_Table()
 
 	// write the table
 	m_tWriter.Write_uint8 ( (uint8_t)m_dUniques.size() );
-	WriteHashes ( Span_T<std::string>(m_dUniques), m_tWriter, true );
 	m_tWriter.Pack_uint64(uTotalLengthOfValues);
 	WriteValues_Delta_PFOR ( Span_T<uint32_t>(m_dTableLengths), m_dUncompressed32, m_dCompressed, BASE::m_tWriter, m_pCodec.get() );
 
@@ -286,75 +270,8 @@ void Packer_String_c::WritePacked_ConstLen()
 	assert ( m_iConstLength>=0 );
 	m_tWriter.Pack_uint32 ( m_iConstLength );
 
-	WriteHashes ( Span_T<std::string>(m_dCollected), m_tWriter, true );
-
 	for ( const auto & i : m_dCollected )
 		m_tWriter.Write ( (const uint8_t*)i.c_str(), i.length() );
-}
-
-template <typename WRITER>
-bool Packer_String_c::WriteNullMap ( const Span_T<std::string> & dStrings, WRITER & tWriter, bool bNoNullMap )
-{
-	int iSubblockSize = BASE::m_tHeader.GetSettings().m_iSubblockSize;
-
-	int iNumNonEmpty = 0;
-	for ( const auto & i : dStrings )
-		if ( !i.empty() )
-			iNumNonEmpty++;
-
-	size_t tNumValues = dStrings.size();
-
-	// is the total size of 8-byte hashes of empty strings greater that map size (by, say, 4x)?
-	const int COEFF = 4;
-	bool bNeedNullMap = (tNumValues-iNumNonEmpty)*sizeof(uint64_t) > COEFF*(tNumValues/8);
-	bNeedNullMap &= !bNoNullMap && tNumValues==iSubblockSize;
-
-	assert ( iSubblockSize<=65536 && iNumNonEmpty<=65535 );
-	tWriter.Write_uint16 ( bNeedNullMap ? (uint16_t)iNumNonEmpty : (uint16_t)tNumValues );
-
-	if ( !bNeedNullMap )
-		return false;
-
-	m_dUncompressed32.resize(iSubblockSize);
-	m_dCompressed.resize ( m_dUncompressed32.size() >> 5 );
-
-	int iNullMapId = 0;
-	for ( const auto & i : dStrings )
-	{
-		m_dUncompressed32[iNullMapId++] = i.empty() ? 0 : 1;
-		if ( iNullMapId!=iSubblockSize )
-			continue;
-
-		BitPack ( m_dUncompressed32, m_dCompressed, 1 );
-		tWriter.Write ( (uint8_t*)m_dCompressed.data(), m_dCompressed.size()*sizeof(m_dCompressed[0]) );
-		iNullMapId = 0;
-	}
-
-	assert ( !iNullMapId ); // we store null maps only for full subblocks (128*n values)
-	return true;
-}
-
-template <typename WRITER>
-void Packer_String_c::WriteHashes ( const Span_T<std::string> & dStrings, WRITER & tWriter, bool bNoNullMap )
-{
-	if ( !m_tHeader.HaveStringHashes() )
-		return;
-
-	bool bHaveNullMap = WriteNullMap ( dStrings, tWriter, bNoNullMap );
-
-	assert(m_fnHashCalc);
-
-	for ( const auto & i : dStrings )
-	{
-		int iLen = (int)i.length();
-		uint64_t uHash = 0;
-		if ( iLen>0 )
-			uHash = m_fnHashCalc ( (const uint8_t*)i.c_str(), iLen, STR_HASH_SEED );
-
-		// skip empty hashes if we have a null map
-		if ( !bHaveNullMap || ( bHaveNullMap && iLen>0 ) )
-			tWriter.Write_uint64(uHash);
-	}
 }
 
 
@@ -373,8 +290,6 @@ void Packer_String_c::WritePacked_Generic()
 	{
 		int iBlockValues = GetSubblockSize ( iBlock, iBlocks, (int)m_dCollected.size(), iSubblockSize );
 		m_dOffsets[iBlock] = tMemWriter.GetPos();
-
-		WriteHashes ( Span_T<std::string> ( &m_dCollected[iBlockStart], iBlockValues ), tMemWriter, false );
 
 		// write lengths
 		m_dTmpLengths.resize(iBlockValues);
@@ -415,9 +330,9 @@ void Packer_String_c::WriteOffsets()
 
 //////////////////////////////////////////////////////////////////////////
 
-Packer_i * CreatePackerStr ( const Settings_t & tSettings, const std::string & sName, StringHash_fn fnHashCalc )
+Packer_i * CreatePackerStr ( const Settings_t & tSettings, const std::string & sName )
 {
-	return new Packer_String_c ( tSettings, sName, fnHashCalc );
+	return new Packer_String_c ( tSettings, sName );
 }
 
 } // namespace columnar
