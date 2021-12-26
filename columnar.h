@@ -123,6 +123,7 @@ enum class AttrType_e : uint32_t
 	UINT32,
 	TIMESTAMP,
 	INT64,
+	UINT64,
 	BOOLEAN,
 	FLOAT,
 	STRING,

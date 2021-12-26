@@ -308,6 +308,9 @@ AttributeHeader_i * CreateAttributeHeader ( AttrType_e eType, uint32_t uTotalDoc
 		return new AttributeHeader_Int_T<uint32_t> ( eType, uTotalDocs );
 
 	case AttrType_e::INT64:
+		return new AttributeHeader_Int_T<int64_t> ( eType, uTotalDocs );
+
+	case AttrType_e::UINT64:
 		return new AttributeHeader_Int_T<uint64_t> ( eType, uTotalDocs );
 
 	case AttrType_e::BOOLEAN:
@@ -323,7 +326,7 @@ AttributeHeader_i * CreateAttributeHeader ( AttrType_e eType, uint32_t uTotalDoc
 		return new AttributeHeader_Int_T<uint32_t> ( eType, uTotalDocs );
 
 	case AttrType_e::INT64SET:
-		return new AttributeHeader_Int_T<uint64_t> ( eType, uTotalDocs );
+		return new AttributeHeader_Int_T<int64_t> ( eType, uTotalDocs );
 
 	default:
 		sError = "unknown data type";

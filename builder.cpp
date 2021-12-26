@@ -65,7 +65,7 @@ bool Builder_c::Setup ( const Settings_t & tSettings, const Schema_t & tSchema, 
 			break;
 
 		case AttrType_e::INT64:
-			dPackers.push_back ( std::shared_ptr<Packer_i> ( CreatePackerUint64 ( tSettings, i.m_sName ) ) );
+			dPackers.push_back ( std::shared_ptr<Packer_i> ( CreatePackerInt64 ( tSettings, i.m_sName ) ) );
 			break;
 
 		case AttrType_e::BOOLEAN:

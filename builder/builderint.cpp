@@ -455,7 +455,7 @@ private:
 
 
 Packer_Hash_c::Packer_Hash_c ( const Settings_t & tSettings, const std::string & sName, StringHash_fn fnCalcHash )
-	: BASE ( tSettings, sName, AttrType_e::INT64 )
+	: BASE ( tSettings, sName, AttrType_e::UINT64 )
 	, m_fnCalcHash ( fnCalcHash )
 {
 	assert(fnCalcHash);
@@ -476,9 +476,9 @@ Packer_i * CreatePackerUint32 ( const Settings_t & tSettings, const std::string 
 }
 
 
-Packer_i * CreatePackerUint64 ( const Settings_t & tSettings, const std::string & sName )
+Packer_i * CreatePackerInt64 ( const Settings_t & tSettings, const std::string & sName )
 {
-	return new Packer_Int_T<uint64_t,AttributeHeaderBuilder_Int_T<uint64_t>> ( tSettings, sName, AttrType_e::INT64 );
+	return new Packer_Int_T<uint64_t,AttributeHeaderBuilder_Int_T<int64_t>> ( tSettings, sName, AttrType_e::INT64 );
 }
 
 

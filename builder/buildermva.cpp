@@ -67,17 +67,17 @@ struct HashFunc_Vec_T
 };
 
 
-template <typename T>
-class Packer_MVA_T : public PackerTraits_T<AttributeHeaderBuilder_MVA_T<T>>
+template <typename T, typename HEADER_T>
+class Packer_MVA_T : public PackerTraits_T<AttributeHeaderBuilder_MVA_T<HEADER_T>>
 {
-	using BASE = PackerTraits_T<AttributeHeaderBuilder_MVA_T<T>>;
+	using BASE = PackerTraits_T<AttributeHeaderBuilder_MVA_T<HEADER_T>>;
 
 public:
 					Packer_MVA_T ( const Settings_t & tSettings, const std::string & sName, AttrType_e eAttr );
 
 protected:
-	void			AddDoc ( int64_t tAttr ) final;
-	void			AddDoc ( const uint8_t * pData, int iLength ) final;
+	void			AddDoc ( int64_t tAttr ) final						{ assert ( 0 && "INTERNAL ERROR: sending integers to MVA packer" ); }
+	void			AddDoc ( const uint8_t * pData, int iLength ) final	{ assert ( 0 && "INTERNAL ERROR: sending strings to MVA packer" ); }
 	void			AddDoc ( const int64_t * pData, int iLength ) final;
 	void			Flush() final;
 
@@ -117,8 +117,8 @@ private:
 	void			PrepareValues ( Span_T<T> & dValues, const Span_T<uint32_t> & dLengths );
 };
 
-template <typename T>
-Packer_MVA_T<T>::Packer_MVA_T ( const Settings_t & tSettings, const std::string & sName, AttrType_e eAttr )
+template <typename T, typename HEADER_T>
+Packer_MVA_T<T,HEADER_T>::Packer_MVA_T ( const Settings_t & tSettings, const std::string & sName, AttrType_e eAttr )
 	: BASE ( tSettings, sName, eAttr )
 	, m_pCodec ( CreateIntCodec ( tSettings.m_sCompressionUINT32, tSettings.m_sCompressionUINT64 ) )
 {
@@ -126,20 +126,8 @@ Packer_MVA_T<T>::Packer_MVA_T ( const Settings_t & tSettings, const std::string 
 	m_dTableIndexes.resize ( tSettings.m_iSubblockSize );
 }
 
-template <typename T>
-void Packer_MVA_T<T>::AddDoc ( int64_t tAttr )
-{
-	assert ( 0 && "INTERNAL ERROR: sending integers to MVA packer" );
-}
-
-template <typename T>
-void Packer_MVA_T<T>::AddDoc ( const uint8_t * pData, int iLength )
-{
-	assert ( 0 && "INTERNAL ERROR: sending strings to MVA packer" );
-}
-
-template <typename T>
-void Packer_MVA_T<T>::AddDoc ( const int64_t * pData, int iLength )
+template <typename T, typename HEADER_T>
+void Packer_MVA_T<T,HEADER_T>::AddDoc ( const int64_t * pData, int iLength )
 {
 	if ( m_dCollectedLengths.size()==DOCS_PER_BLOCK )
 		Flush();
@@ -153,8 +141,8 @@ void Packer_MVA_T<T>::AddDoc ( const int64_t * pData, int iLength )
 	BASE::m_tHeader.m_tMinMax.Add ( pData, iLength );
 }
 
-template <typename T>
-void Packer_MVA_T<T>::AnalyzeCollected ( const int64_t * pData, int iLength )
+template <typename T, typename HEADER_T>
+void Packer_MVA_T<T,HEADER_T>::AnalyzeCollected ( const int64_t * pData, int iLength )
 {
 	if ( !m_iUniques )
 		m_iConstLength = iLength;
@@ -177,8 +165,8 @@ void Packer_MVA_T<T>::AnalyzeCollected ( const int64_t * pData, int iLength )
 	}
 }
 
-template <typename T>
-MvaPacking_e Packer_MVA_T<T>::ChoosePacking() const
+template <typename T, typename HEADER_T>
+MvaPacking_e Packer_MVA_T<T,HEADER_T>::ChoosePacking() const
 {
 	if ( m_iUniques==1 )
 		return MvaPacking_e::CONST;
@@ -192,8 +180,8 @@ MvaPacking_e Packer_MVA_T<T>::ChoosePacking() const
 	return MvaPacking_e::DELTA_PFOR;
 }
 
-template <typename T>
-void Packer_MVA_T<T>::Flush()
+template <typename T, typename HEADER_T>
+void Packer_MVA_T<T,HEADER_T>::Flush()
 {
 	if ( m_dCollectedLengths.empty() )
 		return;
@@ -210,8 +198,8 @@ void Packer_MVA_T<T>::Flush()
 	m_hUnique.clear();
 }
 
-template <typename T>
-void Packer_MVA_T<T>::WriteToFile ( MvaPacking_e ePacking )
+template <typename T, typename HEADER_T>
+void Packer_MVA_T<T,HEADER_T>::WriteToFile ( MvaPacking_e ePacking )
 {
 	BASE::m_tWriter.Pack_uint32 ( to_underlying(ePacking) );
 
@@ -239,8 +227,8 @@ void Packer_MVA_T<T>::WriteToFile ( MvaPacking_e ePacking )
 	}
 }
 
-template <typename T>
-void Packer_MVA_T<T>::WritePacked_Const()
+template <typename T, typename HEADER_T>
+void Packer_MVA_T<T,HEADER_T>::WritePacked_Const()
 {
 	assert ( m_iUniques==1 );
 
@@ -250,16 +238,16 @@ void Packer_MVA_T<T>::WritePacked_Const()
 	WriteValues_PFOR ( dValues, m_dUncompressed, m_dCompressed, BASE::m_tWriter, m_pCodec.get(), true );
 }
 
-template <typename T>
-void Packer_MVA_T<T>::WritePacked_ConstLen()
+template <typename T, typename HEADER_T>
+void Packer_MVA_T<T,HEADER_T>::WritePacked_ConstLen()
 {
 	assert ( m_iConstLength>=0 );
 	BASE::m_tWriter.Pack_uint32 ( (uint32_t)m_iConstLength );
 	WritePacked_DeltaPFOR(false);
 }
 
-template <typename T>
-void Packer_MVA_T<T>::WritePacked_Table()
+template <typename T, typename HEADER_T>
+void Packer_MVA_T<T,HEADER_T>::WritePacked_Table()
 {
 	assert ( m_iUniques<256 );
 
@@ -322,8 +310,8 @@ void Packer_MVA_T<T>::WritePacked_Table()
 	}
 }
 
-template <typename T>
-void Packer_MVA_T<T>::WritePacked_DeltaPFOR ( bool bWriteLengths )
+template <typename T, typename HEADER_T>
+void Packer_MVA_T<T,HEADER_T>::WritePacked_DeltaPFOR ( bool bWriteLengths )
 {
 	int iSubblockSize = BASE::m_tHeader.GetSettings().m_iSubblockSize;
 	int iBlocks = ( (int)m_dCollectedLengths.size() + iSubblockSize - 1 ) / iSubblockSize;
@@ -368,8 +356,8 @@ void Packer_MVA_T<T>::WritePacked_DeltaPFOR ( bool bWriteLengths )
 	BASE::m_tWriter.Write ( m_dTmpBuffer.data(), m_dTmpBuffer.size()*sizeof ( m_dTmpBuffer[0] ) );
 }
 
-template <typename T>
-void Packer_MVA_T<T>::PrepareValues ( Span_T<T> & dValues, const Span_T<uint32_t> & dLengths )
+template <typename T, typename HEADER_T>
+void Packer_MVA_T<T,HEADER_T>::PrepareValues ( Span_T<T> & dValues, const Span_T<uint32_t> & dLengths )
 {
 	// MVAs come in ascending mini-sequences, like 0-10-50  20-30-50, 5-6-20
 	// let's delta-encode each sequence (if sequence is 0 or 1 values, do nothing)
@@ -383,8 +371,8 @@ void Packer_MVA_T<T>::PrepareValues ( Span_T<T> & dValues, const Span_T<uint32_t
 	}
 }
 
-template <typename T>
-void Packer_MVA_T<T>::WriteSubblockSizes()
+template <typename T, typename HEADER_T>
+void Packer_MVA_T<T,HEADER_T>::WriteSubblockSizes()
 {
 	// write cumulative sub-block sizes to a in-memory buffer
 	m_dTmpBuffer2.resize(0);
@@ -401,13 +389,13 @@ void Packer_MVA_T<T>::WriteSubblockSizes()
 
 Packer_i * CreatePackerMva32 ( const Settings_t & tSettings, const std::string & sName )
 {
-	return new Packer_MVA_T<uint32_t> ( tSettings, sName, AttrType_e::UINT32SET );
+	return new Packer_MVA_T<uint32_t,uint32_t> ( tSettings, sName, AttrType_e::UINT32SET );
 }
 
 
 Packer_i * CreatePackerMva64 ( const Settings_t & tSettings, const std::string & sName )
 {
-	return new Packer_MVA_T<uint64_t> ( tSettings, sName, AttrType_e::INT64SET );
+	return new Packer_MVA_T<uint64_t,int64_t> ( tSettings, sName, AttrType_e::INT64SET );
 }
 
 } // namespace columnar
