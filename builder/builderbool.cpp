@@ -206,7 +206,7 @@ void Packer_Bool_c::WritePacked_Bitmap()
 		// zero out unused values
 		memset ( m_dValues.data()+iId, 0, (m_dValues.size()-iId)*sizeof(m_dValues[0]) );
 		BitPack ( m_dValues, m_dPacked, 1 );
-		m_tWriter.Write ( (uint8_t*)m_dValues.data(), m_dValues.size()*sizeof(m_dValues[0]) );
+		m_tWriter.Write ( (uint8_t*)m_dPacked.data(), m_dPacked.size()*sizeof(m_dPacked[0]) );
 	}
 }
 
