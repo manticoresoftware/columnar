@@ -9,7 +9,7 @@ if (NOT BUILD_TESTING)
 	return()
 endif()
 
-if (NOT TARGET columnar)
+if (NOT TARGET columnar_lib)
 	return()
 endif()
 
@@ -30,7 +30,7 @@ endfunction ()
 
 # cb called by manticore ubertest - append path to columnar to given test properties
 function ( special_ubertest_properties test )
-	set_property ( TEST "${test}" APPEND PROPERTY ENVIRONMENT "LIB_MANTICORE_COLUMNAR=$<TARGET_FILE:columnar>" )
+	set_property ( TEST "${test}" APPEND PROPERTY ENVIRONMENT "LIB_MANTICORE_COLUMNAR=$<TARGET_FILE:columnar_lib>" )
 endfunction ()
 
 # this will switch off pure manticore-specific tests: google, api, keyword consistency and benches (we don't need them here)

@@ -34,7 +34,7 @@ SET ( CMAKE_MODULE_PATH "${columnar_SOURCE_DIR}/cmake" )
 add_library ( columnar_api INTERFACE )
 
 # interface property, so that consumer will fire an error on configure time if API version is not match
-FILE ( STRINGS columnar.h _verlist LIMIT_COUNT 1 REGEX "LIB_VERSION" )
+FILE ( STRINGS columnar/columnar.h _verlist LIMIT_COUNT 1 REGEX "LIB_VERSION" )
 STRING ( REGEX MATCH "[0-9]+" API_VER "${_verlist}" )
 set_property ( TARGET columnar_api PROPERTY INTERFACE_COLUMNAR_API_VERSION ${API_VER} ) # must be reconfigured if version in columnar.h changes
 set_property ( TARGET columnar_api APPEND PROPERTY COMPATIBLE_INTERFACE_STRING COLUMNAR_API_VERSION )
@@ -50,7 +50,7 @@ target_include_directories ( columnar_api INTERFACE $<BUILD_INTERFACE:${CMAKE_CU
 install ( TARGETS columnar_api EXPORT ColumnarExport COMPONENT module )
 
 # ensure ALL externally required headers are exported here
-install ( FILES builder.h columnar.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${CPACK_PACKAGE_NAME} COMPONENT dev )
+install ( FILES columnar/builder.h columnar/columnar.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${CPACK_PACKAGE_NAME} COMPONENT dev )
 install ( FILES util/util.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${CPACK_PACKAGE_NAME}/util COMPONENT dev )
 
 add_library ( columnar::columnar_api ALIAS columnar_api )
@@ -111,18 +111,11 @@ if (TARGET FastPFOR::FastPFOR)
 	target_compile_options ( columnar_root INTERFACE $<${MSCXX}:-D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_WARNINGS> )
 
 	target_link_libraries ( columnar_root INTERFACE columnar_api )
-	target_include_directories ( columnar_root INTERFACE accessor builder util )
+	target_include_directories ( columnar_root INTERFACE columnar util )
 	set_property ( TARGET columnar_root PROPERTY INTERFACE_POSITION_INDEPENDENT_CODE TRUE )
 
 	add_subdirectory ( util )
-	add_subdirectory ( builder )
-	add_subdirectory ( accessor )
-
-	# main library
-	add_library ( columnar MODULE columnar.cpp builder.cpp columnar.h builder.h )
-	target_compile_options ( columnar PRIVATE $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:-wd4996> )
-	target_link_libraries ( columnar PRIVATE columnar_root util builder accessor )
-	set_target_properties( columnar PROPERTIES PREFIX "" OUTPUT_NAME lib_manticore_columnar )
+	add_subdirectory ( columnar )
 
 	SET ( MODULES_DIR "${CMAKE_INSTALL_DATADIR}/manticore/modules" )
 
@@ -185,10 +178,10 @@ if (TARGET FastPFOR::FastPFOR)
 				DEPENDS ${CMAKE_MODULE_PATH}/CPackOptions.cmake.in
 		)
 
-		add_dependencies ( columnar columnarpackver )
+		add_dependencies ( columnar_lib columnarpackver )
 	endif()
 
-	install ( TARGETS columnar EXPORT ColumnarExport RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT module )
+	install ( TARGETS columnar_lib EXPORT ColumnarExport RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT module )
 
 	# aliases are in game when we plug columnar sources via add_subdirectory().
 	# We essentially need columnar_api (it provides correct path to includes), but module itself still need to be located.
@@ -196,7 +189,7 @@ if (TARGET FastPFOR::FastPFOR)
 	# plug via find_package (columnar CONFIG).
 	# In case of development, when it is added via add_subdirectory to manticore build tree, it may be manually provided via
 	# env LIB_MANTICORE_COLUMNAR in particular.
-	add_library ( columnar::columnar ALIAS columnar )
+	add_library ( columnar::columnar ALIAS columnar_lib )
 
 else()
 	message (STATUS "FastPFOR is disabled or not available, only columnar::columnar_api target created")
