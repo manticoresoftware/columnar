@@ -245,17 +245,12 @@ void Packer_String_c::WritePacked_Table()
 		tFound->second = (int)i;
 	}
 
-	uint64_t uTotalLengthOfValues = 0;
 	m_dTableLengths.resize ( m_dUniques.size() );
 	for ( size_t i = 0; i < m_dUniques.size(); i++ )
-	{
 		m_dTableLengths[i] = (uint32_t)m_dUniques[i].length();
-		uTotalLengthOfValues += m_dTableLengths[i];
-	}
 
 	// write the table
 	m_tWriter.Write_uint8 ( (uint8_t)m_dUniques.size() );
-	m_tWriter.Pack_uint64(uTotalLengthOfValues);
 	WriteValues_Delta_PFOR ( Span_T<uint32_t>(m_dTableLengths), m_dUncompressed32, m_dCompressed, BASE::m_tWriter, m_pCodec.get() );
 
 	for ( const auto & i : m_dUniques )

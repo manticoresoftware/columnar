@@ -216,9 +216,7 @@ void StoredBlock_StrTable_c::ReadHeader ( FileReader_c & tReader )
 {
 	m_dTableValues.resize ( tReader.Read_uint8() );
 
-	uint64_t uTotalSizeOfValues = tReader.Unpack_uint64();
 	uint32_t uTotalSizeOfLengths = tReader.Unpack_uint32();
-
 	DecodeValues_Delta_PFOR ( m_dTableValueLengths, tReader, *m_pCodec, m_dTmp, uTotalSizeOfLengths, false );
 	for ( size_t i = 0; i < m_dTableValues.size(); i++ )
 	{
