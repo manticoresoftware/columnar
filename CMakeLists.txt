@@ -50,7 +50,7 @@ target_include_directories ( columnar_api INTERFACE $<BUILD_INTERFACE:${CMAKE_CU
 install ( TARGETS columnar_api EXPORT ColumnarExport COMPONENT module )
 
 # ensure ALL externally required headers are exported here
-install ( FILES columnar/builder.h columnar/columnar.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${CPACK_PACKAGE_NAME} COMPONENT dev )
+install ( FILES columnar/builder.h columnar/columnar.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${CPACK_PACKAGE_NAME}/columnar COMPONENT dev )
 install ( FILES util/util.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${CPACK_PACKAGE_NAME}/util COMPONENT dev )
 
 add_library ( columnar::columnar_api ALIAS columnar_api )
