@@ -384,8 +384,9 @@ public:
 	bool								Setup ( std::string & sError );
 
 	Iterator_i *						CreateIterator ( const std::string & sName, const IteratorHints_t & tHints, columnar::IteratorCapabilities_t * pCapabilities, std::string & sError ) const final;
-	std::vector<BlockIterator_i *>		CreateAnalyzerOrPrefilter ( const std::vector<Filter_t> & dFilters, std::vector<int> & dDeletedFilters, const BlockTester_i & tBlockTester ) const;
-	int									GetAttributeId ( const std::string & sName ) const;
+	std::vector<BlockIterator_i *>		CreateAnalyzerOrPrefilter ( const std::vector<Filter_t> & dFilters, std::vector<int> & dDeletedFilters, const BlockTester_i & tBlockTester ) const final;
+	int									GetAttributeId ( const std::string & sName ) const final;
+	AttrType_e							GetType ( const std::string & sName ) const final;
 
 	bool								EarlyReject ( const std::vector<Filter_t> & dFilters, const BlockTester_i & tBlockTester ) const final;
 	bool								IsFilterDegenerate ( const Filter_t & tFilter ) const final;
@@ -626,6 +627,13 @@ int Columnar_c::GetAttributeId ( const std::string & sName ) const
 {
 	const auto & tFound = m_hHeaders.find(sName);
 	return tFound==m_hHeaders.end() ? -1 : tFound->second.second;
+}
+
+
+AttrType_e Columnar_c::GetType ( const std::string & sName ) const
+{
+	const auto & tFound = m_hHeaders.find(sName);
+	return tFound==m_hHeaders.end() ? AttrType_e::NONE : tFound->second.first->GetType();
 }
 
 
