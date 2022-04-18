@@ -30,11 +30,12 @@ public:
 							~FileReader_c() { Close(); }
 
 	bool					Open ( const std::string & sName, std::string & sError );
+	bool					Open ( const std::string & sName, int iBufSize, std::string & sError );
 	void					Close();
 
 	int64_t					GetPos() const { return m_iFilePos+m_tPtr; }
 	int						GetFD() const { return m_iFD; }
-
+	const std::string &		GetFilename() const { return m_sFile; }
 	int64_t					GetFileSize();
 
 	void					Read ( uint8_t * pData, size_t tLen );
@@ -128,6 +129,83 @@ private:
 		Read ( (uint8_t*)&tValue, sizeof(T) );
 		return IsError() ? (T)0 : tValue;
 	}
+};
+
+void ReadVectorPacked ( std::vector<uint64_t> & dData, FileReader_c & tReader );
+
+template<typename VEC>
+void ReadVectorLen32 ( VEC & dData, FileReader_c & tReader )
+{
+	size_t uOff = dData.size();
+	uint32_t uLen =  tReader.Unpack_uint32();
+	dData.resize ( uOff + uLen );
+	tReader.Read ( (uint8_t *)( dData.data() + uOff ), sizeof ( dData[0] ) * uLen );
+}
+
+template<typename VEC>
+void ReadVectorData ( VEC & dData, FileReader_c & tReader )
+{
+	size_t uLen = dData.size();
+	tReader.Read ( (uint8_t *)( dData.data() ), sizeof ( dData[0] ) * uLen );
+}
+
+int64_t GetFileSize ( int iFD, std::string * sError );
+
+class MappedBuffer_i
+{
+public:
+	MappedBuffer_i() = default;
+	virtual ~MappedBuffer_i() { Close(); }
+
+	virtual bool Open ( const std::string & sFile, std::string & sError ) = 0;
+	virtual void Close () {};
+	static MappedBuffer_i * Create();
+	
+	virtual void * GetPtr () const = 0;
+	virtual size_t GetLengthBytes () const = 0;
+	virtual const char * GetFileName() const = 0;
+};
+
+template < typename T >
+class MappedBuffer_T
+{
+public:
+
+	MappedBuffer_T () = default;
+	~MappedBuffer_T() { Reset(); }
+
+	bool Open ( const std::string & sFile, std::string & sError )
+	{
+		return m_pBuf->Open ( sFile, sError );
+	}
+
+	void Reset()
+	{
+		m_pBuf->Close();
+	}
+
+	const char * GetFileName() const
+	{
+		return m_pBuf->GetFileName();
+	}
+
+	T * begin() const
+	{
+		return (T *)m_pBuf->GetPtr();
+	}
+
+	T * end() const
+	{
+		return (T *)m_pBuf->GetPtr() + size();
+	}
+
+	size_t size() const
+	{
+		return m_pBuf->GetLengthBytes() / sizeof ( T );
+	}
+
+private:
+	std::unique_ptr<MappedBuffer_i> m_pBuf { MappedBuffer_i::Create() };
 };
 
 } // namespace columnar

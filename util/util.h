@@ -218,8 +218,9 @@ private:
 class FileWriter_c
 {
 public:
-				~FileWriter_c() { Close(); }
+				~FileWriter_c();
 
+	bool        Open ( const std::string & sFile, bool bNewFile, bool bAppend, bool bTmp, std::string & sError );
 	bool        Open ( const std::string & sFile, std::string & sError );
 	void        Close();
 	void        Unlink();
@@ -227,6 +228,7 @@ public:
 
 	void        Write ( const uint8_t * pData, size_t tLength );
 	void        SeekAndWrite ( int64_t iOffset, uint64_t uValue );
+	void        Seek ( int64_t iOffset );
 	void        Write_string ( const std::string & sStr );
 	void        Write_uint8 ( uint8_t uValue )      { Write ( (uint8_t*)&uValue, sizeof(uValue) ); }
 	void        Write_uint16 ( uint16_t uValue )    { Write ( (uint8_t*)&uValue, sizeof(uValue) ); }
@@ -254,6 +256,7 @@ private:
 	int64_t     m_iFilePos = 0;
 
 	bool        m_bError = false;
+	bool		m_bTemporary = false; // whatever to unlink file at writer destructor
 	std::string m_sError;
 
 	void        Flush();
@@ -343,6 +346,19 @@ const T * binary_search ( const CONTAINER & dValues, const T & tValue )
 	return &(*tFound);
 }
 
+template<typename VEC, typename T>
+int binary_search_idx ( const VEC & dValues, const T & tValue )
+{
+	auto tFirst = dValues.begin();
+	auto tLast = dValues.end();
+	auto tFound = std::lower_bound ( tFirst, tLast, tValue );
+
+	if ( tFound!=tLast && tValue==*tFound )
+		return tFound-tFirst;
+
+	return -1;
+}
+
 template <typename T>
 constexpr auto to_underlying(T t) noexcept
 {
@@ -363,5 +379,71 @@ inline float to_type<float> ( int64_t iValue )
 
 int     CalcNumBits ( uint64_t uNumber );
 bool    CopySingleFile ( const std::string & sSource, const std::string & sDest, std::string & sError, int iMode );
+
+template<typename VEC>
+void VectorReset ( VEC & dData )
+{
+	dData.clear();
+	dData.shrink_to_fit();
+}
+
+template<typename VEC, typename WRITER>
+void WriteVector ( const VEC & dData, WRITER & tWriter )
+{
+	tWriter.Write ( (const uint8_t *)dData.data(), sizeof ( dData[0] ) * dData.size() );
+}
+
+template<typename VEC, typename WRITER>
+void WriteVectorLen ( const VEC & dData, WRITER & tWriter )
+{
+	tWriter.Pack_uint64 ( dData.size() );
+	tWriter.Write ( (const uint8_t *)dData.data(), sizeof ( dData[0] ) * dData.size() );
+}
+
+template<typename VEC, typename WRITER>
+void WriteVectorLen32 ( const VEC & dData, WRITER & tWriter )
+{
+	tWriter.Pack_uint32 ( (uint32_t)dData.size() );
+	tWriter.Write ( (const uint8_t *)dData.data(), sizeof ( dData[0] ) * dData.size() );
+}
+
+template<typename VEC, typename WRITER>
+void WriteVectorRawLen32 ( const VEC & dData, WRITER & tWriter )
+{
+	tWriter.Write_uint32 ( (uint32_t)dData.size() );
+	tWriter.Write ( (const uint8_t *)dData.data(), sizeof ( dData[0] ) * dData.size() );
+}
+
+template<typename WRITER>
+void WriteVectorPacked ( const std::vector<uint64_t> & dData, WRITER & tWriter )
+{
+	tWriter.Pack_uint32 ( (uint32_t)dData.size() );
+	for ( uint64_t tVal : dData )
+		tWriter.Pack_uint64 ( tVal );
+}
+
+bool FloatEqual ( float fA, float fB );
+
+struct BitVec_t
+{
+	std::vector<uint32_t> m_dData;
+	int m_iSize { 0 };
+
+	explicit BitVec_t ( int iSize );
+
+	bool BitGet ( int iBit );
+	void BitSet ( int iBit );
+};
+
+/// known collations
+enum class Collation_e : uint32_t
+{
+	LIBC_CI,
+	LIBC_CS,
+	UTF8_GENERAL_CI,
+	BINARY,
+
+	TOTAL
+};
 
 } // namespace columnar

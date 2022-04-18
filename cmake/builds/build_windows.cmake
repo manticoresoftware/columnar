@@ -6,7 +6,11 @@ message ( STATUS "Will create windows ZIP" )
 SET ( CPACK_PACKAGING_INSTALL_PREFIX "/" )
 set ( CPACK_ARCHIVE_COMPONENT_INSTALL ON )
 
-install ( FILES $<TARGET_PDB_FILE:columnar> EXPORT ColumnarExport DESTINATION ${MODULES_DIR} COMPONENT dev OPTIONAL )
+if(TARGET columnar::columnar)
+	install ( FILES $<TARGET_PDB_FILE:columnar> EXPORT ColumnarExport DESTINATION ${MODULES_DIR} COMPONENT dev OPTIONAL )
+else()
+#	install ( FILES $<TARGET_PDB_FILE:secondary> EXPORT SecondaryExport DESTINATION ${MODULES_DIR} COMPONENT dev OPTIONAL )
+endif()
 
 set ( CPACK_GENERATOR "ZIP" )
 set ( CPACK_SUFFIX "-x64" )

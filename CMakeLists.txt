@@ -27,11 +27,16 @@ set ( CMAKE_INTERPROCEDURAL_OPTIMIZATION $ENV{CMAKE_INTERPROCEDURAL_OPTIMIZATION
 project ( columnar VERSION 1.14.1 )
 SET ( CMAKE_CXX_STANDARD 14 )
 SET ( CMAKE_MODULE_PATH "${columnar_SOURCE_DIR}/cmake" )
-
+set ( SKIP_SECONDARY 0 )
+if (DEFINED ENV{SKIP_SECONDARY})
+	set ( SKIP_SECONDARY $ENV{SKIP_SECONDARY} )
+endif ()
+	
 # main interface target to export/expose headers
 # Note, first we provide headers which will be available even if build of the main lib itself will not succeed
 # (say, on aarch64 because of absent fastpfor). But as api target is already exposed, consumers still can use it.
 add_library ( columnar_api INTERFACE )
+add_library ( secondary_api INTERFACE )
 
 # interface property, so that consumer will fire an error on configure time if API version is not match
 FILE ( STRINGS columnar/columnar.h _verlist LIMIT_COUNT 1 REGEX "LIB_VERSION" )
@@ -46,14 +51,18 @@ include ( GNUInstallDirs )
 
 set ( CPACK_PACKAGE_NAME "manticore-columnar-lib" )
 target_include_directories ( columnar_api INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/${CPACK_PACKAGE_NAME}> )
+target_include_directories ( secondary_api INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/${CPACK_PACKAGE_NAME}> )
 
 install ( TARGETS columnar_api EXPORT ColumnarExport COMPONENT module )
+install ( TARGETS secondary_api EXPORT SecondaryExport COMPONENT module )
 
 # ensure ALL externally required headers are exported here
 install ( FILES columnar/builder.h columnar/columnar.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${CPACK_PACKAGE_NAME}/columnar COMPONENT dev )
 install ( FILES util/util.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${CPACK_PACKAGE_NAME}/util COMPONENT dev )
+install ( FILES secondary/sidx.h secondary/common.h secondary/builder.h secondary/iterator.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${CPACK_PACKAGE_NAME}/secondary COMPONENT dev )
 
 add_library ( columnar::columnar_api ALIAS columnar_api )
+add_library ( columnar::secondary_api ALIAS secondary_api )
 
 # helpers and parts
 if (NOT SKIP_COLUMNAR)
@@ -94,6 +103,7 @@ if (TARGET FastPFOR::FastPFOR)
 
 	# main internal interface target to collect all includes/links/dependencies
 	add_library ( columnar_root INTERFACE )
+	add_library ( secondary_root INTERFACE )
 
 	if (COVERAGE_TEST)
 		target_compile_options ( columnar_root INTERFACE $<${GNUC_CXX}:-fprofile-arcs -ftest-coverage> )
@@ -109,13 +119,22 @@ if (TARGET FastPFOR::FastPFOR)
 	target_compile_options ( columnar_root INTERFACE $<${ONLYGNUCLANGC_CXX}:-D_FILE_OFFSET_BITS=64> )
 	target_compile_options ( columnar_root INTERFACE $<${ONLYGNUCLANGCXX}:-fno-rtti>$<${MSCXX}:/GR-> ) # no rtti
 	target_compile_options ( columnar_root INTERFACE $<${MSCXX}:-D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_WARNINGS> )
+	target_compile_options ( secondary_root INTERFACE $<${ONLYGNUCLANGC_CXX}:-D_FILE_OFFSET_BITS=64> )
+	target_compile_options ( secondary_root INTERFACE $<${ONLYGNUCLANGCXX}:-fno-rtti>$<${MSCXX}:/GR-> ) # no rtti
+	target_compile_options ( secondary_root INTERFACE $<${MSCXX}:-D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_WARNINGS> )
 
 	target_link_libraries ( columnar_root INTERFACE columnar_api )
 	target_include_directories ( columnar_root INTERFACE columnar util )
 	set_property ( TARGET columnar_root PROPERTY INTERFACE_POSITION_INDEPENDENT_CODE TRUE )
+	target_link_libraries ( secondary_root INTERFACE secondary_api )
+	target_include_directories ( secondary_root INTERFACE ${CMAKE_CURRENT_SOURCE_DIR} util )
+	set_property ( TARGET secondary_root PROPERTY INTERFACE_POSITION_INDEPENDENT_CODE TRUE )
 
 	add_subdirectory ( util )
 	add_subdirectory ( columnar )
+	if (NOT SKIP_SECONDARY)  
+		add_subdirectory ( secondary )
+	endif()
 
 	SET ( MODULES_DIR "${CMAKE_INSTALL_DATADIR}/manticore/modules" )
 
@@ -179,9 +198,15 @@ if (TARGET FastPFOR::FastPFOR)
 		)
 
 		add_dependencies ( columnar_lib columnarpackver )
+		if (NOT SKIP_SECONDARY)  
+			add_dependencies ( secondary_index columnarpackver )
+		endif()
 	endif()
 
 	install ( TARGETS columnar_lib EXPORT ColumnarExport RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT module )
+	if (NOT SKIP_SECONDARY)  
+		install ( TARGETS secondary_index EXPORT SecondaryExport RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT module )
+	endif()
 
 	# aliases are in game when we plug columnar sources via add_subdirectory().
 	# We essentially need columnar_api (it provides correct path to includes), but module itself still need to be located.
@@ -190,6 +215,9 @@ if (TARGET FastPFOR::FastPFOR)
 	# In case of development, when it is added via add_subdirectory to manticore build tree, it may be manually provided via
 	# env LIB_MANTICORE_COLUMNAR in particular.
 	add_library ( columnar::columnar ALIAS columnar_lib )
+	if (NOT SKIP_SECONDARY)
+		add_library ( columnar::secondary ALIAS secondary_index )
+	endif()
 
 else()
 	message (STATUS "FastPFOR is disabled or not available, only columnar::columnar_api target created")

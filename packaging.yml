@@ -1,6 +1,6 @@
 # global settings will be applied to all jobs
 variables:
-  CMAKE_INTERPROCEDURAL_OPTIMIZATION: 1
+  CMAKE_INTERPROCEDURAL_OPTIMIZATION: 0
 
 stages:
   - build
@@ -144,6 +144,8 @@ stretch:
   image: registry.gitlab.com/manticoresearch/dev/stretch_clang:12
   cache:
     key: stretch_columnar
+  variables:
+    SKIP_SECONDARY: "1"    
 
 collect_stretch:
   extends: [ .collect_job ]
@@ -158,6 +160,8 @@ xenial:
   image: registry.gitlab.com/manticoresearch/dev/xenial_clang:12
   cache:
     key: xenial_columnar
+  variables:
+    SKIP_SECONDARY: "1"    
 
 collect_xenial:
   extends: [ .collect_job ]
