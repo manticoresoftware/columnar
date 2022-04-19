@@ -280,7 +280,13 @@ bool Analyzer_T<HAVE_MATCHING_BLOCKS>::RewindToNextBlock ( ACCESSOR & tAccessor,
 			iNextBlock = tAccessor.SubblockId2BlockId ( m_iCurSubblock++ );
 	}
 
-	return m_iCurSubblock<m_iTotalSubblocks;
+	if ( iNextBlock!=m_iCurBlockId )
+	{
+		m_iCurSubblock--;
+		return true;
+	}
+
+	return false;
 }
 
 
