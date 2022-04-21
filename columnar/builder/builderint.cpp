@@ -449,7 +449,6 @@ public:
 	void	AddDoc ( const uint8_t * pData, int iLength ) override;
 
 private:
-	static const uint64_t STR_HASH_SEED = 0xCBF29CE484222325ULL;
 	StringHash_fn m_fnCalcHash = nullptr;
 };
 

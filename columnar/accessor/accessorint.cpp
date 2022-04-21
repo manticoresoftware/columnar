@@ -1136,8 +1136,6 @@ bool Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::GetNextRowIdBlock ( Span
 template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL>
 bool Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::MoveToBlock ( int iNextBlock )
 {
-	int iNumMatchingSubblocks = m_pMatchingSubblocks->GetNumBlocks();
-
 	while(true)
 	{
 		m_iCurBlockId = iNextBlock;
@@ -1157,10 +1155,7 @@ bool Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL>::MoveToBlock ( int iNextB
 				break;
 		}
 
-		while ( iNextBlock==m_iCurBlockId && m_iCurSubblock<iNumMatchingSubblocks )
-			iNextBlock = ACCESSOR::SubblockId2BlockId ( m_pMatchingSubblocks->GetBlock(m_iCurSubblock++) );
-
-		if ( m_iCurSubblock>=iNumMatchingSubblocks )
+		if ( !ANALYZER::RewindToNextBlock ( (ACCESSOR&)*this, iNextBlock ) )
 			return false;
 	}
 
@@ -1206,6 +1201,9 @@ static Analyzer_i * CreateAnalyzerInt ( const AttributeHeader_i & tHeader, FileR
 
 	case AttrType_e::INT64:
 		return ::new Analyzer_INT_T<int64_t, uint64_t, RANGE_EVAL> ( tHeader, pReader, tSettings );
+
+	case AttrType_e::UINT64:
+		return ::new Analyzer_INT_T<uint64_t, uint64_t, RANGE_EVAL> ( tHeader, pReader, tSettings );
 
 	case AttrType_e::FLOAT:
 		return ::new Analyzer_INT_T<float, uint32_t, RANGE_EVAL> ( tHeader, pReader, tSettings );

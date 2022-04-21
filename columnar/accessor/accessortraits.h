@@ -272,13 +272,15 @@ template <bool HAVE_MATCHING_BLOCKS>
 template <typename ACCESSOR>
 bool Analyzer_T<HAVE_MATCHING_BLOCKS>::RewindToNextBlock ( ACCESSOR & tAccessor, int & iNextBlock )
 {
-	while ( iNextBlock==m_iCurBlockId && m_iCurSubblock<m_iTotalSubblocks )
+	if ( !HAVE_MATCHING_BLOCKS )
 	{
-		if ( HAVE_MATCHING_BLOCKS )
-			iNextBlock = tAccessor.SubblockId2BlockId ( m_pMatchingSubblocks->GetBlock ( m_iCurSubblock++ ) );
-		else
-			iNextBlock = tAccessor.SubblockId2BlockId ( m_iCurSubblock++ );
+		iNextBlock = m_iCurBlockId+1;
+		m_iCurSubblock = tAccessor.GetSubblockId ( BlockId2RowId(iNextBlock) );
+		return m_iCurSubblock<m_iTotalSubblocks;
 	}
+
+	while ( iNextBlock==m_iCurBlockId && m_iCurSubblock<m_iTotalSubblocks )
+		iNextBlock = tAccessor.SubblockId2BlockId ( m_pMatchingSubblocks->GetBlock ( m_iCurSubblock++ ) );
 
 	if ( iNextBlock!=m_iCurBlockId )
 	{

@@ -39,6 +39,7 @@ enum class IntPacking_e : uint32_t
 	TOTAL
 };
 
+const uint64_t STR_HASH_SEED = 0xCBF29CE484222325ULL;
 
 class Packer_i;
 struct Settings_t;
