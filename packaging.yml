@@ -141,7 +141,7 @@ collect_rhel8:
 
 stretch:
   extends: [ .debian_based ]
-  image: registry.gitlab.com/manticoresearch/dev/stretch_clang:12
+  image: registry.gitlab.com/manticoresearch/dev/stretch_clang:13
   cache:
     key: stretch_columnar
   variables:
@@ -173,7 +173,7 @@ collect_xenial:
 
 bionic:
   extends: [ .debian_based ]
-  image: registry.gitlab.com/manticoresearch/dev/bionic_clang:12
+  image: registry.gitlab.com/manticoresearch/dev/bionic_clang:13
   cache:
     key: bionic_columnar
 
@@ -187,7 +187,7 @@ collect_bionic:
 
 focal:
   extends: [ .debian_based ]
-  image: registry.gitlab.com/manticoresearch/dev/focal_clang:12
+  image: registry.gitlab.com/manticoresearch/dev/focal_clang:13
   cache:
     key: focal_columnar
 
@@ -201,7 +201,7 @@ collect_focal:
 
 buster:
   extends: [ .debian_based ]
-  image: registry.gitlab.com/manticoresearch/dev/buster_clang:12
+  image: registry.gitlab.com/manticoresearch/dev/buster_clang:13
   cache:
     key: buster_columnar
 
@@ -214,7 +214,7 @@ collect_buster:
 
 bullseye:
   extends: [ .debian_based ]
-  image: registry.gitlab.com/manticoresearch/dev/bullseye_clang:12
+  image: registry.gitlab.com/manticoresearch/dev/bullseye_clang:13
   cache:
     key: bullseye_columnar
 
