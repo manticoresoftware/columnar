@@ -198,6 +198,18 @@ collect_focal:
     DISTRO: focal
   needs: [ focal ]
 
+jammy:
+  extends: [ .debian_based ]
+  image: registry.gitlab.com/manticoresearch/dev/jammy_clang:13
+  cache:
+    key: jammy_columnar
+
+collect_jammy:
+  extends: [ .collect_job ]
+  script: [ ~/upload_repo_deb.sh ]
+  variables:
+    DISTRO: jammy
+  needs: [ jammy ]
 
 buster:
   extends: [ .debian_based ]
