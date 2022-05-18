@@ -20,11 +20,12 @@ workflow:
   script:
     - ln -s $(pwd) /manticore012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789/src
     - cd /manticore012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789/src
-    - cmake -GNinja -DPACK=1 .
+    - mkdir build && cd build
+    - cmake -GNinja -DPACK=1 ..
     - cmake --build . --target package
   artifacts:
     paths:
-      - manticore*.rpm
+      - build/manticore*.rpm
     when: on_success
     expire_in: 12 hrs
   cache:
@@ -39,11 +40,12 @@ workflow:
   variables:
     CACHEB: "cache"
   script:
+    - mkdir build && cd build
     - cmake -GNinja -DPACK=1 .
     - cmake --build . --target package
   artifacts:
     paths:
-      - manticore*deb
+      - build/manticore*deb
     when: on_success
     expire_in: 12 hrs
   cache:
@@ -70,11 +72,12 @@ osx:
     - mac
     - build
   script:
+    - mkdir build && cd build
     - cmake -GNinja -DDISTR_BUILD=macos .
     - cmake --build . --target package
   artifacts:
     paths:
-      - manticore-*.tar.gz
+      - build/manticore-*.tar.gz
     when: on_success
     expire_in: 12 hrs
   cache:
@@ -97,11 +100,13 @@ windows:
     CACHEB: "x:/cache"
   script:
     - 'net use x: \\\\VBOXSRV\\shared'
+    - mkdir build
+    - cd build
     - cmake -DDISTR_BUILD=windows .
     - cmake --build . --target package --config RelWithDebInfo
   artifacts:
     paths:
-      - manticore-*.zip
+      - build/manticore-*.zip
     when: on_success
     expire_in: 12 hrs
 
