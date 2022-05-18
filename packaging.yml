@@ -200,7 +200,7 @@ collect_focal:
 
 jammy:
   extends: [ .debian_based ]
-  image: registry.gitlab.com/manticoresearch/dev/jammy_clang:13
+  image: registry.gitlab.com/manticoresearch/dev/jammy_cmake:323
   cache:
     key: jammy_columnar
 
