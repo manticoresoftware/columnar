@@ -26,7 +26,7 @@ set ( CMAKE_INTERPROCEDURAL_OPTIMIZATION $ENV{CMAKE_INTERPROCEDURAL_OPTIMIZATION
 
 # IMPORTANT: the below version should be in format x.y.z. 
 # NOTE, if "z" is even the CI will release the package. It should be made odd if the version is still under development.
-project ( columnar VERSION 1.15.1 )
+project ( columnar VERSION 1.15.2 )
 SET ( CMAKE_CXX_STANDARD 14 )
 SET ( CMAKE_MODULE_PATH "${columnar_SOURCE_DIR}/cmake" )
 set ( SKIP_SECONDARY 0 )
