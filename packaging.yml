@@ -85,7 +85,7 @@ osx:
 collect_osx:
   extends: [ .collect_job ]
   needs: [ osx ]
-  script: [ ~/upload_repo_arc.sh ]
+  script: [ /bin/bash dist/upload_repo_arc.sh ]
 
 windows:
   stage: build
@@ -108,7 +108,7 @@ windows:
 collect_windows:
   extends: [ .collect_job ]
   needs: [ windows ]
-  script: [ ~/upload_repo_arc.sh ]
+  script: [ /bin/bash dist/upload_repo_arc.sh ]
 
 
 rhel7:
@@ -119,7 +119,7 @@ rhel7:
 
 collect_rhel7:
   extends: [ .collect_job ]
-  script: [ ~/upload_repo_rpm.sh ]
+  script: [ /bin/bash dist/upload_repo_rpm.sh ]
   variables:
     DISTRO: 7
   needs: [ rhel7 ]
@@ -133,7 +133,7 @@ rhel8:
 
 collect_rhel8:
   extends: [ .collect_job ]
-  script: [ ~/upload_repo_rpm.sh ]
+  script: [ /bin/bash dist/upload_repo_rpm.sh ]
   variables:
     DISTRO: 8
   needs: [ rhel8 ]
@@ -149,7 +149,7 @@ stretch:
 
 collect_stretch:
   extends: [ .collect_job ]
-  script: [ ~/upload_repo_deb.sh ]
+  script: [ /bin/bash dist/upload_repo_deb.sh ]
   variables:
     DISTRO: stretch
   needs: [ stretch ]
@@ -165,7 +165,7 @@ xenial:
 
 collect_xenial:
   extends: [ .collect_job ]
-  script: [ ~/upload_repo_deb.sh ]
+  script: [ /bin/bash dist/upload_repo_deb.sh ]
   variables:
     DISTRO: xenial
   needs: [ xenial ]
@@ -179,7 +179,7 @@ bionic:
 
 collect_bionic:
   extends: [ .collect_job ]
-  script: [ ~/upload_repo_deb.sh ]
+  script: [ /bin/bash dist/upload_repo_deb.sh ]
   variables:
     DISTRO: bionic
   needs: [ bionic ]
@@ -193,20 +193,20 @@ focal:
 
 collect_focal:
   extends: [ .collect_job ]
-  script: [ ~/upload_repo_deb.sh ]
+  script: [ /bin/bash dist/upload_repo_deb.sh ]
   variables:
     DISTRO: focal
   needs: [ focal ]
 
 jammy:
   extends: [ .debian_based ]
-  image: registry.gitlab.com/manticoresearch/dev/jammy_clang:13
+  image: registry.gitlab.com/manticoresearch/dev/jammy_cmake:323
   cache:
     key: jammy_columnar
 
 collect_jammy:
   extends: [ .collect_job ]
-  script: [ ~/upload_repo_deb.sh ]
+  script: [ /bin/bash dist/upload_repo_deb.sh ]
   variables:
     DISTRO: jammy
   needs: [ jammy ]
@@ -219,7 +219,7 @@ buster:
 
 collect_buster:
   extends: [ .collect_job ]
-  script: [ ~/upload_repo_deb.sh ]
+  script: [ /bin/bash dist/upload_repo_deb.sh ]
   variables:
     DISTRO: buster
   needs: [ buster ]
@@ -232,7 +232,7 @@ bullseye:
 
 collect_bullseye:
   extends: [ .collect_job ]
-  script: [ ~/upload_repo_deb.sh ]
+  script: [ /bin/bash dist/upload_repo_deb.sh ]
   variables:
     DISTRO: bullseye
   needs: [ bullseye ]
