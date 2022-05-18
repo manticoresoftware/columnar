@@ -41,7 +41,7 @@ workflow:
     CACHEB: "cache"
   script:
     - mkdir build && cd build
-    - cmake -GNinja -DPACK=1 .
+    - cmake -GNinja -DPACK=1 ..
     - cmake --build . --target package
   artifacts:
     paths:
@@ -73,7 +73,7 @@ osx:
     - build
   script:
     - mkdir build && cd build
-    - cmake -GNinja -DDISTR_BUILD=macos .
+    - cmake -GNinja -DDISTR_BUILD=macos ..
     - cmake --build . --target package
   artifacts:
     paths:
@@ -102,7 +102,7 @@ windows:
     - 'net use x: \\\\VBOXSRV\\shared'
     - mkdir build
     - cd build
-    - cmake -DDISTR_BUILD=windows .
+    - cmake -DDISTR_BUILD=windows ..
     - cmake --build . --target package --config RelWithDebInfo
   artifacts:
     paths:
