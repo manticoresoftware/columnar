@@ -90,7 +90,24 @@ bool RawValueCmp ( const VALUE & tA, const VALUE & tB )
 template<>
 bool RawValueCmp< RawValue_T<float> > ( const RawValue_T<float> & tA, const RawValue_T<float> & tB )
 {
-	return ( FloatEqual ( tA.m_tValue, tB.m_tValue ) ? tA.m_tRowid<tB.m_tRowid : tA.m_tValue<tB.m_tValue );
+	if ( tA.m_tValue<tB.m_tValue )
+		return true;
+	if ( tA.m_tValue>tB.m_tValue )
+		return false;
+
+	return ( tA.m_tRowid<tB.m_tRowid );
+}
+
+template <typename VEC, typename Pred_T>
+bool IsSorted ( const VEC & dRows, Pred_T tCnd )
+{
+	for ( int i=1; i<dRows.size(); i++ )
+	{
+		if ( !tCnd ( dRows[i-1], dRows[i] ) )
+			return false;
+	}
+
+	return true;
 }
 
 template<typename VALUE>
@@ -125,6 +142,7 @@ struct RawWriter_T : public RawWriter_i
 			return;
 
 		std::sort ( m_dRows.begin(), m_dRows.end(), RawValueCmp<RawValue_t> );
+		assert ( IsSorted ( m_dRows, [] ( const RawValue_t & tA, const RawValue_t & tB ) { return tA.m_tValue<=tB.m_tValue; } ) );
 
 		m_dOffset.emplace_back ( m_tFile.GetPos() );
 		m_tFile.Write ( (const uint8_t *)m_dRows.data(), iBytesLen );
