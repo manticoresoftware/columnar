@@ -16,7 +16,7 @@
 
 set ( FP_GITHUB "https://github.com/lemire/FastPFor/archive/refs/heads/master.zip" )
 
-include (helpers)
+include ( helpers )
 
 # set global cache path to cmake
 get_cache ( CACHE_BUILDS )
@@ -30,7 +30,7 @@ macro ( return_if_fastpfor_found LEGEND )
 	endif ()
 endmacro ()
 
-find_package ( FastPFOR QUIET CONFIG)
+find_package ( FastPFOR QUIET CONFIG )
 return_if_fastpfor_found ( "ready (no need to build)" )
 
 # not found. Populate and prepare sources
@@ -53,5 +53,5 @@ configure_file ( ${CMAKE_MODULE_PATH}/fastpfor.cmake.in fastpfor-build/CMakeList
 execute_process ( COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" . WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/fastpfor-build )
 execute_process ( COMMAND ${CMAKE_COMMAND} --build . WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/fastpfor-build )
 
-find_package ( FastPFOR CONFIG)
+find_package ( FastPFOR CONFIG )
 return_if_fastpfor_found ( "was built and saved" )

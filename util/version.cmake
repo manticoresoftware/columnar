@@ -1,6 +1,6 @@
 cmake_minimum_required ( VERSION 3.17 )
 
-include(rev)
+include ( rev )
 
 configure_file ( ${VERSION_SRC} "${VERSION_TRG}1" )
 

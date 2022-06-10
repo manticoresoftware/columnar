@@ -2,14 +2,14 @@
 SET ( GIT_TIMESTAMP_ID "@GIT_TIMESTAMP_ID@" )
 SET ( GIT_COMMIT_ID "@GIT_COMMIT_ID@" )
 SET ( TAG "@BUILD_TAG@" ) # like 'my-super-puper-ver' or 'release'
-SET ( SUFFIX "@CPACK_SUFFIX@") # atogen, like '-osx' or '-rhel7'
+SET ( SUFFIX "@CPACK_SUFFIX@" ) # atogen, like '-osx' or '-rhel7'
 SET ( VERSION_STR "@VERSION_STR@" )
 SET ( ENV{SOURCE_DATE_EPOCH} @SOURCE_DATE_EPOCH@ ) # that makes builds reproducable
 
 SET ( CPACK_PACKAGE_VERSION "${VERSION_STR}-${GIT_TIMESTAMP_ID}-${GIT_COMMIT_ID}" )
 string ( TOLOWER "${CPACK_PACKAGE_NAME}" CPACK_PACKAGE_NAME_LOWERCASE )
 
-if ( TAG )
+if (TAG)
 	SET ( TAG "-${TAG}" )
 endif ()
 

@@ -16,7 +16,7 @@
 
 set ( PGM_GITHUB "https://github.com/tomatolog/PGM-index/archive/refs/heads/master.zip" )
 
-include (helpers)
+include ( helpers )
 
 # set global cache path to cmake
 get_cache ( CACHE_BUILDS )
@@ -30,7 +30,7 @@ macro ( return_if_pgm_found LEGEND )
 	endif ()
 endmacro ()
 
-find_package ( PGM QUIET CONFIG)
+find_package ( PGM QUIET CONFIG )
 return_if_pgm_found ( "ready (no need to build)" )
 
 # not found. Populate and prepare sources

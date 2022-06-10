@@ -80,8 +80,8 @@ diag ( CMAKE_BINARY_DIR CMAKE_CURRENT_BINARY_DIR )
 
 # env WRITEB (as bool) means that we can store downloaded stuff to our bundle (that's to refresh the bundle)
 if (DEFINED ENV{WRITEB})
-	set (WRITEB $ENV{WRITEB})
-endif()
+	set ( WRITEB $ENV{WRITEB} )
+endif ()
 
 if (WRITEB)
 	infomsg ( "========================================================" )

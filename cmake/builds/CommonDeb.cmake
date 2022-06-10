@@ -11,7 +11,7 @@ set ( CPACK_DEBIAN_MODULE_DEBUGINFO_PACKAGE ON )
 
 set ( CPACK_DEBIAN_PACKAGE_PRIORITY optional )
 
-set ( CPACK_DEBIAN_DEV_PACKAGE_ARCHITECTURE all)
+set ( CPACK_DEBIAN_DEV_PACKAGE_ARCHITECTURE all )
 set ( CPACK_DEBIAN_DEV_PACKAGE_RECOMMENDS manticore-columnar-lib )
 set ( CPACK_DEBIAN_DEV_PACKAGE_SECTION devel )
 set ( CPACK_DEBIAN_DEV_DESCRIPTION "This package includes headers and cmake project for manticore columnar library" )

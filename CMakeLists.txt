@@ -16,15 +16,15 @@
 
 cmake_minimum_required ( VERSION 3.17 )
 
-FOREACH (policy CMP0048 CMP0090 CMP0092 CMP0117 )
+FOREACH (policy CMP0048 CMP0090 CMP0092 CMP0117)
 	IF (POLICY ${policy})
 		CMAKE_POLICY ( SET ${policy} NEW )
 	ENDIF ()
 ENDFOREACH ()
 
-set ( CMAKE_INTERPROCEDURAL_OPTIMIZATION $ENV{CMAKE_INTERPROCEDURAL_OPTIMIZATION})
+set ( CMAKE_INTERPROCEDURAL_OPTIMIZATION $ENV{CMAKE_INTERPROCEDURAL_OPTIMIZATION} )
 
-# IMPORTANT: the below version should be in format x.y.z. 
+# IMPORTANT: the below version should be in format x.y.z.
 # NOTE, if "z" is even the CI will release the package. It should be made odd if the version is still under development.
 project ( columnar VERSION 1.15.5 )
 SET ( CMAKE_CXX_STANDARD 14 )
@@ -33,7 +33,7 @@ set ( SKIP_SECONDARY 0 )
 if (DEFINED ENV{SKIP_SECONDARY})
 	set ( SKIP_SECONDARY $ENV{SKIP_SECONDARY} )
 endif ()
-	
+
 # main interface target to export/expose headers
 # Note, first we provide headers which will be available even if build of the main lib itself will not succeed
 # (say, on aarch64 because of absent fastpfor). But as api target is already exposed, consumers still can use it.
@@ -69,7 +69,7 @@ add_library ( columnar::secondary_api ALIAS secondary_api )
 # helpers and parts
 if (NOT SKIP_COLUMNAR)
 	include ( GetFastPFOR )
-endif()
+endif ()
 
 # Set a default build type for single-configuration (for multi-config there are NO default settings anyway),
 # it should be selected with --config SOMETHING on build time
@@ -134,9 +134,9 @@ if (TARGET FastPFOR::FastPFOR)
 
 	add_subdirectory ( util )
 	add_subdirectory ( columnar )
-	if (NOT SKIP_SECONDARY)  
+	if (NOT SKIP_SECONDARY)
 		add_subdirectory ( secondary )
-	endif()
+	endif ()
 
 	SET ( MODULES_DIR "${CMAKE_INSTALL_DATADIR}/manticore/modules" )
 
@@ -160,15 +160,15 @@ if (TARGET FastPFOR::FastPFOR)
 		message ( STATUS "DISTR_BUILD applied. Package will be set to ${DISTR_BUILD}" )
 
 		set ( CPACK_SOURCE_IGNORE_FILES "/\\\\.idea/" "/\\\\.git/"
-				"/\\\\.svn/" "/autom4te\\\\.cache/" "/bin/" "/junk/" "/win/" "/gmock/" "/gtest/" "/libtest"   "/pkgconfig/"
+				"/\\\\.svn/" "/autom4te\\\\.cache/" "/bin/" "/junk/" "/win/" "/gmock/" "/gtest/" "/libtest" "/pkgconfig/"
 				".swp$" ".orig$" ".log$" ".deps/" )
 		set ( CPACK_SOURCE_GENERATOR TGZ )
 		set ( CPACK_PACKAGE_RELOCATABLE ON )
 		set ( CPACK_PACKAGE_CONTACT "Manticore Team <build@manticoresearch.com>" )
 		set ( CMAKE_PROJECT_HOMEPAGE_URL "https://github.com/manticoresoftware/columnar/" )
 		set ( CPACK_PACKAGE_URL "https://github.com/manticoresoftware/columnar/" )
-		set ( CPACK_PACKAGE_DESCRIPTION_SUMMARY "Manticore Columnar Library is a column-oriented storage library, aiming to provide decent performance with low memory footprint at big data volume")
-		set ( CPACK_PACKAGE_DESCRIPTION "Manticore Columnar Library is a column-oriented storage library, aiming to provide decent performance with low memory footprint at big data volume. When used in combination with Manticore Search can be beneficial for faster / lower resource consumption log/metrics analytics and running log / metric analytics in docker / kubernetes")
+		set ( CPACK_PACKAGE_DESCRIPTION_SUMMARY "Manticore Columnar Library is a column-oriented storage library, aiming to provide decent performance with low memory footprint at big data volume" )
+		set ( CPACK_PACKAGE_DESCRIPTION "Manticore Columnar Library is a column-oriented storage library, aiming to provide decent performance with low memory footprint at big data volume. When used in combination with Manticore Search can be beneficial for faster / lower resource consumption log/metrics analytics and running log / metric analytics in docker / kubernetes" )
 		set ( CPACK_RPM_PACKAGE_DESCRIPTION "${CPACK_PACKAGE_DESCRIPTION}" ) # the description will default to the default one (This is an installer created using CPack..." otherwise, i.e. it doesn't take CPACK_PACKAGE_DESCRIPTION as a default
 		set ( CPACK_PROJECT_CONFIG_FILE "${CMAKE_CURRENT_BINARY_DIR}/config/CPackOptions.cmake" )
 		SET ( CPACK_PACKAGE_LICENSE "Apache-2.0" )
@@ -200,15 +200,15 @@ if (TARGET FastPFOR::FastPFOR)
 		)
 
 		add_dependencies ( columnar_lib columnarpackver )
-		if (NOT SKIP_SECONDARY)  
+		if (NOT SKIP_SECONDARY)
 			add_dependencies ( secondary_index columnarpackver )
-		endif()
-	endif()
+		endif ()
+	endif ()
 
 	install ( TARGETS columnar_lib EXPORT ColumnarExport RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT module )
-	if (NOT SKIP_SECONDARY)  
+	if (NOT SKIP_SECONDARY)
 		install ( TARGETS secondary_index EXPORT SecondaryExport RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT module )
-	endif()
+	endif ()
 
 	# aliases are in game when we plug columnar sources via add_subdirectory().
 	# We essentially need columnar_api (it provides correct path to includes), but module itself still need to be located.
@@ -219,13 +219,13 @@ if (TARGET FastPFOR::FastPFOR)
 	add_library ( columnar::columnar ALIAS columnar_lib )
 	if (NOT SKIP_SECONDARY)
 		add_library ( columnar::secondary ALIAS secondary_index )
-	endif()
+	endif ()
 
-else()
-	message (STATUS "FastPFOR is disabled or not available, only columnar::columnar_api target created")
-endif()
+else ()
+	message ( STATUS "FastPFOR is disabled or not available, only columnar::columnar_api target created" )
+endif ()
 
-set (CMAKE_CMAKE_DIR "${CMAKE_INSTALL_LIBDIR}/cmake/columnar")
+set ( CMAKE_CMAKE_DIR "${CMAKE_INSTALL_LIBDIR}/cmake/columnar" )
 install ( EXPORT ColumnarExport
 		FILE "columnar-targets.cmake"
 		DESTINATION "${CMAKE_CMAKE_DIR}"
@@ -238,10 +238,10 @@ include ( CMakePackageConfigHelpers )
 
 configure_package_config_file ( "${CMAKE_MODULE_PATH}/columnar-config.cmake.in"
 		"${CMAKE_CURRENT_BINARY_DIR}/columnar-config.cmake" INSTALL_DESTINATION "${CMAKE_CMAKE_DIR}" )
-install ( FILES "${CMAKE_CURRENT_BINARY_DIR}/columnar-config.cmake" DESTINATION "${CMAKE_CMAKE_DIR}" COMPONENT dev)
+install ( FILES "${CMAKE_CURRENT_BINARY_DIR}/columnar-config.cmake" DESTINATION "${CMAKE_CMAKE_DIR}" COMPONENT dev )
 
 write_basic_package_version_file ( "columnar-config-version.cmake" COMPATIBILITY SameMinorVersion )
-install ( FILES "${CMAKE_CURRENT_BINARY_DIR}/columnar-config-version.cmake" DESTINATION "${CMAKE_CMAKE_DIR}" COMPONENT dev)
+install ( FILES "${CMAKE_CURRENT_BINARY_DIR}/columnar-config-version.cmake" DESTINATION "${CMAKE_CMAKE_DIR}" COMPONENT dev )
 
 include ( CPack )
-include (testing.cmake)
+include ( testing.cmake )

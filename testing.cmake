@@ -6,19 +6,19 @@ set ( __testing_columnar_includedd YES )
 include ( CTest )
 
 if (NOT BUILD_TESTING)
-	return()
-endif()
+	return ()
+endif ()
 
 if (NOT TARGET columnar_lib)
-	return()
-endif()
+	return ()
+endif ()
 
 # cb called by manticore ubertest adding tests - add special columnar-pass for rt tests
 function ( special_ubertest_addtest testN tst_name REQUIRES )
 	if (NOT NON-RT IN_LIST REQUIRES AND NOT NON-COLUMNAR IN_LIST REQUIRES)
 		add_ubertest ( "${testN}" "${tst_name}" "${REQUIRES}" "col" "COLUMNAR" "--rt --ignore-weights --columnar" )
 	endif ()
-endfunction()
+endfunction ()
 
 # cb called by manticore ubertest - filter out non-columnar here.
 function ( special_ubertest_filter accept_var explain_var REQUIRES )
@@ -40,7 +40,7 @@ if (DEFINED ENV{MANTICORE_LOCATOR})
 	set ( MANTICORE_LOCATOR $ENV{MANTICORE_LOCATOR} )
 elseif (EXISTS "${columnar_SOURCE_DIR}/local_manticore_src.txt")
 	file ( READ "${columnar_SOURCE_DIR}/local_manticore_src.txt" MANTICORE_LOCATOR )
-else()
+else ()
 	file ( READ "${columnar_SOURCE_DIR}/manticore_src.txt" MANTICORE_LOCATOR )
 endif ()
 string ( CONFIGURE "${MANTICORE_LOCATOR}" MANTICORE_LOCATOR ) # that is to expand possible inside variables
