@@ -129,7 +129,6 @@ endif ()
 
 if (DISTR_BUILD)
 	set ( BUILD_TESTING 0 CACHE BOOL "No testing on packaging" )
-	set ( BUILD_TAG "$ENV{BUILD_TAG}" CACHE STRING "The tag which will be added to build" )
 	set ( DISTR "${DISTR_BUILD}" CACHE STRING "Choose the distr." )
 	message ( STATUS "DISTR_BUILD applied. Package will be set to ${DISTR_BUILD}" )
 	include ( SetBuildType )
