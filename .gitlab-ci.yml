@@ -1,8 +1,3 @@
-# global settings will be applied to all jobs
-variables:
-  VERBOSE: 1
-  DIAGNOSTIC: 1
-
 workflow:
   rules:
     - if: $CI_MERGE_REQUEST_ID
@@ -11,13 +6,22 @@ workflow:
     - if: $CI_COMMIT_BRANCH =~ /^columnar-.*$/ && $CI_COMMIT_TITLE != $DOCS_AUTOCOMMIT_TITLE
     - if: $TEST
 
-# to skip ci add [ci skip] or [skip ci] in commit message in any capitalization
+# to skip ci add [ci skip] or [skip ci] in commit message in any capitalization,
+# or add param when pushing, as: git push -o ci.skip ...
+
+# global settings will be applied to all jobs
+variables:
+  VERBOSE: 1
+  DIAGNOSTIC: 1
 
 stages:
   - mirroring
   - routines
+  - ubertests
   - publish
   - hooks
+
+# ==================== Mirror repo to github (only 'master' branch) ======================
 
 job_mirror:
   stage: mirroring
@@ -30,100 +34,211 @@ job_mirror:
     - ~/gitsync_columnar.sh
   cache: {}
 
-simple_tests:
+# ==================== .helper build ======================
+
+.build:
   stage: routines
+  interruptible: true
   needs: [ ]
+  tags:
+    - docker
+  image: registry.gitlab.com/manticoresearch/dev/external_toolchain:clang13_cmake3232
+  variables:
+    CACHEB: $CI_PROJECT_DIR/cache
+    NO_TESTS: 1
+    CTEST_CMAKE_GENERATOR: Ninja
+    DISTR: bionic # our default build for tests
+    arch: x86_64
+  cache:
+    paths:
+      - $CI_PROJECT_DIR/cache
+    key: bionic_test
+  artifacts:
+    when: on_success
+    expire_in: 12 hrs
+
+# ==================== .helper testing ======================
+
+.tests:
+  stage: ubertests
+  needs: [ ]
+  tags:
+    - specdocker
+  image: registry.gitlab.com/manticoresearch/dev/ubertests_public:320
+  variables:
+    CACHEB: $CI_PROJECT_DIR/cache
+    NO_BUILD: 1
+  script:
+    - bash /root/aot.sh
+    - ctest -VV -S cmake/citest.cmake
+  cache:
+    key: bionic_test
+    paths:
+      - $CI_PROJECT_DIR/cache
+  artifacts:
+    expire_in: 12 hrs
+    when: always
+  retry: 1
+
+# ==================== Simple build, then test ======================
+
+simple_build:
+  extends: [ .build ]
   rules:
     - if: $TEST==null
     - if: $TEST =~ /simple/
-  tags:
-    - specdocker
-  image: registry.gitlab.com/manticoresearch/dev/ubertests_public:320
   variables:
-    CTEST_BUILD_CONFIGURATION: "Debug"
-    CACHEB: "../cache"
-    CTEST_CMAKE_GENERATOR: "Ninja"
+    CTEST_CONFIGURATION_TYPE: Debug
   script:
     - ctest -VV -S cmake/citest.cmake
-  after_script:
-    - cmake -P misc/junit/citestresult.cmake
+    - cd build && mkdir xml_simple_build
+    - cp -r Testing/2*/*.xml xml_simple_build
   artifacts:
-    reports:
-      junit: build/junit_*.xml
-    expire_in: 12 hrs
-    when: always
-  cache:
-    key: bionic
     paths:
-      - cache
-  retry: 1
+      - build/xml_simple_build
+      - build/columnar/lib_manticore_columnar.so
+#      - build/secondary/lib_manticore_secondary.so
+      - build/_deps/manticore-build/src/searchd
+      - build/_deps/manticore-build/src/indexer
+      - build/_deps/manticore-build/config/*.c
+      - build/_deps/manticore-build/config/*.h
 
+simple_tests:
+  extends: [ .tests ]
+  needs: [ simple_build ]
+  rules:
+    - if: $TEST==null
+    - if: $TEST =~ /simple/
+  variables:
+    CTEST_CONFIGURATION_TYPE: Debug
+  after_script:
+    - cd build && mkdir xml_simple_tests
+    - cp -r Testing/2*/*.xml xml_simple_tests
+  artifacts:
+    paths:
+      - build/xml_simple_*
+      - build/_deps/manticore-build/test/test_*/report.txt
+      - build/_deps/manticore-build/test/error*.txt
+      - build/_deps/manticore-build/test/searchd.log
 
-release_tests:
-  stage: routines
-  needs: [ ]
+# ==================== Release build, then test ======================
+
+release_build:
+  extends: [ .build ]
   rules:
     - if: $TEST==null
     - if: $TEST =~ /release/
-  tags:
-    - specdocker
-  image: registry.gitlab.com/manticoresearch/dev/ubertests_public:320
   variables:
-    CTEST_BUILD_CONFIGURATION: "RelWithDebInfo"
-    CACHEB: "../cache"
-    CTEST_CMAKE_GENERATOR: "Ninja"
     CMAKE_INTERPROCEDURAL_OPTIMIZATION: 1
+    CTEST_CONFIGURATION_TYPE: RelWithDebInfo
   script:
-    - ctest -V -S cmake/citest.cmake
-  after_script:
-    - cmake -P misc/junit/citestresult.cmake
+    - ctest -VV -S cmake/citest.cmake
+    - cd build && mkdir xml_release_build
+    - cp -r Testing/2*/*.xml xml_release_build
   artifacts:
-    reports:
-      junit: build/junit_*.xml
-    expire_in: 12 hrs
-    when: always
-  cache:
-    key: bionic_release
     paths:
-      - cache
-  retry: 1
+      - build/xml_release_build
+      - build/columnar/lib_manticore_columnar.so
+#      - build/secondary/lib_manticore_secondary.so
+      - build/_deps/manticore-build/src/searchd
+      - build/_deps/manticore-build/src/indexer
+      - build/_deps/manticore-build/config/*.c
+      - build/_deps/manticore-build/config/*.h
 
+release_tests:
+  extends: [ .tests ]
+  needs: [ release_build ]
+  rules:
+    - if: $TEST==null
+    - if: $TEST =~ /release/
+  variables:
+    CTEST_CONFIGURATION_TYPE: RelWithDebInfo
+  after_script:
+    - cd build && mkdir xml_release_tests
+    - cp -r Testing/2*/*.xml xml_release_tests
+  artifacts:
+    paths:
+      - build/xml_release_*
+      - build/_deps/manticore-build/test/test_*/report.txt
+      - build/_deps/manticore-build/test/error*.txt
+      - build/_deps/manticore-build/test/searchd.log
+
+# ==================== Windows build, then test ======================
+
+win_build:
+  extends: [ .build ]
+  rules:
+    - if: $TEST==null
+    - if: $TEST =~ /windows/
+  variables:
+    DISTR: windows
+    arch: x64
+    CTEST_CMAKE_GENERATOR: "Ninja Multi-Config"
+    CTEST_CONFIGURATION_TYPE: Debug
+  script:
+    - ctest -VV -S cmake/citest.cmake -C $CTEST_CONFIGURATION_TYPE
+    - cd build && mkdir xml_win_build
+    - cp -r Testing/2*/*.xml xml_win_build
+  artifacts:
+    paths:
+      - build/xml_win_build
+      - build/columnar/$CTEST_CONFIGURATION_TYPE/lib_manticore_columnar.dll
+#      - build/secondary/$CTEST_CONFIGURATION_TYPE/lib_manticore_secondary.dll
+      - build/_deps/manticore-build/src/$CTEST_CONFIGURATION_TYPE/indexer.exe
+      - build/_deps/manticore-build/src/$CTEST_CONFIGURATION_TYPE/searchd.exe
+# Commented out usually need, but not on our dev where everything is installed into system
+#      - build/_deps/manticore-build/src/$CTEST_CONFIGURATION_TYPE/*.dll
+#      - build/_deps/manticore-build/src/gtests/$CTEST_CONFIGURATION_TYPE/*.dll
+  cache:
+    key: win_test
 
 win_tests:
-  stage: routines
+  stage: ubertests
+  needs: [ win_build ]
   rules:
     - if: $TEST==null
     - if: $TEST =~ /windows/
   tags:
     - windev19
-    - build
-  needs: [ ]
   variables:
     LIBS_BUNDLE: "x:/bundle"
     CACHEB: "x:/cache"
     BOOST_ROOT: "x:/boost_1_75_0"
     CTEST_CMAKE_GENERATOR: "Visual Studio 16 2019"
+    CTEST_CONFIGURATION_TYPE: Debug
+    NO_BUILD: 1
   script:
     - 'net use x: \\\\VBOXSRV\\shared'
-    - ctest -V -S cmake/citest.cmake -C Debug
+    - ctest -VV -S cmake/citest.cmake -C $CTEST_CONFIGURATION_TYPE
+  after_script:
+    - cd build && mkdir xml_win_tests
+    - cp -r Testing/2*/*.xml xml_win_tests
   artifacts:
-    paths:
-      - build/Testing/2*/*.xml
     expire_in: 12 hrs
     when: always
+    paths:
+      - build/xml_win_*
+      - build/_deps/manticore-build/test/test_*/report.txt
+      - build/_deps/manticore-build/test/error*.txt
+      - build/_deps/manticore-build/test/searchd.log
   cache: { }
-  retry: 1
 
-# convert ctest reports from windows to junit (don't want to work with php/xslt there)
-push_win_results:
+
+# ==================== Publish (push) pipeline results ======================
+
+# build and upload on regular commits
+push_results:
   stage: publish
   rules:
-    - if: $TEST==null
-    - if: $TEST =~ /windows/
-  needs: [ win_tests ]
+    - if: ( $WHAT=='$WHAT' || $WHAT==null )
+      when: always
   tags:
     - docker
   image: registry.gitlab.com/manticoresearch/dev/ubertests_public:320
+  needs:
+    - simple_tests
+    - release_tests
+    - win_tests
   variables:
     GIT_STRATEGY: fetch
   script:
@@ -135,12 +250,13 @@ push_win_results:
   retry: 1
   allow_failure: true
 
+# ==================== Run secondary pipeline ======================
 
 deploy_hook:
   stage: hooks
   rules:
     - if: $CI_COMMIT_TITLE !~ /^noci .*$/i && $TEST==null
-      when: always
+      when: on_success
   trigger:
     include: packaging.yml
   needs:

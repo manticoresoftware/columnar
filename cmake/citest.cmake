@@ -3,12 +3,14 @@
 # This is main test suite which runs all the tests.
 set ( CI_PROJECT_DIR "$ENV{CI_PROJECT_DIR}" )
 set ( CTEST_BUILD_NAME "$ENV{CI_COMMIT_REF_NAME}" )
-set ( CTEST_BUILD_CONFIGURATION "$ENV{CTEST_BUILD_CONFIGURATION}" )
+set ( CTEST_CONFIGURATION_TYPE "$ENV{CTEST_CONFIGURATION_TYPE}" )
 set ( CTEST_CMAKE_GENERATOR "$ENV{CTEST_CMAKE_GENERATOR}" )
 set ( LIBS_BUNDLE "$ENV{LIBS_BUNDLE}" )
 set ( CTEST_REGEX "$ENV{CTEST_REGEX}" )
 set ( SEARCHD_CLI_EXTRA "$ENV{SEARCHD_CLI_EXTRA}" )
 set ( WITH_COVERAGE "$ENV{WITH_COVERAGE}" )
+set ( NO_TESTS "$ENV{NO_TESTS}" )
+set ( NO_BUILD "$ENV{NO_BUILD}" )
 set_property ( GLOBAL PROPERTY Label P$ENV{CI_PIPELINE_ID} J$ENV{CI_JOB_ID} )
 
 # how may times try the test before it is considered failed
@@ -48,10 +50,11 @@ SET ( CTEST_START_WITH_EMPTY_BINARY_DIRECTORY TRUE )
 #ctest_empty_binary_directory(${CTEST_BINARY_DIRECTORY})
 
 #######################################################################
-set ( CTESTCONFIG "${CTEST_BINARY_DIRECTORY}/CTestConfig.cmake" )
-file ( WRITE "${CTESTCONFIG}" "set ( CTEST_PROJECT_NAME \"Manticore columnar\" )\n" )
-file ( APPEND "${CTESTCONFIG}" "set ( CTEST_NIGHTLY_START_TIME \"01:00:00 UTC\" )\n" )
-file ( APPEND "${CTESTCONFIG}" "set ( CTEST_DROP_SITE_CDASH TRUE )\n" )
+file ( WRITE "${CTEST_BINARY_DIRECTORY}/CTestConfig.cmake" "
+set ( CTEST_PROJECT_NAME \"Manticore columnar\" )
+set ( CTEST_NIGHTLY_START_TIME \"01:00:00 UTC\" )
+set ( CTEST_DROP_SITE_CDASH TRUE )
+" )
 
 # configure memcheck
 SET ( WITH_MEMCHECK FALSE )
@@ -63,7 +66,7 @@ find_program ( CTEST_GIT_COMMAND NAMES git )
 SET ( CTEST_UPDATE_COMMAND "${CTEST_GIT_COMMAND}" )
 SET ( CTEST_UPDATE_VERSION_ONLY ON )
 
-set ( CMAKE_CALL "${CMAKE_COMMAND} \"-G${CTEST_CMAKE_GENERATOR}\" -DCMAKE_BUILD_TYPE:STRING=${CTEST_BUILD_CONFIGURATION}" )
+set ( CMAKE_CALL "${CMAKE_COMMAND} \"-G${CTEST_CMAKE_GENERATOR}\" -DCMAKE_BUILD_TYPE:STRING=${CTEST_CONFIGURATION_TYPE}" )
 foreach (OPTION ${CONFIG_OPTIONS})
 	set ( CMAKE_CALL "${CMAKE_CALL} -D${OPTION}" )
 endforeach ()
@@ -77,7 +80,23 @@ message ( STATUS "CTEST_CONFIGURE_COMMAND is ${CTEST_CONFIGURE_COMMAND}" )
 ctest_start ( "Continuous" )
 #ctest_update ()
 ctest_configure ()
-ctest_build ()
+
+if (NOT NO_BUILD)
+	include ( ProcessorCount )
+	ProcessorCount ( N )
+	if (NOT N EQUAL 0)
+		if (NOT CTEST_CMAKE_GENERATOR STREQUAL "Visual Studio 16 2019")
+			set ( CTEST_BUILD_FLAGS -j${N} )
+		endif ()
+		set ( ctest_test_args ${ctest_test_args} PARALLEL_LEVEL ${N} )
+	endif ()
+
+	ctest_build ( ${ctest_test_args} )
+endif ()
+
+if (NO_TESTS)
+	return ()
+endif ()
 
 if (CTEST_REGEX)
 	ctest_test ( RETURN_VALUE retcode INCLUDE "${CTEST_REGEX}" REPEAT UNTIL_PASS:${RETRIES} )
