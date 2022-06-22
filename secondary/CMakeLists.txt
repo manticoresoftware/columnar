@@ -25,5 +25,6 @@ add_library ( secondary_index MODULE
 target_link_libraries ( secondary_index PRIVATE PGM::pgmindexlib FastPFOR::FastPFOR columnar_root util )
 set_target_properties ( secondary_index PROPERTIES
 		POSITION_INDEPENDENT_CODE ON
+		INTERPROCEDURAL_OPTIMIZATION OFF
 		PREFIX ""
 		OUTPUT_NAME lib_manticore_secondary )
