@@ -22,8 +22,6 @@ for f in build/*.rpm; do
     ARCH=x86_64
   elif [[ $tail == *".aarch64."* ]]; then
     ARCH=aarch64
-  elif [[ $tail == *".noarch."* ]]; then
-    ARCH=noarch
   fi;
   if [ -f "$f" ]; then
     if [ -z "${IS_RELEASE_DIGIT}" ]; then
@@ -47,29 +45,10 @@ for f in build/*.rpm; do
       bundleaarch=1
     fi
 
-    if [[ $ARCH == "noarch" ]]; then
-      copy_to $f x86_64/
-      copy_to $f aarch64/
-    fi
-
   fi
 done
 
-# upload bundle(s)
-
-if [ $bundleintel == 1 ]; then
-  echo make bundle x86_64
-  TGZ1=manticore-${VER}.x86_64.tgz
-  (cd build && tar cf - $(ls | grep -v -e debuginfo | grep "x86_64\|noarch") | gzip -9 -f) > $TGZ1
-  copy_to $TGZ1
-fi
-
-if [ $bundleaarch == 1 ]; then
-  echo make bundle aarch64
-  TGZ2=manticore-${VER}.aarch64.tgz
-  (cd build && tar cf - $(ls | grep -v -e debuginfo | grep "aarch64\|noarch") | gzip -9 -f) > $TGZ2
-  copy_to $TGZ2
-fi
+# no need to make bundle as we deploy one single package
 
 if [ "$DESTINATION" = "dev" ]; then
     /usr/bin/docker exec repo-generator /generator.sh -distro centos -version $DISTRO -dev 1

@@ -36,29 +36,10 @@ for f in build/*deb; do
       copy_to $f $DISTRO/main/binary-arm64/
       bundlearm=1
     fi
-
-    if [[ $ARCH == "all" ]]; then
-      copy_to $f $DISTRO/main/binary-arm64/
-      copy_to $f $DISTRO/main/binary-amd64/
-    fi
   fi
 done
 
-echo "make bundle(s) and upload them"
-
-if [ $bundleamd == 1 ]; then
-  echo Pack amd packages
-  TGZ2=manticore_${VER}_amd64.tgz
-  (cd build && tar cf - *_all.deb *_amd64.deb | gzip -9 -f) > $TGZ2
-  copy_to $TGZ1
-fi
-
-if [ $bundlearm == 1 ]; then
-  echo Pack arm packages
-  TGZ2=manticore_${VER}_arm64.tgz
-  (cd build && tar cf - *_all.deb *_arm64.deb | gzip -9 -f) > $TGZ2
-  copy_to $TGZ2
-fi
+# no need to make bundle as we deploy one single package
 
 if [ ! -z $SUFFIX ]; then
   /usr/bin/docker exec repo-generator /generator.sh -distro $DISTRO -architecture amd -dev 1

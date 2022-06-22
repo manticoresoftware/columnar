@@ -1,6 +1,12 @@
 #!/bin/bash
 # That file here is for reference; actually used the one stored on the host to avoid checkout of the whole code
 
+copy_to() {
+  echo -e "Copy $1 to /mnt/repo_storage/manticoresearch_$2";
+  cp $1 /mnt/repo_storage/manticoresearch_$2 && echo -e "Success"
+  echo
+}
+
 get_destination() {
   if [ -z "${IS_RELEASE_DIGIT}" ]; then
     IS_RELEASE_DIGIT=$(echo $f | cut -d. -f3 | cut -d- -f1)
@@ -15,27 +21,20 @@ get_destination() {
 echo "Collected archives"
 ls -1 build/
 
-for f in build/*.zip; do
+for f in build/*.zip build/*.exe; do
   if [ -f "$f" ]; then
     get_destination
-
-    echo -e "Copy $f to /mnt/repo_storage/manticoresearch_windows/$DESTINATION/x64/";
-    cp $f /mnt/repo_storage/manticoresearch_windows/$DESTINATION/x64/ && echo -e "Success"
-    echo -e "\n"
-
+    copy_to $f windows/$DESTINATION/x64/
   fi
 done
 
 for f in build/*.gz; do
   if [ -f "$f" ]; then
     get_destination
-
-    echo -e "Copy $f to /mnt/repo_storage/manticoresearch_macos/$DESTINATION/";
-    cp $f /mnt/repo_storage/manticoresearch_macos/$DESTINATION/ && echo -e "Success"
-    echo -e "\n"
-
+    copy_to $f macos/$DESTINATION/
   fi
 done
 
 rm -rf build/*.zip
+rm -rf build/*.exe
 rm -rf build/*.gz
