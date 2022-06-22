@@ -36,10 +36,6 @@ ADD_LIBRARY ( accessor OBJECT
 		)
 
 target_link_libraries ( accessor PRIVATE columnar_root )
-
-# runaround - POSITION_INDEPENDENT_CODE must be transitive from columnar_root, but it doesn't work (a bug in cmake?)
-get_target_property ( pic columnar_root INTERFACE_POSITION_INDEPENDENT_CODE )
-set_property ( TARGET accessor PROPERTY POSITION_INDEPENDENT_CODE ${pic} )
-
+set_property ( TARGET accessor PROPERTY POSITION_INDEPENDENT_CODE TRUE )
 target_include_directories ( accessor INTERFACE ${CMAKE_CURRENT_SOURCE_DIR} )
 

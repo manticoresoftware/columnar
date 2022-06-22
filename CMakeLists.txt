@@ -105,7 +105,6 @@ if (TARGET FastPFOR::FastPFOR)
 
 	# main internal interface target to collect all includes/links/dependencies
 	add_library ( columnar_root INTERFACE )
-	add_library ( secondary_root INTERFACE )
 
 	if (COVERAGE_TEST)
 		target_compile_options ( columnar_root INTERFACE $<${GNUC_CXX}:-fprofile-arcs -ftest-coverage> )
@@ -121,16 +120,10 @@ if (TARGET FastPFOR::FastPFOR)
 	target_compile_options ( columnar_root INTERFACE $<${ONLYGNUCLANGC_CXX}:-D_FILE_OFFSET_BITS=64> )
 	target_compile_options ( columnar_root INTERFACE $<${ONLYGNUCLANGCXX}:-fno-rtti>$<${MSCXX}:/GR-> ) # no rtti
 	target_compile_options ( columnar_root INTERFACE $<${MSCXX}:-D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_WARNINGS> )
-	target_compile_options ( secondary_root INTERFACE $<${ONLYGNUCLANGC_CXX}:-D_FILE_OFFSET_BITS=64> )
-	target_compile_options ( secondary_root INTERFACE $<${ONLYGNUCLANGCXX}:-fno-rtti>$<${MSCXX}:/GR-> ) # no rtti
-	target_compile_options ( secondary_root INTERFACE $<${MSCXX}:-D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_WARNINGS> )
 
 	target_link_libraries ( columnar_root INTERFACE columnar_api )
 	target_include_directories ( columnar_root INTERFACE columnar util )
 	set_property ( TARGET columnar_root PROPERTY INTERFACE_POSITION_INDEPENDENT_CODE TRUE )
-	target_link_libraries ( secondary_root INTERFACE secondary_api )
-	target_include_directories ( secondary_root INTERFACE ${CMAKE_CURRENT_SOURCE_DIR} util )
-	set_property ( TARGET secondary_root PROPERTY INTERFACE_POSITION_INDEPENDENT_CODE TRUE )
 
 	add_subdirectory ( util )
 	add_subdirectory ( columnar )

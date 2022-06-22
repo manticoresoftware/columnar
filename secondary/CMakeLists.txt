@@ -25,9 +25,8 @@ add_library ( secondary_index MODULE
 		builder.cpp iterator.cpp
 		sidx.h common.h builder.h iterator.h )
 
-target_link_libraries ( secondary_index PUBLIC secondary_root pgmindexlib FastPFOR::FastPFOR util )
-set_target_properties ( secondary_index PROPERTIES PREFIX "" OUTPUT_NAME lib_manticore_secondary )
-
-# runaround - POSITION_INDEPENDENT_CODE must be transitive from secondary_root, but it doesn't work (a bug in cmake?)
-get_target_property ( pic secondary_root INTERFACE_POSITION_INDEPENDENT_CODE )
-set_property ( TARGET secondary_index PROPERTY POSITION_INDEPENDENT_CODE ${pic} )
+target_link_libraries ( secondary_index PRIVATE pgmindexlib FastPFOR::FastPFOR columnar_root util )
+set_target_properties ( secondary_index PROPERTIES
+		POSITION_INDEPENDENT_CODE ON
+		PREFIX ""
+		OUTPUT_NAME lib_manticore_secondary )

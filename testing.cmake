@@ -50,6 +50,6 @@ file ( WRITE "${columnar_BINARY_DIR}/manticore-get.cmake" "FetchContent_Declare 
 include ( FetchContent )
 include ( "${columnar_BINARY_DIR}/manticore-get.cmake" )
 
-# add manticore sources to the tree. All testing will be done on manticore size; necessary additional tests/properties will
+# add manticore sources to the tree. All testing will be done on manticore side; necessary additional tests/properties will
 # be set by cb functions defined above.
 FetchContent_MakeAvailable ( manticore )

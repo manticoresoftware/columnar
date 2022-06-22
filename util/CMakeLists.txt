@@ -35,10 +35,7 @@ check_function_exists ( pread HAVE_PREAD )
 set_source_files_properties ( reader.cpp PROPERTIES COMPILE_DEFINITIONS HAVE_PREAD=${HAVE_PREAD} )
 
 target_link_libraries ( util PRIVATE FastPFOR::FastPFOR columnar_root )
-
-# runaround - POSITION_INDEPENDENT_CODE must be transitive from columnar_root, but it doesn't work (a bug in cmake?)
-get_target_property ( pic columnar_root INTERFACE_POSITION_INDEPENDENT_CODE )
-set_property ( TARGET util PROPERTY POSITION_INDEPENDENT_CODE ${pic} )
+set_property ( TARGET util PROPERTY POSITION_INDEPENDENT_CODE ON )
 
 set ( VERSION_DIR "${columnar_BINARY_DIR}/config" )
 target_include_directories ( util PRIVATE ${VERSION_DIR} )
