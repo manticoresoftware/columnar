@@ -22,7 +22,7 @@ workflow:
     - docker
   image: registry.gitlab.com/manticoresearch/dev/external_toolchain:clang13_cmake3232
   variables:
-    CACHEB: "cache"
+    CACHEB: $CI_PROJECT_DIR/cache
     arch: x86_64
   script:
     - mkdir build && cd build
@@ -31,7 +31,7 @@ workflow:
   cache:
     key: release_$DISTR$arch
     paths:
-      - cache
+      - $CI_PROJECT_DIR/cache
   artifacts:
     paths:
       - build/manticore*deb
