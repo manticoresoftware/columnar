@@ -16,16 +16,13 @@
 
 cmake_minimum_required ( VERSION 3.17 )
 
-set ( PGM_TEST 0 )
 include ( GetPGM )
-
-SET ( CMAKE_CXX_STANDARD 17 )
 
 add_library ( secondary_index MODULE
 		builder.cpp iterator.cpp
 		sidx.h common.h builder.h iterator.h )
 
-target_link_libraries ( secondary_index PRIVATE pgmindexlib FastPFOR::FastPFOR columnar_root util )
+target_link_libraries ( secondary_index PRIVATE PGM::pgmindexlib FastPFOR::FastPFOR columnar_root util )
 set_target_properties ( secondary_index PROPERTIES
 		POSITION_INDEPENDENT_CODE ON
 		PREFIX ""

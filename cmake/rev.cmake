@@ -2,7 +2,7 @@ cmake_minimum_required ( VERSION 3.17 )
 
 # guess version strings from current git repo
 function ( guess_from_git )
-	if (NOT EXISTS "${SOURCE_DIR}/.git")
+	if (NOT EXISTS "${columnar_SOURCE_DIR}/.git")
 		return ()
 	endif ()
 
@@ -13,7 +13,7 @@ function ( guess_from_git )
 
 	# extract short hash as GIT_COMMIT_ID
 	execute_process ( COMMAND "${GIT_EXECUTABLE}" log -1 --format=%h
-			WORKING_DIRECTORY "${SOURCE_DIR}"
+			WORKING_DIRECTORY "${columnar_SOURCE_DIR}"
 			RESULT_VARIABLE res
 			OUTPUT_VARIABLE GIT_COMMIT_ID
 			ERROR_QUIET
@@ -23,7 +23,7 @@ function ( guess_from_git )
 	# extract timestamp and make number YYMMDD from it
 	# it would be --date=format:%y%m%d, but old git on centos doesn't understand it
 	execute_process ( COMMAND "${GIT_EXECUTABLE}" log -1 --date=short --format=%cd
-			WORKING_DIRECTORY "${SOURCE_DIR}"
+			WORKING_DIRECTORY "${columnar_SOURCE_DIR}"
 			RESULT_VARIABLE res
 			OUTPUT_VARIABLE GIT_TIMESTAMP_ID
 			ERROR_QUIET
@@ -34,7 +34,7 @@ function ( guess_from_git )
 
 	# timestamp for reproducable packages
 	execute_process ( COMMAND "${GIT_EXECUTABLE}" log -1 --pretty=%ct
-			WORKING_DIRECTORY "${SOURCE_DIR}"
+			WORKING_DIRECTORY "${columnar_SOURCE_DIR}"
 			RESULT_VARIABLE res
 			OUTPUT_VARIABLE GIT_EPOCH_ID
 			ERROR_QUIET
@@ -43,7 +43,7 @@ function ( guess_from_git )
 
 	# extract branch name (top of 'git status -s -b'), throw out leading '## '
 	execute_process ( COMMAND "${GIT_EXECUTABLE}" status -s -b
-			WORKING_DIRECTORY "${SOURCE_DIR}"
+			WORKING_DIRECTORY "${columnar_SOURCE_DIR}"
 			RESULT_VARIABLE res
 			OUTPUT_VARIABLE GIT_BRANCH_ID
 			ERROR_QUIET
@@ -87,13 +87,18 @@ guess_from_git ()
 
 # 2-nd try - if we build from git archive. Correct hash and date provided then, but no branch
 if (NOT GIT_COMMIT_ID)
-	extract_from_git_slug ( "${SOURCE_DIR}/util/version.h.in" )
+	extract_from_git_slug ( "${columnar_SOURCE_DIR}/util/version.h.in" )
 endif ()
 
 # nothing found
 if (NOT GIT_COMMIT_ID)
+	message ( STATUS "Dev mode, no guess, using predefined version" )
 	set ( GIT_TIMESTAMP_ID "000000" )
 	set ( GIT_COMMIT_ID "deadbeef" )
 	set ( GIT_BRANCH_ID "developer version" )
 	set ( ENV{SOURCE_DATE_EPOCH} "1607089638" )
 endif ()
+
+# configure packaging
+SET ( ENV{SOURCE_DATE_EPOCH} "${SOURCE_DATE_EPOCH}" ) # that makes builds reproducable
+configure_file ( "${columnar_SOURCE_DIR}/cmake/CPackOptions.cmake.in" "${columnar_BINARY_DIR}/config/CPackOptions.cmake" @ONLY )
