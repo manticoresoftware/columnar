@@ -90,6 +90,14 @@ if (NOT GIT_COMMIT_ID)
 	extract_from_git_slug ( "${columnar_SOURCE_DIR}/util/version.h.in" )
 endif ()
 
+# determine build as even/odd value of patch version
+string ( REGEX MATCH "[0-9]+.[0-9]+.([0-9]+)" _ ${VERNUMBERS} )
+math ( EXPR oddvalue "${CMAKE_MATCH_1} % 2" OUTPUT_FORMAT DECIMAL )
+
+if (oddvalue)
+	set ( DEV_BUILD ON )
+endif ()
+
 # nothing found
 if (NOT GIT_COMMIT_ID)
 	message ( STATUS "Dev mode, no guess, using predefined version" )
@@ -97,6 +105,7 @@ if (NOT GIT_COMMIT_ID)
 	set ( GIT_COMMIT_ID "deadbeef" )
 	set ( GIT_BRANCH_ID "developer version" )
 	set ( ENV{SOURCE_DATE_EPOCH} "1607089638" )
+	set ( DEV_BUILD ON )
 endif ()
 
 # configure packaging
