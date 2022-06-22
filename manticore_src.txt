@@ -1,1 +1,1 @@
-GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG 918e07ad
+GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG fb3413f
