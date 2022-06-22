@@ -14,7 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set ( FP_GITHUB "https://github.com/lemire/FastPFor/archive/refs/heads/master.zip" )
+set ( FP_GITHUB "https://github.com/manticoresoftware/FastPFor/archive/refs/heads/simde.zip" )
+set ( FP_BUNDLEZIP "${LIBS_BUNDLE}/FastPFor-simde.zip" )
 
 include ( helpers )
 
@@ -34,7 +35,7 @@ find_package ( FastPFOR QUIET CONFIG )
 return_if_fastpfor_found ( "ready (no need to build)" )
 
 # not found. Populate and prepare sources
-select_nearest_url ( FP_PLACE fastpfor "${LIBS_BUNDLE}/FastPFor-master.zip" ${FP_GITHUB} )
+select_nearest_url ( FP_PLACE fastpfor ${FP_BUNDLEZIP} ${FP_GITHUB} )
 
 # fetch sources (original tarball)
 include ( FetchContent )

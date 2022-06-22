@@ -92,6 +92,35 @@ else ()
 	message ( FATAL_ERROR "Please, use MSVC, GCC, Clang, or the Intel compiler!" )
 endif ()
 
+message ( STATUS "Compile with ${CMAKE_CXX_COMPILER_ID} ver ${CMAKE_CXX_COMPILER_VERSION} for arch ${CMAKE_SYSTEM_PROCESSOR}" )
+
+if (CMAKE_SYSTEM_PROCESSOR STREQUAL aarch64 OR CMAKE_SYSTEM_PROCESSOR STREQUAL arm64)
+	message ( STATUS "Add simde for arm" )
+
+	# fetch sources (original tarball)
+	include ( FetchContent )
+	FetchContent_Declare (
+			simde
+			GIT_REPOSITORY "https://github.com/simd-everywhere/simde.git"
+			GIT_TAG dd0b662fd8cf4b1617dbbb4d08aa053e512b08e4
+	)
+	FetchContent_GetProperties ( simde )
+	if (NOT simde_POPULATED)
+		message ( STATUS "Populate SIMDe from git" )
+		FetchContent_Populate ( simde )
+	endif ()
+
+	add_library ( SIMDe INTERFACE )
+	add_library ( FastPFOR::SIMDe ALIAS SIMDe )
+	target_include_directories ( SIMDe INTERFACE $<BUILD_INTERFACE:${simde_SOURCE_DIR}>$<INSTALL_INTERFACE:include/simde> )
+	target_compile_options ( SIMDe INTERFACE $<${GNUC_CXX}:-DUSE_SIMDE> )
+
+	install ( DIRECTORY "${simde_SOURCE_DIR}/simde" DESTINATION include/simde )
+	install ( TARGETS SIMDe EXPORT FastPFORExport )
+
+	target_link_libraries ( FastPFOR PUBLIC FastPFOR::SIMDe )
+endif ()
+
 # installation stuff
 set ( CMAKE_CMAKE_DIR "lib/cmake/FastPFOR" )
 
