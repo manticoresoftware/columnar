@@ -91,8 +91,7 @@ if (NOT GIT_COMMIT_ID)
 endif ()
 
 # determine build as even/odd value of patch version
-string ( REGEX MATCH "[0-9]+.[0-9]+.([0-9]+)" _ ${VERNUMBERS} )
-math ( EXPR oddvalue "${CMAKE_MATCH_1} % 2" OUTPUT_FORMAT DECIMAL )
+math ( EXPR oddvalue "${PROJECT_VERSION_PATCH} % 2" OUTPUT_FORMAT DECIMAL )
 
 if (oddvalue)
 	set ( DEV_BUILD ON )
