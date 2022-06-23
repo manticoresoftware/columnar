@@ -95,7 +95,7 @@ if (INSTALL_API)
 	set ( pkgconfin "${CMAKE_CURRENT_BINARY_DIR}/columnar-config.cmake.in" )
 	file ( WRITE "${pkgconfin}" "@PACKAGE_INIT@
 
-include(\"${CMAKE_CURRENT_LIST_DIR}/columnar-targets.cmake\")" )
+include(\"\${CMAKE_CURRENT_LIST_DIR}/columnar-targets.cmake\")" )
 
 	configure_package_config_file ( "${pkgconfin}"
 			"${CMAKE_CURRENT_BINARY_DIR}/columnar-config.cmake" INSTALL_DESTINATION "${API_CMAKE_DIR}" )
