@@ -9,7 +9,7 @@ set ( CMAKE_CXX_STANDARD 17 )
 add_library ( pgmindexlib INTERFACE )
 target_include_directories ( pgmindexlib INTERFACE $<BUILD_INTERFACE:${PiecewiseGeometricModelIndex_SOURCE_DIR}/include>$<INSTALL_INTERFACE:include> )
 
-find_package ( OpenMP )
+#find_package ( OpenMP )
 if (OpenMP_CXX_FOUND)
 	message ( STATUS "OpenMP found" )
 	target_link_libraries ( pgmindexlib INTERFACE OpenMP::OpenMP_CXX )

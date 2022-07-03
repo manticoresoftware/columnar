@@ -21,7 +21,7 @@ cmake_minimum_required ( VERSION 3.17 FATAL_ERROR )
 include ( update_bundle )
 
 # not mandatory, but if available, pgm will depends on it
-find_package ( OpenMP )
+# find_package ( OpenMP )
 
 # determine destination folder where we expect pre-built pgm
 find_package ( PGM QUIET CONFIG )
