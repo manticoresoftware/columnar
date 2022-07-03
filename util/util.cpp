@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021, Manticore Software LTD (https://manticoresearch.com)
+// Copyright (c) 2020-2022, Manticore Software LTD (https://manticoresearch.com)
 // All rights reserved
 //
 //
@@ -16,7 +16,6 @@
 
 #include "util.h"
 #include <stdexcept>
-#include <assert.h>
 #include <errno.h>
 #include <cmath>
 #include <limits>
@@ -27,7 +26,7 @@
 	#include <unistd.h>
 #endif
 
-namespace columnar
+namespace util
 {
 
 int CalcNumBits ( uint64_t uNumber )
@@ -236,7 +235,7 @@ void FileWriter_c::SeekAndWrite ( int64_t iOffset, uint64_t uValue )
 void FileWriter_c::Seek ( int64_t iOffset )
 {
 	Flush();
-	columnar::Seek ( m_iFD, iOffset );
+	util::Seek ( m_iFD, iOffset );
 	m_iFilePos = iOffset;
 }
 
@@ -293,32 +292,4 @@ bool FloatEqual ( float fA, float fB )
     return std::fabs ( fA - fB )<=std::numeric_limits<float>::epsilon();
 }
 
-BitVec_t::BitVec_t ( int iSize )
-{
-	m_iSize = iSize;
-	if ( iSize )
-	{
-		int iCount = ( iSize+31 )/32;
-		m_dData = std::vector<uint32_t> ( iCount, 0 );
-	}
-}
-
-bool BitVec_t::BitGet ( int iBit )
-{
-	if ( !m_dData.size() )
-		return false;
-
-	assert ( iBit>=0 && iBit<m_iSize );
-	return ( ( m_dData [ iBit>>5 ] & ( ( (uint32_t)1 )<<( iBit&31 ) ) )!=0 );
-}
-
-void BitVec_t::BitSet ( int iBit )
-{
-	if ( m_dData.size() )
-	{
-		assert ( iBit>=0 && iBit<m_iSize );
-		m_dData [ iBit>>5 ] |= ( ( (uint32_t)1 )<<( iBit&31 ) );
-	}
-}
-
-} // namespace columnar
+} // namespace util

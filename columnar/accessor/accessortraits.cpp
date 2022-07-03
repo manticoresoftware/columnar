@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021, Manticore Software LTD (https://manticoresearch.com)
+// Copyright (c) 2020-2022, Manticore Software LTD (https://manticoresearch.com)
 // All rights reserved
 //
 //
@@ -21,7 +21,7 @@ namespace columnar
 
 SubblockCalc_t::SubblockCalc_t ( int iSubblockSize )
 	: m_iSubblockSize ( iSubblockSize )
-	, m_iSubblockShift ( CalcNumBits(iSubblockSize) - 1 )
+	, m_iSubblockShift ( util::CalcNumBits(iSubblockSize) - 1 )
 	, m_iSubblocksPerBlock ( DOCS_PER_BLOCK / iSubblockSize )
 {}
 

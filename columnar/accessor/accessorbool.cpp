@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021, Manticore Software LTD (https://manticoresearch.com)
+// Copyright (c) 2020-2022, Manticore Software LTD (https://manticoresearch.com)
 // All rights reserved
 //
 //
@@ -26,6 +26,9 @@
 
 namespace columnar
 {
+
+using namespace util;
+using namespace common;
 
 class StoredBlock_Bool_Const_c
 {
@@ -188,6 +191,8 @@ public:
 	uint8_t *	GetPacked() final						{ assert ( 0 && "INTERNAL ERROR: requesting blob from bool iterator" ); return nullptr; }
 	int			GetLength() final						{ assert ( 0 && "INTERNAL ERROR: requesting string length from bool iterator" ); return 0; }
 
+	void		AddDesc ( std::vector<IteratorDesc_t> & dDesc ) const override { dDesc.push_back ( { m_tHeader.GetName(), "iterator" } ); };
+
 private:
 	FORCE_INLINE uint32_t	DoAdvance ( uint32_t tRowID );
 	FORCE_INLINE int64_t	DoGet();
@@ -309,6 +314,7 @@ public:
 				Analyzer_Bool_T ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings );
 
 	bool		GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBlock ) final;
+	void		AddDesc ( std::vector<IteratorDesc_t> & dDesc ) const final { dDesc.push_back ( { ACCESSOR::m_tHeader.GetName(), "analyzer" } ); }
 
 private:
 	bool		m_bAcceptFalse = false;

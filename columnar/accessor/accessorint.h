@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021, Manticore Software LTD (https://manticoresearch.com)
+// Copyright (c) 2020-2022, Manticore Software LTD (https://manticoresearch.com)
 // All rights reserved
 //
 //
@@ -18,6 +18,11 @@
 
 #include "builder.h"
 
+namespace common
+{
+	struct Filter_t;
+}
+
 namespace columnar
 {
 
@@ -25,13 +30,12 @@ class Iterator_i;
 class Analyzer_i;
 class Checker_i;
 class AttributeHeader_i;
-struct Filter_t;
 
-Iterator_i *	CreateIteratorUint32 ( const AttributeHeader_i & tHeader, FileReader_c * pReader );
-Iterator_i *	CreateIteratorUint64 ( const AttributeHeader_i & tHeader, FileReader_c * pReader );
+Iterator_i *	CreateIteratorUint32 ( const AttributeHeader_i & tHeader, util::FileReader_c * pReader );
+Iterator_i *	CreateIteratorUint64 ( const AttributeHeader_i & tHeader, util::FileReader_c * pReader );
 
-Analyzer_i *	CreateAnalyzerInt ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings );
+Analyzer_i *	CreateAnalyzerInt ( const AttributeHeader_i & tHeader, util::FileReader_c * pReader, const common::Filter_t & tSettings );
 
-Checker_i *		CreateCheckerInt ( const AttributeHeader_i & tHeader, FileReader_c * pReader, Reporter_fn & fnProgress, Reporter_fn & fnError );
+Checker_i *		CreateCheckerInt ( const AttributeHeader_i & tHeader, util::FileReader_c * pReader, Reporter_fn & fnProgress, Reporter_fn & fnError );
 
 } // namespace columnar

@@ -1,4 +1,4 @@
-// Copyright (c) 2021, Manticore Software LTD (https://manticoresearch.com)
+// Copyright (c) 2021-2022, Manticore Software LTD (https://manticoresearch.com)
 // All rights reserved
 //
 //
@@ -22,6 +22,9 @@
 
 namespace columnar
 {
+
+using namespace util;
+using namespace common;
 
 Checker_c::Checker_c ( const AttributeHeader_i & tHeader, FileReader_c * pReader, Reporter_fn & fnProgress, Reporter_fn & fnError )
 	: m_tHeader ( tHeader )

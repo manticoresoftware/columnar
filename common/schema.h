@@ -16,22 +16,37 @@
 
 #pragma once
 
+#include <vector>
 #include <string>
-#include <array>
 
-#include "common/schema.h"
-
-namespace SI
+namespace common
 {
-	static const int LIB_VERSION = 3;
-	static const uint32_t STORAGE_VERSION = 1;
 
-	struct ColumnInfo_t
-	{
-		common::AttrType_e m_eType = common::AttrType_e::NONE;
-		std::string m_sName;
-		bool		m_bEnabled { true };
-	};
+enum class AttrType_e : uint32_t
+{
+	NONE,
+	UINT32,
+	TIMESTAMP,
+	INT64,
+	UINT64,
+	BOOLEAN,
+	FLOAT,
+	STRING,
+	UINT32SET,
+	INT64SET,
 
+	TOTAL
+};
 
-} // namespace SI
+using StringHash_fn = uint64_t (*)( const uint8_t * pStr, int iLen, uint64_t uPrev );
+
+struct SchemaAttr_t
+{
+	std::string		m_sName;
+	AttrType_e		m_eType = AttrType_e::NONE;
+	StringHash_fn	m_fnCalcHash = nullptr;
+};
+
+using Schema_t = std::vector<SchemaAttr_t>;
+
+} // namespace common

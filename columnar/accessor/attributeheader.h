@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021, Manticore Software LTD (https://manticoresearch.com)
+// Copyright (c) 2020-2022, Manticore Software LTD (https://manticoresearch.com)
 // All rights reserved
 //
 //
@@ -18,10 +18,13 @@
 
 #include "columnar.h"
 
+namespace util
+{
+	class FileReader_c;
+}
+
 namespace columnar
 {
-
-class FileReader_c;
 
 class AttributeHeader_i
 {
@@ -29,7 +32,7 @@ public:
 	virtual						~AttributeHeader_i() = default;
 
 	virtual const std::string &	GetName() const = 0;
-	virtual AttrType_e			GetType() const = 0;
+	virtual common::AttrType_e	GetType() const = 0;
 	virtual const Settings_t &	GetSettings() const = 0;
 
 	virtual uint32_t			GetNumDocs() const = 0;
@@ -41,11 +44,11 @@ public:
 	virtual int					GetNumMinMaxBlocks ( int iLevel ) const = 0;
 	virtual std::pair<int64_t,int64_t> GetMinMax ( int iLevel, int iBlock ) const = 0;
 
-	virtual bool				Load ( FileReader_c & tReader, std::string & sError ) = 0;
-	virtual bool				Check ( FileReader_c & tReader, Reporter_fn & fnError ) = 0;
+	virtual bool				Load ( util::FileReader_c & tReader, std::string & sError ) = 0;
+	virtual bool				Check ( util::FileReader_c & tReader, Reporter_fn & fnError ) = 0;
 };
 
 
-AttributeHeader_i * CreateAttributeHeader ( AttrType_e eType, uint32_t uTotalDocs, std::string & sError );
+AttributeHeader_i * CreateAttributeHeader ( common::AttrType_e eType, uint32_t uTotalDocs, std::string & sError );
 
 } // namespace columnar

@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, Manticore Software LTD (https://manticoresearch.com)
+# Copyright (c) 2020-2022, Manticore Software LTD (https://manticoresearch.com)
 # All rights reserved
 #
 #
@@ -27,7 +27,7 @@ set ( _CMAKE_BUILD_TYPE ${CMAKE_BUILD_TYPE} )
 
 # IMPORTANT: the below version should be in format x.y.z.
 # NOTE, if "z" is even the CI will release the package. It should be made odd if the version is still under development.
-project ( columnar VERSION 1.15.5 )
+project ( columnar VERSION 1.16.1 )
 
 # sometimes CMAKE_BUILD_TYPE became set after PROJECT statement, undo it.
 if (NOT _CMAKE_BUILD_TYPE AND CMAKE_BUILD_TYPE)
@@ -80,7 +80,8 @@ if (INSTALL_API)
 	# ensure ALL externally required headers are exported here
 	install ( FILES columnar/builder.h columnar/columnar.h DESTINATION ${_includes}/columnar )
 	install ( FILES util/util.h DESTINATION ${_includes}/util )
-	install ( FILES secondary/sidx.h secondary/common.h secondary/builder.h secondary/iterator.h DESTINATION ${_includes}/secondary )
+	install ( FILES common/schema.h common/blockiterator.h common/filter.h DESTINATION ${_includes}/common )
+	install ( FILES secondary/secondary.h secondary/common.h secondary/builder.h secondary/iterator.h DESTINATION ${_includes}/secondary )
 
 	set ( API_CMAKE_DIR "lib/cmake/columnar" )
 	install ( EXPORT apiexport
@@ -163,10 +164,11 @@ if (TARGET FastPFOR::SIMDe)
 endif ()
 
 target_link_libraries ( columnar_root INTERFACE columnar_api )
-target_include_directories ( columnar_root INTERFACE columnar util )
+target_include_directories ( columnar_root INTERFACE columnar util common )
 set_property ( TARGET columnar_root PROPERTY INTERFACE_POSITION_INDEPENDENT_CODE TRUE )
 
 add_subdirectory ( util )
+add_subdirectory ( common )
 
 include ( GNUInstallDirs )
 if (WIN32)

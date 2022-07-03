@@ -1,4 +1,4 @@
-// Copyright (c) 2021, Manticore Software LTD (https://manticoresearch.com)
+// Copyright (c) 2021-2022, Manticore Software LTD (https://manticoresearch.com)
 // All rights reserved
 //
 //
@@ -24,13 +24,13 @@ namespace columnar
 class Checker_c : public Checker_i
 {
 public:
-					Checker_c ( const AttributeHeader_i & tHeader, FileReader_c * pReader, Reporter_fn & fnProgress, Reporter_fn & fnError );
+					Checker_c ( const AttributeHeader_i & tHeader, util::FileReader_c * pReader, Reporter_fn & fnProgress, Reporter_fn & fnError );
 
 	bool			Check() override;
 
 protected:
 	const AttributeHeader_i &		m_tHeader;
-	std::unique_ptr<FileReader_c>	m_pReader;
+	std::unique_ptr<util::FileReader_c>	m_pReader;
 	Reporter_fn	&					m_fnProgress;
 	Reporter_fn	&					m_fnError;
 	uint32_t						m_uBlockId = INVALID_BLOCK_ID;
@@ -42,12 +42,12 @@ protected:
 
 void	CheckStorage ( const std::string & sFilename, uint32_t uNumRows, Reporter_fn & fnError, Reporter_fn & fnProgress );
 
-bool	CheckString ( FileReader_c & tReader, int iMinLength, int iMaxLength, const std::string & sMessage, Reporter_fn & fnError );
-bool	CheckInt32 ( FileReader_c & tReader, int iMin, int iMax, const std::string & sMessage, Reporter_fn & fnError );
-bool	CheckInt32 ( FileReader_c & tReader, int iMin, int iMax, const std::string & sMessage, int & iValue, Reporter_fn & fnError );
-bool	CheckInt32Packed ( FileReader_c & tReader, int iMin, int iMax, const std::string & sMessage, Reporter_fn & fnError );
-bool	CheckInt32Packed ( FileReader_c & tReader, int iMin, int iMax, const std::string & sMessage, int & iValue, Reporter_fn & fnError );
-bool	CheckInt64 ( FileReader_c & tReader, int64_t iMin, int64_t iMax, const std::string & sMessage, Reporter_fn & fnError );
-bool	CheckInt64 ( FileReader_c & tReader, int64_t iMin, int64_t iMax, const std::string & sMessage, int64_t & iValue, Reporter_fn & fnError );
+bool	CheckString ( util::FileReader_c & tReader, int iMinLength, int iMaxLength, const std::string & sMessage, Reporter_fn & fnError );
+bool	CheckInt32 ( util::FileReader_c & tReader, int iMin, int iMax, const std::string & sMessage, Reporter_fn & fnError );
+bool	CheckInt32 ( util::FileReader_c & tReader, int iMin, int iMax, const std::string & sMessage, int & iValue, Reporter_fn & fnError );
+bool	CheckInt32Packed ( util::FileReader_c & tReader, int iMin, int iMax, const std::string & sMessage, Reporter_fn & fnError );
+bool	CheckInt32Packed ( util::FileReader_c & tReader, int iMin, int iMax, const std::string & sMessage, int & iValue, Reporter_fn & fnError );
+bool	CheckInt64 ( util::FileReader_c & tReader, int64_t iMin, int64_t iMax, const std::string & sMessage, Reporter_fn & fnError );
+bool	CheckInt64 ( util::FileReader_c & tReader, int64_t iMin, int64_t iMax, const std::string & sMessage, int64_t & iValue, Reporter_fn & fnError );
 
 } // namespace columnar

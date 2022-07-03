@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021, Manticore Software LTD (https://manticoresearch.com)
+// Copyright (c) 2020-2022, Manticore Software LTD (https://manticoresearch.com)
 // All rights reserved
 //
 //
@@ -40,7 +40,7 @@ private:
 
 using SharedBlocks_c = std::shared_ptr<MatchingBlocks_c>;
 
-class Analyzer_i : public BlockIterator_i
+class Analyzer_i : public common::BlockIterator_i
 {
 public:
 	virtual void	Setup ( SharedBlocks_c & pBlocks, uint32_t uTotalDocs ) = 0;
@@ -56,6 +56,6 @@ public:
 };
 
 
-bool	CheckEmptySpan ( uint32_t * pRowID, uint32_t * pRowIdStart, Span_T<uint32_t> & dRowIdBlock );
+bool	CheckEmptySpan ( uint32_t * pRowID, uint32_t * pRowIdStart, util::Span_T<uint32_t> & dRowIdBlock );
 
 } // namespace columnar

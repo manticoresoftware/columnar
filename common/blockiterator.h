@@ -16,22 +16,29 @@
 
 #pragma once
 
-#include <string>
-#include <array>
+#include "util/util.h"
 
-#include "common/schema.h"
-
-namespace SI
+namespace common
 {
-	static const int LIB_VERSION = 3;
-	static const uint32_t STORAGE_VERSION = 1;
 
-	struct ColumnInfo_t
-	{
-		common::AttrType_e m_eType = common::AttrType_e::NONE;
-		std::string m_sName;
-		bool		m_bEnabled { true };
-	};
+struct IteratorDesc_t
+{
+	std::string m_sAttr;
+	std::string m_sType;
+};
 
 
-} // namespace SI
+class BlockIterator_i
+{
+public:
+	virtual				~BlockIterator_i() = default;
+
+	virtual bool		HintRowID ( uint32_t tRowID ) = 0;
+	virtual bool		GetNextRowIdBlock ( util::Span_T<uint32_t> & dRowIdBlock ) = 0;
+	virtual int64_t		GetNumProcessed() const = 0;
+
+	virtual void		AddDesc ( std::vector<IteratorDesc_t> & dDesc ) const = 0;
+};
+
+
+} // namespace common

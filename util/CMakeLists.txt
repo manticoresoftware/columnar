@@ -1,4 +1,4 @@
-# Copyright (c) 2021, Manticore Software LTD (https://manticoresearch.com)
+# Copyright (c) 2021-2022, Manticore Software LTD (https://manticoresearch.com)
 # All rights reserved
 #
 #
@@ -24,7 +24,6 @@ ADD_LIBRARY ( util OBJECT
 		reader.cpp
 		codec.cpp
 		util.h
-		interval.h
 		delta.h
 		reader.h
 		codec.h

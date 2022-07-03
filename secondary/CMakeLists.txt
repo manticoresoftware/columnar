@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021, Manticore Software LTD (https://manticoresearch.com)
+# Copyright (c) 2020-2022, Manticore Software LTD (https://manticoresearch.com)
 # All rights reserved
 #
 #
@@ -19,8 +19,8 @@ cmake_minimum_required ( VERSION 3.17 )
 include ( GetPGM )
 
 add_library ( secondary_index MODULE
-		builder.cpp iterator.cpp
-		sidx.h common.h builder.h iterator.h )
+    builder.cpp iterator.cpp blockreader.cpp secondary.cpp
+    common.h builder.h iterator.h blockreader.h secondary.h )
 
 target_link_libraries ( secondary_index PRIVATE PGM::pgmindexlib FastPFOR::FastPFOR columnar_root util )
 set_target_properties ( secondary_index PROPERTIES

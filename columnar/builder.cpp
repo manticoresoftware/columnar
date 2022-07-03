@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021, Manticore Software LTD (https://manticoresearch.com)
+// Copyright (c) 2020-2022, Manticore Software LTD (https://manticoresearch.com)
 // All rights reserved
 //
 //
@@ -26,6 +26,10 @@
 
 namespace columnar
 {
+
+using namespace util;
+using namespace common;
+
 
 class Builder_c final : public Builder_i
 {

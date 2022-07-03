@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021, Manticore Software LTD (https://manticoresearch.com)
+// Copyright (c) 2020-2022, Manticore Software LTD (https://manticoresearch.com)
 // All rights reserved
 //
 //
@@ -34,7 +34,7 @@ namespace SI
 	{
 	public:
 		virtual size_t Save ( std::vector<uint8_t> & dData ) const = 0;
-		virtual void Load ( columnar::FileReader_c & tRd ) = 0;
+		virtual void Load ( util::FileReader_c & tRd ) = 0;
 		virtual ApproxPos_t Search ( uint64_t uVal ) const = 0;
 	};
 
@@ -55,7 +55,7 @@ namespace SI
 		{
 			size_t uOff = dData.size();
 
-			columnar::MemWriter_c tWr ( dData );
+			util::MemWriter_c tWr ( dData );
 
 			tWr.Pack_uint32 ( (int)this->n );
 			WriteTypedKey ( tWr, this->first_key );
@@ -64,7 +64,7 @@ namespace SI
 			for ( const auto & tSeg : this->segments )
 			{
 				WriteTypedKey ( tWr, tSeg.key );
-				tWr.Pack_uint32 ( columnar::FloatToUint ( tSeg.slope ) );
+				tWr.Pack_uint32 ( util::FloatToUint ( tSeg.slope ) );
 				tWr.Pack_uint32 ( tSeg.intercept );
 			}
 
@@ -79,7 +79,7 @@ namespace SI
 			return uOff;
 		}
 
-		void Load ( columnar::FileReader_c & tRd ) final
+		void Load ( util::FileReader_c & tRd ) final
 		{
 			this->n = tRd.Unpack_uint32();
 			LoadTypedKey ( tRd, this->first_key );
@@ -88,7 +88,7 @@ namespace SI
 			for ( auto & tSeg : this->segments )
 			{
 				LoadTypedKey ( tRd, tSeg.key );
-				tSeg.slope = columnar::UintToFloat ( tRd.Unpack_uint32() );
+				tSeg.slope = util::UintToFloat ( tRd.Unpack_uint32() );
 				tSeg.intercept = tRd.Unpack_uint32();
 			}
 
@@ -103,27 +103,27 @@ namespace SI
 
 		ApproxPos_t Search ( uint64_t uVal ) const final;
 
-		void WriteTypedKey ( columnar::MemWriter_c & tWr, VALUE tVal ) const
+		void WriteTypedKey ( util::MemWriter_c & tWr, VALUE tVal ) const
 		{
 			tWr.Pack_uint64 ( (uint64_t)tVal );
 		}
 
-		void LoadTypedKey ( columnar::FileReader_c & tRd, VALUE  & tVal ) const
+		void LoadTypedKey ( util::FileReader_c & tRd, VALUE  & tVal ) const
 		{
 			tVal = tRd.Unpack_uint64();
 		}
 	};
 
 	template<>
-	inline void PGM_T<float>::WriteTypedKey ( columnar::MemWriter_c & tWr, float tVal ) const
+	inline void PGM_T<float>::WriteTypedKey ( util::MemWriter_c & tWr, float tVal ) const
 	{
-		tWr.Pack_uint32 ( columnar::FloatToUint ( tVal ) );
+		tWr.Pack_uint32 ( util::FloatToUint ( tVal ) );
 	}
 
 	template<>
-	inline void PGM_T<float>::LoadTypedKey ( columnar::FileReader_c & tRd, float & tVal ) const
+	inline void PGM_T<float>::LoadTypedKey ( util::FileReader_c & tRd, float & tVal ) const
 	{
-		tVal = columnar::UintToFloat ( tRd.Unpack_uint32() );
+		tVal = util::UintToFloat ( tRd.Unpack_uint32() );
 	}
 
 	static ApproxPos_t GetPos ( pgm::ApproxPos tPos )
@@ -156,7 +156,7 @@ namespace SI
 	template<>
 	inline ApproxPos_t PGM_T<float>::Search ( uint64_t uVal ) const
 	{
-		return GetPos ( this->search ( columnar::UintToFloat ( uVal ) ) );
+		return GetPos ( this->search ( util::UintToFloat ( uVal ) ) );
 	}
 
 } // namespace SI

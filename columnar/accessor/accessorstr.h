@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021, Manticore Software LTD (https://manticoresearch.com)
+// Copyright (c) 2020-2022, Manticore Software LTD (https://manticoresearch.com)
 // All rights reserved
 //
 //
@@ -26,8 +26,8 @@ class Analyzer_i;
 class Checker_i;
 class AttributeHeader_i;
 
-Iterator_i *	CreateIteratorStr ( const AttributeHeader_i & tHeader, FileReader_c * pReader );
-Analyzer_i *	CreateAnalyzerStr ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings, bool bHaveMatchingBlocks );
-Checker_i *		CreateCheckerStr ( const AttributeHeader_i & tHeader, FileReader_c * pReader, Reporter_fn & fnProgress, Reporter_fn & fnError );
+Iterator_i *	CreateIteratorStr ( const AttributeHeader_i & tHeader, util::FileReader_c * pReader );
+Analyzer_i *	CreateAnalyzerStr ( const AttributeHeader_i & tHeader, util::FileReader_c * pReader, const common::Filter_t & tSettings, bool bHaveMatchingBlocks );
+Checker_i *		CreateCheckerStr ( const AttributeHeader_i & tHeader, util::FileReader_c * pReader, Reporter_fn & fnProgress, Reporter_fn & fnError );
 
 } // namespace columnar

@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021, Manticore Software LTD (https://manticoresearch.com)
+// Copyright (c) 2020-2022, Manticore Software LTD (https://manticoresearch.com)
 // All rights reserved
 //
 //
@@ -22,7 +22,7 @@
 namespace columnar
 {
 
-bool CheckEmptySpan ( uint32_t * pRowID, uint32_t * pRowIdStart, Span_T<uint32_t> & dRowIdBlock )
+bool CheckEmptySpan ( uint32_t * pRowID, uint32_t * pRowIdStart, util::Span_T<uint32_t> & dRowIdBlock )
 {
 	if ( pRowID==pRowIdStart )
 		return false;

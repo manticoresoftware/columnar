@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021, Manticore Software LTD (https://manticoresearch.com)
+// Copyright (c) 2020-2022, Manticore Software LTD (https://manticoresearch.com)
 // All rights reserved
 //
 //
@@ -21,6 +21,10 @@
 
 namespace columnar
 {
+
+using namespace util;
+using namespace common;
+
 
 template <typename T>
 class MinMax_T
@@ -65,11 +69,14 @@ bool MinMax_T<T>::Load ( FileReader_c & tReader, std::string & sError )
 
 	LoadTreeLevels(tReader);
 
-	int iCumulativeBlocks = 0;
-	for ( auto & i : m_dTreeLevels )
+	if ( iTreeElements )
 	{
-		i.second = &m_dMinMaxTree[iCumulativeBlocks];
-		iCumulativeBlocks += i.first;
+		int iCumulativeBlocks = 0;
+		for ( auto & i : m_dTreeLevels )
+		{
+			i.second = &m_dMinMaxTree[iCumulativeBlocks];
+			iCumulativeBlocks += i.first;
+		}
 	}
 
 	if ( tReader.IsError() )

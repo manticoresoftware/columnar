@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021, Manticore Software LTD (https://manticoresearch.com)
+// Copyright (c) 2020-2022, Manticore Software LTD (https://manticoresearch.com)
 // All rights reserved
 //
 //
@@ -24,6 +24,9 @@
 
 namespace columnar
 {
+
+using namespace util;
+using namespace common;
 
 template<bool LEFT_CLOSED, bool RIGHT_CLOSED, bool EQ>
 class MvaAll_T
@@ -591,6 +594,8 @@ public:
 	int			Get ( const uint8_t * & pData ) final;
 	uint8_t *	GetPacked() final;
 	int			GetLength() final;
+
+	void		AddDesc ( std::vector<IteratorDesc_t> & dDesc ) const final { dDesc.push_back ( { BASE::m_tHeader.GetName(), "iterator" } ); }
 };
 
 template <typename T>
@@ -879,6 +884,7 @@ public:
 				Analyzer_MVA_T ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings );
 
 	bool		GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBlock ) final;
+	void		AddDesc ( std::vector<IteratorDesc_t> & dDesc ) const final { dDesc.push_back ( { ACCESSOR::m_tHeader.GetName(), "analyzer" } ); }
 
 private:
 	AnalyzerBlock_MVA_Const_c	m_tBlockConst;

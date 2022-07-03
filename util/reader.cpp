@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021, Manticore Software LTD (https://manticoresearch.com)
+// Copyright (c) 2020-2022, Manticore Software LTD (https://manticoresearch.com)
 // All rights reserved
 //
 //
@@ -34,7 +34,7 @@
 #endif
 
 
-namespace columnar
+namespace util
 {
 
 #ifdef _MSC_VER
@@ -78,8 +78,9 @@ static int PreadWrapper ( int iFD, void * pBuf, size_t tCount, off_t tOff )
 #endif	// _MSC_VER
 
 
-FileReader_c::FileReader_c ( int iFD )
+FileReader_c::FileReader_c ( int iFD, size_t tBufferSize )
 	: m_iFD ( iFD )
+	, m_tSize ( tBufferSize )
 {
 	assert ( iFD>=0 );
 }
@@ -195,7 +196,7 @@ bool FileReader_c::ReadToBuffer()
 
 int64_t FileReader_c::GetFileSize()
 {
-	return columnar::GetFileSize ( m_iFD, &m_sError );
+	return util::GetFileSize ( m_iFD, &m_sError );
 }
 
 
@@ -223,7 +224,7 @@ struct MappedBufferData_t
 bool MMapOpen ( const std::string & sFile, std::string & sError, MappedBufferData_t & tBuf )
 {
 #if _WIN32
-	HANDLE ( tBuf.m_iFD==INVALID_HANDLE_VALUE );
+	assert ( tBuf.m_iFD==INVALID_HANDLE_VALUE );
 #else
 	assert ( tBuf.m_iFD==-1 );
 #endif
@@ -373,4 +374,5 @@ MappedBuffer_i * MappedBuffer_i::Create()
 {
 	return new MappedBuffer_c();
 }
-} // namespace columnar
+
+} // namespace util

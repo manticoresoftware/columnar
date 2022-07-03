@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021, Manticore Software LTD (https://manticoresearch.com)
+// Copyright (c) 2020-2022, Manticore Software LTD (https://manticoresearch.com)
 // All rights reserved
 //
 //
@@ -18,7 +18,7 @@
 
 #include "util.h"
 
-namespace columnar
+namespace util
 {
 
 class IntCodec_i
@@ -26,17 +26,17 @@ class IntCodec_i
 public:
 	virtual			~IntCodec_i() = default;
 
-	virtual void	Encode ( const Span_T<uint32_t> & dUncompressed, std::vector<uint32_t> & dCompressed ) = 0;
-	virtual void	Encode ( const Span_T<uint64_t> & dUncompressed, std::vector<uint32_t> & dCompressed ) = 0;
-	virtual bool	Decode ( const Span_T<uint32_t> & dCompressed, SpanResizeable_T<uint32_t> & dDecompressed ) = 0;
-	virtual bool	Decode ( const Span_T<uint32_t> & dCompressed, SpanResizeable_T<uint64_t> & dDecompressed ) = 0;
+	virtual void	Encode ( const util::Span_T<uint32_t> & dUncompressed, std::vector<uint32_t> & dCompressed ) = 0;
+	virtual void	Encode ( const util::Span_T<uint64_t> & dUncompressed, std::vector<uint32_t> & dCompressed ) = 0;
+	virtual bool	Decode ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint32_t> & dDecompressed ) = 0;
+	virtual bool	Decode ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint64_t> & dDecompressed ) = 0;
 };
 
 
 void BitPack ( const std::vector<uint32_t> & dValues, std::vector<uint32_t> & dPacked, int iBits );
 void BitUnpack ( const std::vector<uint32_t> & dPacked, std::vector<uint32_t> & dValues, int iBits );
-void BitUnpack ( const Span_T<uint32_t> & dPacked, Span_T<uint32_t> & dValues, int iBits );
+void BitUnpack ( const util::Span_T<uint32_t> & dPacked, util::Span_T<uint32_t> & dValues, int iBits );
 
 IntCodec_i * CreateIntCodec ( const std::string & sCodec32, const std::string & sCodec64 );
 
-} // namespace columnar
+} // namespace util

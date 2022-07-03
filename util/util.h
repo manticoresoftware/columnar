@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021, Manticore Software LTD (https://manticoresearch.com)
+// Copyright (c) 2020-2022, Manticore Software LTD (https://manticoresearch.com)
 // All rights reserved
 //
 //
@@ -25,8 +25,9 @@
 #include <type_traits>
 #include <fcntl.h>
 #include <climits>
+#include <assert.h>
 
-namespace columnar
+namespace util
 {
 
 #ifdef _MSC_VER
@@ -56,6 +57,7 @@ namespace columnar
 	#endif
 #endif
 
+const uint64_t STR_HASH_SEED = 0xCBF29CE484222325ULL;
 
 template<typename T>
 class Span_T
@@ -80,8 +82,17 @@ public:
 	T *     end() const     { return m_pData+m_tLength; }
 	size_t  size() const    { return m_tLength; }
 	bool    empty() const   { return m_tLength==0; }
-	T & operator [] ( size_t i ) { return m_pData[i]; }
-	const T & operator [] ( size_t i ) const { return m_pData[i]; }
+	T & operator [] ( size_t i )
+	{
+		assert ( i < m_tLength );
+		return m_pData[i];
+	}
+
+	const T & operator [] ( size_t i ) const
+	{
+		assert ( i < m_tLength );
+		return m_pData[i];
+	}
 
 protected:
 	T *		m_pData = nullptr;
@@ -424,26 +435,95 @@ void WriteVectorPacked ( const std::vector<uint64_t> & dData, WRITER & tWriter )
 
 bool FloatEqual ( float fA, float fB );
 
-struct BitVec_t
+template <typename T>
+constexpr int Log2 ( T tValue )
 {
-	std::vector<uint32_t> m_dData;
-	int m_iSize { 0 };
+	int iBits = 0;
+	while ( tValue )
+	{
+		tValue >>= 1;
+		iBits++;
+	}
 
-	explicit BitVec_t ( int iSize );
+	return iBits;
+}
 
-	bool BitGet ( int iBit );
-	void BitSet ( int iBit );
+template <typename T=uint32_t>
+class BitVec_T
+{
+public:
+	explicit BitVec_T ( int iSize ) { Resize(iSize); }
+
+	inline bool BitGet ( int iBit )
+	{
+		if ( !m_dData.size() )
+			return false;
+
+		assert ( iBit>=0 && iBit<m_iSize );
+		return ( ( m_dData [ iBit>>SHIFT ] & ( ( (T)1 )<<( iBit&MASK ) ) )!=0 );
+	}
+
+	inline void BitSet ( int iBit )
+	{
+		if ( !m_dData.size() )
+			return;
+
+		assert ( iBit>=0 && iBit<m_iSize );
+		m_dData [ iBit>>SHIFT ] |= ( ( (T)1 )<<( iBit&MASK ) );
+	}
+
+	int Scan ( int iStart )
+	{
+		assert ( iStart<m_iSize );
+
+		const T * pData = &m_dData.front();
+		int iIndex = iStart>>SHIFT;
+		T uMask = ~( ( T(1)<<( iStart&MASK ) )-1 );
+		if ( pData[iIndex] & uMask )
+			return (iIndex<<SHIFT) + ScanBit ( pData[iIndex], iStart&MASK );
+
+		iIndex++;
+		while ( iIndex<(int)m_dData.size() && !pData[iIndex] )
+			iIndex++;
+
+		if ( iIndex>=(int)m_dData.size() )
+			return m_iSize;
+
+		return (iIndex<<SHIFT) + ScanBit ( pData[iIndex], 0 );
+	}
+
+	void SetAllBits() { std::fill ( m_dData.begin(), m_dData.end(), (T)0xffffffffffffffffULL ); }
+	void Resize ( int iSize )
+	{
+		m_iSize = iSize;
+		if ( iSize )
+		{
+			int iCount = ( iSize+SIZEBITS-1 )/SIZEBITS;
+			m_dData = std::vector<T> ( iCount, 0 );
+		}
+	}
+
+	int	GetLength() const { return m_iSize; }
+	const std::vector<T> & GetData() const { return m_dData; }
+
+private:
+	static const size_t	SIZEBITS = sizeof(T)*8;
+	static const T		MASK = T(sizeof(T)*8 - 1);
+	static constexpr T	SHIFT = T(Log2(SIZEBITS)-1);
+
+	std::vector<T>	m_dData;
+	int				m_iSize = 0;
+
+	inline int ScanBit ( T tData, int iStart )
+	{
+		for ( int i = iStart; i < SIZEBITS; i++ )
+			if ( tData & ( (T)1<<i ) )
+				return i;
+
+		return -1;
+	}
 };
 
-/// known collations
-enum class Collation_e : uint32_t
-{
-	LIBC_CI,
-	LIBC_CS,
-	UTF8_GENERAL_CI,
-	BINARY,
+using BitVec_c = BitVec_T<>;
 
-	TOTAL
-};
-
-} // namespace columnar
+} // namespace util

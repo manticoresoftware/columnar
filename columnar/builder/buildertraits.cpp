@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021, Manticore Software LTD (https://manticoresearch.com)
+// Copyright (c) 2020-2022, Manticore Software LTD (https://manticoresearch.com)
 // All rights reserved
 //
 //
@@ -19,10 +19,8 @@
 namespace columnar
 {
 
-std::string GenerateHashAttrName ( const std::string & sAttr )
-{
-	return FormatStr ( "$%s_HASH", sAttr.c_str() );
-}
+using namespace util;
+using namespace common;
 
 
 AttributeHeaderBuilder_c::AttributeHeaderBuilder_c ( const Settings_t & tSettings, const std::string & sName, AttrType_e eType )

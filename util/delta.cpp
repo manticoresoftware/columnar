@@ -1,4 +1,4 @@
-// Copyright (c) 2021, Manticore Software LTD (https://manticoresearch.com)
+// Copyright (c) 2021-2022, Manticore Software LTD (https://manticoresearch.com)
 // Copyright (c) Daniel Lemire, http://lemire.me/en/
 // All rights reserved
 //
@@ -28,7 +28,7 @@
 
 #include "deltautil.h"
 
-namespace columnar
+namespace util
 {
 
 template <class T>
@@ -274,4 +274,4 @@ void ComputeInverseDeltas ( std::vector<uint64_t> & dData, bool bAsc )
 	ComputeInverseDeltas ( tSpan, bAsc );
 }
 
-}
+} // namespace util

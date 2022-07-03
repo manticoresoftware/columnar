@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021, Manticore Software LTD (https://manticoresearch.com)
+// Copyright (c) 2020-2022, Manticore Software LTD (https://manticoresearch.com)
 // All rights reserved
 //
 //
@@ -136,7 +136,7 @@ protected:
 	virtual bool		MoveToBlock ( int iBlock ) = 0;
 
 	template <typename ACCESSOR, typename PROCESSSUBBLOCK>
-	FORCE_INLINE bool	GetNextRowIdBlock ( ACCESSOR & tAccessor, Span_T<uint32_t> & dRowIdBlock, PROCESSSUBBLOCK && fnProcessSubblock );
+	FORCE_INLINE bool	GetNextRowIdBlock ( ACCESSOR & tAccessor, util::Span_T<uint32_t> & dRowIdBlock, PROCESSSUBBLOCK && fnProcessSubblock );
 
 	template <typename ACCESSOR>
 	FORCE_INLINE void	StartBlockProcessing ( ACCESSOR & tAccessor, int iNextBlock );
@@ -233,7 +233,7 @@ bool Analyzer_T<HAVE_MATCHING_BLOCKS>::HintRowID ( uint32_t tRowID )
 
 template <bool HAVE_MATCHING_BLOCKS>
 template <typename ACCESSOR, typename PROCESSSUBBLOCK>
-bool Analyzer_T<HAVE_MATCHING_BLOCKS>::GetNextRowIdBlock ( ACCESSOR & tAccessor, Span_T<uint32_t> & dRowIdBlock, PROCESSSUBBLOCK && fnProcessSubblock )
+bool Analyzer_T<HAVE_MATCHING_BLOCKS>::GetNextRowIdBlock ( ACCESSOR & tAccessor, util::Span_T<uint32_t> & dRowIdBlock, PROCESSSUBBLOCK && fnProcessSubblock )
 {
 	if ( m_iCurSubblock>=m_iTotalSubblocks )
 		return false;
@@ -295,7 +295,7 @@ bool Analyzer_T<HAVE_MATCHING_BLOCKS>::RewindToNextBlock ( ACCESSOR & tAccessor,
 }
 
 
-FORCE_INLINE void AddMinValue ( Span_T<uint32_t> & dValues, uint32_t uMin )
+FORCE_INLINE void AddMinValue ( util::Span_T<uint32_t> & dValues, uint32_t uMin )
 {
 	int nValues = (int)dValues.size();
 	if ( nValues & ( sizeof(__m128i)/sizeof(uint32_t) - 1 ) )
@@ -319,7 +319,7 @@ FORCE_INLINE void AddMinValue ( Span_T<uint32_t> & dValues, uint32_t uMin )
 }
 
 
-FORCE_INLINE void AddMinValue ( Span_T<uint64_t> & dValues, uint64_t uMin )
+FORCE_INLINE void AddMinValue ( util::Span_T<uint64_t> & dValues, uint64_t uMin )
 {
 	int nValues = (int)dValues.size();
 	if ( nValues & ( sizeof(__m128i)/sizeof(uint64_t) - 1 ) )
@@ -344,10 +344,10 @@ FORCE_INLINE void AddMinValue ( Span_T<uint64_t> & dValues, uint64_t uMin )
 
 
 template <typename T>
-FORCE_INLINE void DecodeValues_Delta_PFOR ( SpanResizeable_T<T> & dValues, FileReader_c & tReader, IntCodec_i & tCodec, SpanResizeable_T<uint32_t> & dTmp, uint32_t uTotalSize, bool bReadFlag )
+FORCE_INLINE void DecodeValues_Delta_PFOR ( util::SpanResizeable_T<T> & dValues, util::FileReader_c & tReader, util::IntCodec_i & tCodec, util::SpanResizeable_T<uint32_t> & dTmp, uint32_t uTotalSize, bool bReadFlag )
 {
 	int64_t tStart = tReader.GetPos();
-	uint8_t uFlags = to_underlying ( IntDeltaPacking_e::DELTA_ASC );
+	uint8_t uFlags = util::to_underlying ( IntDeltaPacking_e::DELTA_ASC );
 	if ( bReadFlag )
 		uFlags = tReader.Read_uint8();
 
@@ -362,11 +362,11 @@ FORCE_INLINE void DecodeValues_Delta_PFOR ( SpanResizeable_T<T> & dValues, FileR
 
 	assert ( !dValues[0] );
 	dValues[0] = uMin;
-	ComputeInverseDeltas ( dValues, uFlags==to_underlying ( IntDeltaPacking_e::DELTA_ASC ) );
+	ComputeInverseDeltas ( dValues, uFlags==util::to_underlying ( IntDeltaPacking_e::DELTA_ASC ) );
 }
 
 template <typename T>
-FORCE_INLINE void DecodeValues_PFOR ( SpanResizeable_T<T> & dValues, FileReader_c & tReader, IntCodec_i & tCodec, SpanResizeable_T<uint32_t> & dTmp, uint32_t uTotalSize )
+FORCE_INLINE void DecodeValues_PFOR ( util::SpanResizeable_T<T> & dValues, util::FileReader_c & tReader, util::IntCodec_i & tCodec, util::SpanResizeable_T<uint32_t> & dTmp, uint32_t uTotalSize )
 {
 	int64_t tStart = tReader.GetPos();
 	T uMin = (T)tReader.Unpack_uint64();
@@ -382,10 +382,10 @@ FORCE_INLINE void DecodeValues_PFOR ( SpanResizeable_T<T> & dValues, FileReader_
 }
 
 template <typename T, bool PACK>
-FORCE_INLINE uint32_t PackValue ( const Span_T<T> & dValue, uint8_t * & pValue )
+FORCE_INLINE uint32_t PackValue ( const util::Span_T<T> & dValue, uint8_t * & pValue )
 {
 	if ( PACK )
-		pValue = ByteCodec_c::PackData(dValue);
+		pValue = util::ByteCodec_c::PackData(dValue);
 	else
 		pValue = (uint8_t*)dValue.data();
 

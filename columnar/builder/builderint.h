@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021, Manticore Software LTD (https://manticoresearch.com)
+// Copyright (c) 2020-2022, Manticore Software LTD (https://manticoresearch.com)
 // All rights reserved
 //
 //
@@ -39,14 +39,12 @@ enum class IntPacking_e : uint32_t
 	TOTAL
 };
 
-const uint64_t STR_HASH_SEED = 0xCBF29CE484222325ULL;
-
 class Packer_i;
 struct Settings_t;
 
 Packer_i * CreatePackerUint32 ( const Settings_t & tSettings, const std::string & sName );
 Packer_i * CreatePackerInt64 ( const Settings_t & tSettings, const std::string & sName );
-Packer_i * CreatePackerHash ( const Settings_t & tSettings, const std::string & sName, StringHash_fn fnCalcHash );
+Packer_i * CreatePackerHash ( const Settings_t & tSettings, const std::string & sName, common::StringHash_fn fnCalcHash );
 Packer_i * CreatePackerFloat ( const Settings_t & tSettings, const std::string & sName );
 
 } // namespace columnar

@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021, Manticore Software LTD (https://manticoresearch.com)
+// Copyright (c) 2020-2022, Manticore Software LTD (https://manticoresearch.com)
 // All rights reserved
 //
 //
@@ -28,6 +28,9 @@
 
 namespace columnar
 {
+
+using namespace util;
+using namespace common;
 
 using HeaderWithLocator_t = std::pair<const AttributeHeader_i*, int>;
 
@@ -222,23 +225,6 @@ bool Settings_t::Check ( FileReader_c & tReader, Reporter_fn & fnError )
 
 //////////////////////////////////////////////////////////////////////////
 
-static Filter_t StringFilterToHashFilter ( const Filter_t & tFilter )
-{
-	assert ( tFilter.m_eType==FilterType_e::STRINGS );
-	Filter_t tRes;
-
-	tRes.m_eType = FilterType_e::VALUES;
-	tRes.m_bExclude = tFilter.m_bExclude;
-	tRes.m_sName = GenerateHashAttrName ( tFilter.m_sName );
-
-	for ( const auto & i : tFilter.m_dStringValues )
-		tRes.m_dValues.push_back ( i.empty() ? 0 : tFilter.m_fnCalcStrHash ( i.data(), i.size(), STR_HASH_SEED ) );
-
-	return tRes;
-}
-
-//////////////////////////////////////////////////////////////////////////
-
 class BlockIterator_c : public BlockIterator_i
 {
 public:
@@ -246,12 +232,15 @@ public:
 	bool			GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBlock ) final;
 	int64_t			GetNumProcessed() const final;
 	bool			Setup ( const std::vector<HeaderWithLocator_t> & dHeaders, SharedBlocks_c & pMatchingBlocks );
+	void			AddDesc ( std::vector<IteratorDesc_t> & dDesc ) const final;
 
 private:
 	static const int MAX_COLLECTED = 128;
 
 	std::shared_ptr<MatchingBlocks_c>	m_pMatchingBlocks;
 	std::array<uint32_t,MAX_COLLECTED>	m_dCollected;
+
+	std::vector<std::string>			m_dAttrs;
 
 	int64_t		m_iTotalDocs = 0;
 	int			m_iDoc = 0;
@@ -276,6 +265,9 @@ bool BlockIterator_c::Setup ( const std::vector<HeaderWithLocator_t> & dHeaders,
 {
 	assert ( !dHeaders.empty() );
 
+	for ( const auto & i : dHeaders )
+		m_dAttrs.push_back ( i.first->GetName() );
+
 	const AttributeHeader_i * pFirstAttr = dHeaders[0].first;
 	m_iTotalDocs = pFirstAttr->GetNumDocs();
 	m_iNumLevels = pFirstAttr->GetNumMinMaxLevels();
@@ -297,6 +289,11 @@ bool BlockIterator_c::Setup ( const std::vector<HeaderWithLocator_t> & dHeaders,
 	return true;
 }
 
+void BlockIterator_c::AddDesc ( std::vector<IteratorDesc_t> & dDesc ) const
+{
+	for ( const auto & i : m_dAttrs )
+		dDesc.push_back ( { i, "prefilter" } );
+}
 
 bool BlockIterator_c::HintRowID ( uint32_t tRowID )
 {
@@ -543,7 +540,7 @@ Analyzer_i * Columnar_c::CreateAnalyzer ( const Filter_t & tSettings, bool bHave
 		{
 			const AttributeHeader_i * pHashHeader = GetHeader ( GenerateHashAttrName ( tSettings.m_sName ) );
 			if ( pHashHeader )
-				return CreateAnalyzerInt ( *pHashHeader, pReader.release(), StringFilterToHashFilter(tSettings) );
+				return CreateAnalyzerInt ( *pHashHeader, pReader.release(), StringFilterToHashFilter ( tSettings, true ) );
 		}
 
 		return CreateAnalyzerStr ( *pHeader, pReader.release(), tSettings, bHaveMatchingBlocks );

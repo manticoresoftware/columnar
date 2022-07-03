@@ -1,4 +1,4 @@
-# Copyright (c) 2021, Manticore Software LTD (https://manticoresearch.com)
+# Copyright (c) 2021-2022, Manticore Software LTD (https://manticoresearch.com)
 # All rights reserved
 #
 #
@@ -23,5 +23,5 @@ add_subdirectory ( accessor )
 # main library
 add_library ( columnar_lib MODULE columnar.cpp builder.cpp columnar.h builder.h )
 target_compile_options ( columnar_lib PRIVATE $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:-wd4996> )
-target_link_libraries ( columnar_lib PRIVATE columnar_root util builder accessor )
+target_link_libraries ( columnar_lib PRIVATE columnar_root util common builder accessor )
 set_target_properties( columnar_lib PROPERTIES PREFIX "" OUTPUT_NAME lib_manticore_columnar )

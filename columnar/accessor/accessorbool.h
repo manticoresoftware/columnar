@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021, Manticore Software LTD (https://manticoresearch.com)
+// Copyright (c) 2020-2022, Manticore Software LTD (https://manticoresearch.com)
 // All rights reserved
 //
 //
@@ -19,16 +19,20 @@
 #include "builder.h"
 #include "accessor.h"
 
+namespace util
+{
+	class FileReader_c;
+}
+
 namespace columnar
 {
 
 class Iterator_i;
 class Analyzer_i;
 class AttributeHeader_i;
-class FileReader_c;
 
-Iterator_i *	CreateIteratorBool ( const AttributeHeader_i & tHeader, FileReader_c * pReader );
-Analyzer_i *	CreateAnalyzerBool ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings, bool bHaveMatchingBlocks );
-Checker_i *		CreateCheckerBool ( const AttributeHeader_i & tHeader, FileReader_c * pReader, Reporter_fn & fnProgress, Reporter_fn & fnError );
+Iterator_i *	CreateIteratorBool ( const AttributeHeader_i & tHeader, util::FileReader_c * pReader );
+Analyzer_i *	CreateAnalyzerBool ( const AttributeHeader_i & tHeader, util::FileReader_c * pReader, const common::Filter_t & tSettings, bool bHaveMatchingBlocks );
+Checker_i *		CreateCheckerBool ( const AttributeHeader_i & tHeader, util::FileReader_c * pReader, Reporter_fn & fnProgress, Reporter_fn & fnError );
 
 } // namespace columnar

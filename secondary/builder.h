@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021, Manticore Software LTD (https://manticoresearch.com)
+// Copyright (c) 2020-2022, Manticore Software LTD (https://manticoresearch.com)
 // All rights reserved
 //
 //
@@ -17,9 +17,22 @@
 #pragma once
 
 #include "common.h"
+#include "util/util.h"
+#include "common/schema.h"
 
 namespace SI
 {
+
+enum class Packing_e : uint32_t
+{
+	ROW,
+	ROW_BLOCK,
+	ROW_BLOCKS_LIST,
+
+	TOTAL
+};
+
+
 class Builder_i
 {
 public:
@@ -33,11 +46,12 @@ public:
 	virtual bool	Done ( std::string & sError ) = 0;
 };
 
-struct SourceAttrTrait_t
-{
-	AttrType_e	m_eType { AttrType_e::NONE };
-	int			m_iAttr { -1 };
-	std::string m_sName;
-};
+struct Settings_t;
 
 } // namespace SI
+
+
+extern "C"
+{
+	DLLEXPORT SI::Builder_i * CreateBuilder ( const SI::Settings_t & tSettings, const common::Schema_t & tSchema, int iMemoryLimit, const std::string & sFile, std::string & sError );
+}
