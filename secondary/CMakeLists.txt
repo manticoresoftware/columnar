@@ -22,7 +22,7 @@ add_library ( secondary_index MODULE
     builder.cpp iterator.cpp blockreader.cpp secondary.cpp
     common.h builder.h iterator.h blockreader.h secondary.h )
 
-target_link_libraries ( secondary_index PRIVATE PGM::pgmindexlib FastPFOR::FastPFOR columnar_root util )
+target_link_libraries ( secondary_index PRIVATE PGM::pgmindexlib FastPFOR::FastPFOR columnar_root util common )
 set_target_properties ( secondary_index PROPERTIES
 		POSITION_INDEPENDENT_CODE ON
 		INTERPROCEDURAL_OPTIMIZATION OFF
