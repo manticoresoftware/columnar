@@ -84,7 +84,7 @@ bool SecondaryIndex_c::Setup ( const std::string & sFile, std::string & sError )
 		return false;
 
 	uint32_t uVersion = m_tReader.Read_uint32();
-	if ( uVersion>LIB_VERSION )
+	if ( uVersion!=LIB_VERSION )
 	{
 		sError = FormatStr ( "Unable to load inverted index: %s is v.%d, binary is v.%d", sFile.c_str(), uVersion, LIB_VERSION );
 		return false;
