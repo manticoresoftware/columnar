@@ -36,7 +36,7 @@ set_source_files_properties ( reader.cpp PROPERTIES COMPILE_DEFINITIONS HAVE_PRE
 target_link_libraries ( util PRIVATE FastPFOR::FastPFOR columnar_root )
 set_property ( TARGET util PROPERTY POSITION_INDEPENDENT_CODE ON )
 
-message ( STATUS "Version ${VERSION_STR} ${GIT_COMMIT_ID}@${GIT_TIMESTAMP_ID}, ${GIT_BRANCH_ID}" )
+message ( STATUS "Version ${CMAKE_PROJECT_VERSION} ${GIT_COMMIT_ID}@${GIT_TIMESTAMP_ID}, ${GIT_BRANCH_ID}" )
 configure_file ( ${CMAKE_CURRENT_SOURCE_DIR}/version.h.in ${columnar_BINARY_DIR}/config/gen_version.h )
 
 target_include_directories ( util PUBLIC ${columnar_BINARY_DIR}/config )

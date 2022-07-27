@@ -1,4 +1,4 @@
-#define VERSION_STR "@VERSION_STR@"
+#define VERSION_STR "@CMAKE_PROJECT_VERSION@"
 // GIT_COMMIT_ID "$Format:%h$"
 // GIT_TIMESTAMP_ID "$Format:%ai$"
 // GIT_EPOCH_ID "$Format:%ct$"
