@@ -14,8 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set ( PGM_GITHUB "https://github.com/manticoresoftware/PGM-index/archive/refs/heads/pgm_2021.zip" )
-set ( PGM_BUNDLEZIP "${LIBS_BUNDLE}/pgm_2021.zip" )
+set ( PGM_GITHUB "https://github.com/manticoresoftware/PGM-index/archive/refs/heads/pgm_2022_08.zip" )
+set ( PGM_BUNDLEZIP "${LIBS_BUNDLE}/pgm_2022_08.zip" )
 
 cmake_minimum_required ( VERSION 3.17 FATAL_ERROR )
 include ( update_bundle )
