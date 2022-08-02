@@ -328,6 +328,7 @@ BlockReader_i * CreateBlockReader ( int iFD, const ColumnInfo_t & tCol, const Se
 		case AttrType_e::UINT32:
 		case AttrType_e::TIMESTAMP:
 		case AttrType_e::UINT32SET:
+		case AttrType_e::BOOLEAN:
 			return new BlockReader_T<uint32_t, false> ( iFD, tCol.m_sName, pCodec, uBlockBaseOff, pBounds );
 			break;
 

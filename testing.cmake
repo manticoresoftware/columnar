@@ -9,20 +9,22 @@ if (NOT BUILD_TESTING)
 	return ()
 endif ()
 
-if (NOT TARGET columnar_lib)
+if ((NOT TARGET columnar_lib) AND (NOT TARGET secondary_index))
 	return ()
 endif ()
 
-# cb called by manticore ubertest adding tests - add special columnar-pass for rt tests
+# cb called by manticore ubertest adding tests - add special columnar\secondary-pass for rt tests
 function ( special_ubertest_addtest testN tst_name REQUIRES )
 	if (NOT NON-RT IN_LIST REQUIRES AND NOT NON-COLUMNAR IN_LIST REQUIRES)
 		add_ubertest ( "${testN}" "${tst_name}" "${REQUIRES}" "col" "COLUMNAR" "--rt --ignore-weights --columnar" )
+	elseif (NOT NON-SECONDARY IN_LIST REQUIRES)
+		add_ubertest ( "${testN}" "${tst_name}" "${REQUIRES}" "secondary" "SECONDARY" "" )
 	endif ()
 endfunction ()
 
-# cb called by manticore ubertest - filter out non-columnar here.
+# cb called by manticore ubertest - filter out non-columnar or non-secondary here.
 function ( special_ubertest_filter accept_var explain_var REQUIRES )
-	if (NOT COLUMNAR IN_LIST REQUIRES)
+	if ((NOT COLUMNAR IN_LIST REQUIRES) AND (NOT SECONDARY IN_LIST REQUIRES))
 		set ( ${accept_var} 0 PARENT_SCOPE )
 		set ( ${explain_var} "not specially columnar" PARENT_SCOPE )
 	endif ()
@@ -31,6 +33,7 @@ endfunction ()
 # cb called by manticore ubertest - append path to columnar to given test properties
 function ( special_ubertest_properties test )
 	set_property ( TEST "${test}" APPEND PROPERTY ENVIRONMENT "LIB_MANTICORE_COLUMNAR=$<TARGET_FILE:columnar_lib>" )
+	set_property ( TEST "${test}" APPEND PROPERTY ENVIRONMENT "LIB_MANTICORE_SECONDARY=$<TARGET_FILE:secondary_index>" )
 endfunction ()
 
 # this will switch off pure manticore-specific tests: google, api, keyword consistency and benches (we don't need them here)
