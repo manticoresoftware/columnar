@@ -50,6 +50,12 @@ FILE ( STRINGS columnar/columnar.h _verlist LIMIT_COUNT 1 REGEX "LIB_VERSION" )
 STRING ( REGEX MATCH "[0-9]+" API_VER "${_verlist}" )
 set_property ( TARGET columnar_api PROPERTY INTERFACE_COLUMNAR_API_VERSION ${API_VER} ) # must be reconfigured if version in columnar.h changes
 set_property ( TARGET columnar_api APPEND PROPERTY COMPATIBLE_INTERFACE_STRING COLUMNAR_API_VERSION )
+
+FILE ( STRINGS secondary/common.h _verlist LIMIT_COUNT 1 REGEX "LIB_VERSION" )
+STRING ( REGEX MATCH "[0-9]+" SI_API_VER "${_verlist}" )
+set_property ( TARGET columnar_api APPEND PROPERTY INTERFACE_SECONDARY_API_VERSION ${SI_API_VER} ) # must be reconfigured if version in columnar.h changes
+set_property ( TARGET columnar_api APPEND PROPERTY COMPATIBLE_INTERFACE_STRING ${SECONDARY_API_VERSION} )
+
 if (NOT PROJECT_VERSION_MINOR EQUAL API_VER)
 	message ( FATAL_ERROR "Minor (${PROJECT_VERSION_MINOR}) of project version ${PROJECT_VERSION} is not equal to LIB_VERSION (${API_VER}) in file columnar.h, need to upgrade project version!" )
 endif ()
@@ -102,8 +108,14 @@ include(\"\${CMAKE_CURRENT_LIST_DIR}/columnar-targets.cmake\")" )
 			"${CMAKE_CURRENT_BINARY_DIR}/columnar-config.cmake" INSTALL_DESTINATION "${API_CMAKE_DIR}" )
 	install ( FILES "${CMAKE_CURRENT_BINARY_DIR}/columnar-config.cmake" DESTINATION "${API_CMAKE_DIR}" )
 
+if (NOT SKIP_SECONDARY AND SKIP_COLUMNAR)
+	write_basic_package_version_file ( "columnar-config-version.cmake" VERSION "${SI_API_VER}" COMPATIBILITY SameMinorVersion )
+	install ( FILES "${CMAKE_CURRENT_BINARY_DIR}/columnar-config-version.cmake" DESTINATION "${API_CMAKE_DIR}" )
+else()
 	write_basic_package_version_file ( "columnar-config-version.cmake" COMPATIBILITY SameMinorVersion )
 	install ( FILES "${CMAKE_CURRENT_BINARY_DIR}/columnar-config-version.cmake" DESTINATION "${API_CMAKE_DIR}" )
+endif()	
+
 	return()
 endif ()
 
