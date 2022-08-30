@@ -142,10 +142,10 @@ ReaderTraits_c::ReaderTraits_c ( const std::string & sAttr, std::shared_ptr<IntC
 class BlockReader_c : public ReaderTraits_c
 {
 public:
-				BlockReader_c ( int iFD, const std::string & sAttr, std::shared_ptr<IntCodec_i> & pCodec, uint64_t uBlockBaseOff, const RowidRange_t * pBounds );
+			BlockReader_c ( int iFD, const std::string & sAttr, std::shared_ptr<IntCodec_i> & pCodec, uint64_t uBlockBaseOff, const RowidRange_t * pBounds );
 
-	void		CreateBlocksIterator ( const BlockIter_t & tIt, std::vector<BlockIterator_i *> & dRes ) override;
-	void		CreateBlocksIterator ( const BlockIter_t & tIt, const Filter_t & tVal, std::vector<BlockIterator_i *> & dRes ) override { assert ( 0 && "Requesting range iterators from block reader" ); }
+	void	CreateBlocksIterator ( const BlockIter_t & tIt, std::vector<BlockIterator_i *> & dRes ) override;
+	void	CreateBlocksIterator ( const BlockIter_t & tIt, const Filter_t & tVal, std::vector<BlockIterator_i *> & dRes ) override { assert ( 0 && "Requesting range iterators from block reader" ); }
 
 protected:
 	std::shared_ptr<FileReader_c> m_pFileReader { nullptr };
@@ -189,6 +189,7 @@ int BlockReader_c::BlockLoadCreateIterator ( int iBlock, uint64_t uVal, std::vec
 
 	return iCmp;
 }
+
 
 void BlockReader_c::CreateBlocksIterator ( const BlockIter_t & tIt, std::vector<BlockIterator_i *> & dRes )
 {
@@ -375,21 +376,22 @@ int CmpRange ( T tStart, T tEnd, const Filter_t & tRange )
 class RangeReader_c : public ReaderTraits_c
 {
 public:
-				RangeReader_c ( int iFD, const std::string & sAttr, std::shared_ptr<IntCodec_i> & pCodec, uint64_t uBlockBaseOff, const RowidRange_t * pBounds );
+			RangeReader_c ( int iFD, const std::string & sAttr, std::shared_ptr<IntCodec_i> & pCodec, uint64_t uBlockBaseOff, const RowidRange_t * pBounds );
 
-	void		CreateBlocksIterator ( const BlockIter_t & tIt, std::vector<BlockIterator_i *> & dRes ) override { assert ( 0 && "Requesting block iterators from range reader" ); }
-	void		CreateBlocksIterator ( const BlockIter_t & tIt, const Filter_t & tVal, std::vector<BlockIterator_i *> & dRes ) override;
+	void	CreateBlocksIterator ( const BlockIter_t & tIt, std::vector<BlockIterator_i *> & dRes ) override { assert ( 0 && "Requesting block iterators from range reader" ); }
+	void	CreateBlocksIterator ( const BlockIter_t & tIt, const Filter_t & tVal, std::vector<BlockIterator_i *> & dRes ) override;
 
 protected:
 	std::shared_ptr<FileReader_c> m_pOffReader { nullptr };
 	std::shared_ptr<FileReader_c> m_pBlockReader { nullptr };
 		
 	// interface for value related methods
-	virtual int		LoadValues () = 0;
-	virtual bool	EvalRangeValue ( int iItem, const Filter_t & tRange ) const = 0;
-	virtual int		CmpBlock ( const Filter_t & tRange ) const = 0;
+	virtual int			LoadValues () = 0;
+	virtual bool		EvalRangeValue ( int iItem, const Filter_t & tRange ) const = 0;
+	virtual int			CmpBlock ( const Filter_t & tRange ) const = 0;
 
-	BlockIterator_i * CreateIterator ( int iItem, bool bLoad );
+	BlockIterator_i *	CreateIterator ( int iItem, bool bLoad );
+	void				AddIterator ( int iValCur, bool bLoad, std::vector<BlockIterator_i *> & dRes );
 };
 
 
@@ -398,6 +400,14 @@ RangeReader_c::RangeReader_c ( int iFD, const std::string & sAttr, std::shared_p
 	, m_pOffReader ( std::make_shared<FileReader_c>( iFD, READER_BUFFER_SIZE ) )
 	, m_pBlockReader ( std::make_shared<FileReader_c>( iFD, READER_BUFFER_SIZE ) )
 {}
+
+
+void RangeReader_c::AddIterator ( int iValCur, bool bLoad, std::vector<BlockIterator_i *> & dRes )
+{
+	auto pIterator = CreateIterator ( iValCur, bLoad );
+	if ( pIterator )
+		dRes.push_back(pIterator);
+}
 
 
 void RangeReader_c::CreateBlocksIterator ( const BlockIter_t & tIt, const Filter_t & tRange, std::vector<BlockIterator_i *> & dRes )
@@ -427,10 +437,7 @@ void RangeReader_c::CreateBlocksIterator ( const BlockIter_t & tIt, const Filter
 		{
 			if ( EvalRangeValue ( iValCur, tRange ) )
 			{
-				auto pIterator = CreateIterator ( iValCur, true );
-				if ( pIterator )
-					dRes.push_back(pIterator);
-
+				AddIterator  ( iValCur, true, dRes );
 				iBlockItCreated = iBlockCur;
 				iValCur++;
 				break;
@@ -463,10 +470,7 @@ void RangeReader_c::CreateBlocksIterator ( const BlockIter_t & tIt, const Filter
 			{
 				for ( ; iValCur<iValCount; iValCur++ )
 				{
-					auto pIterator = CreateIterator ( iValCur, iBlockItCreated!=iBlockCur );
-					if ( pIterator )
-						dRes.push_back(pIterator);
-
+					AddIterator  ( iValCur, iBlockItCreated!=iBlockCur, dRes );
 					iBlockItCreated = iBlockCur;
 				}
 			} else // case: values only inside the block matched, need to check every value
@@ -476,10 +480,7 @@ void RangeReader_c::CreateBlocksIterator ( const BlockIter_t & tIt, const Filter
 					if ( !EvalRangeValue ( iValCur, tRange ) )
 						return;
 
-					auto pIterator = CreateIterator ( iValCur, iBlockItCreated!=iBlockCur );
-					if ( pIterator )
-						dRes.push_back(pIterator);
-
+					AddIterator  ( iValCur, iBlockItCreated!=iBlockCur, dRes );
 					iBlockItCreated = iBlockCur;
 				}
 

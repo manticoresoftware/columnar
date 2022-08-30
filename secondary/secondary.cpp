@@ -29,6 +29,24 @@ namespace SI
 using namespace util;
 using namespace common;
 
+
+void ColumnInfo_t::Load ( util::FileReader_c & tReader )
+{
+	m_sName = tReader.Read_string();
+	m_eType = (AttrType_e)tReader.Unpack_uint32();
+	m_uCountDistinct = tReader.Unpack_uint32();
+}
+
+
+void ColumnInfo_t::Save ( util::FileWriter_c & tWriter ) const
+{
+	tWriter.Write_string ( m_sName );
+	tWriter.Pack_uint32 ( (int)m_eType );
+	tWriter.Pack_uint32 ( m_uCountDistinct );
+}
+
+/////////////////////////////////////////////////////////////////////
+
 void Settings_t::Load ( FileReader_c & tReader )
 {
 	m_sCompressionUINT32 = tReader.Read_string();
@@ -36,7 +54,7 @@ void Settings_t::Load ( FileReader_c & tReader )
 }
 
 
-void Settings_t::Save ( FileWriter_c & tWriter )
+void Settings_t::Save ( FileWriter_c & tWriter ) const
 {
 	tWriter.Write_string(m_sCompressionUINT32);
 	tWriter.Write_string(m_sCompressionUINT64);
@@ -47,12 +65,14 @@ void Settings_t::Save ( FileWriter_c & tWriter )
 class SecondaryIndex_c : public Index_i
 {
 public:
-	bool	Setup ( const std::string & sFile, std::string & sError );
+	bool		Setup ( const std::string & sFile, std::string & sError );
 
-	bool	CreateIterators ( std::vector<BlockIterator_i *> & dIterators, const Filter_t & tFilter, const RowidRange_t * pBounds, std::string & sError ) const override;
-	bool	IsEnabled ( const std::string & sName ) const override;
-	bool	SaveMeta ( std::string & sError ) override;
-	void	ColumnUpdated ( const char * sName ) override;
+	bool		CreateIterators ( std::vector<BlockIterator_i *> & dIterators, const Filter_t & tFilter, const RowidRange_t * pBounds, std::string & sError ) const override;
+	uint32_t	GetNumIterators ( const common::Filter_t & tFilter ) const override;
+	bool		IsEnabled ( const std::string & sName ) const override;
+	int64_t		GetCountDistinct ( const std::string & sName ) const override;
+	bool		SaveMeta ( std::string & sError ) override;
+	void		ColumnUpdated ( const char * sName ) override;
 
 private:
 	Settings_t	m_tSettings;
@@ -73,9 +93,10 @@ private:
 
 	std::string m_sFileName;
 
-	void	GetValsRows ( std::vector<BlockIterator_i *> & dIterators, const Filter_t & tFilter, const RowidRange_t * pBounds ) const;
-	void	GetRangeRows ( std::vector<BlockIterator_i *> & dIterators, const Filter_t & tFilter, const RowidRange_t * pBounds ) const;
-	int		GetColumnId ( const std::string & sName ) const;
+	int64_t		GetValsRows ( std::vector<BlockIterator_i *> * pIterators, const Filter_t & tFilter, const RowidRange_t * pBounds ) const;
+	int64_t		GetRangeRows ( std::vector<BlockIterator_i *> * pIterators, const Filter_t & tFilter, const RowidRange_t * pBounds ) const;
+	int			GetColumnId ( const std::string & sName ) const;
+	const ColumnInfo_t * GetAttr ( const Filter_t & tFilter, std::string & sError ) const;
 };
 
 bool SecondaryIndex_c::Setup ( const std::string & sFile, std::string & sError )
@@ -109,8 +130,7 @@ bool SecondaryIndex_c::Setup ( const std::string & sFile, std::string & sError )
 	for ( int i=0; i<iAttrsCount; i++ )
 	{
 		ColumnInfo_t & tAttr = m_dAttrs[i];
-		tAttr.m_sName = m_tReader.Read_string();
-		tAttr.m_eType = (AttrType_e)m_tReader.Unpack_uint32();
+		tAttr.Load(m_tReader);
 		tAttr.m_bEnabled = dAttrsEnabled.BitGet ( i );
 	}
 
@@ -194,6 +214,17 @@ bool SecondaryIndex_c::IsEnabled ( const std::string & sName ) const
 }
 
 
+int64_t SecondaryIndex_c::GetCountDistinct ( const std::string & sName ) const
+{
+	int iId = GetColumnId(sName);
+	if ( iId<0 )
+		return -1;
+
+	auto & tCol = m_dAttrs[iId];
+	return tCol.m_bEnabled ? tCol.m_uCountDistinct : -1;
+}
+
+
 bool SecondaryIndex_c::SaveMeta ( std::string & sError )
 {
 	if ( !m_bUpdated || !m_dAttrs.size() )
@@ -229,7 +260,7 @@ void SecondaryIndex_c::ColumnUpdated ( const char * sName )
 }
 
 
-void SecondaryIndex_c::GetValsRows ( std::vector<BlockIterator_i *> & dIterators,  const Filter_t & tFilter, const RowidRange_t * pBounds ) const
+int64_t SecondaryIndex_c::GetValsRows ( std::vector<BlockIterator_i *> * pIterators,  const Filter_t & tFilter, const RowidRange_t * pBounds ) const
 {
 	int iCol = GetColumnId ( tFilter.m_sName );
 	assert ( iCol>=0 );
@@ -240,20 +271,31 @@ void SecondaryIndex_c::GetValsRows ( std::vector<BlockIterator_i *> & dIterators
 	uint64_t uBlockBaseOff = m_iBlocksBase + m_dBlockStartOff[iCol];
 	uint64_t uBlocksCount = m_dBlocksCount[iCol];
 
-	std::unique_ptr<BlockReader_i> pBlockReader { CreateBlockReader ( m_tReader.GetFD(), tCol, m_tSettings, uBlockBaseOff, pBounds ) } ;
 	std::vector<BlockIter_t> dBlocksIt;
+	int64_t iNumIterators = 0;
  	for ( const uint64_t uVal : tFilter.m_dValues )
-		dBlocksIt.emplace_back ( BlockIter_t ( m_dIdx[iCol]->Search ( uVal ), uVal, uBlocksCount, m_iValuesPerBlock ) );
+	{
+		ApproxPos_t tPos = m_dIdx[iCol]->Search(uVal);
+		iNumIterators += tPos.m_iHi-tPos.m_iLo;
+		if ( pIterators )
+			dBlocksIt.emplace_back ( BlockIter_t ( tPos, uVal, uBlocksCount, m_iValuesPerBlock ) );
+	}
+
+	if ( !pIterators )
+		return iNumIterators;
 
 	// sort by block start offset
 	std::sort ( dBlocksIt.begin(), dBlocksIt.end(), [] ( const BlockIter_t & tA, const BlockIter_t & tB ) { return tA.m_iStart<tB.m_iStart; } );
 
-	for ( int i=0; i<dBlocksIt.size(); i++ )
-		pBlockReader->CreateBlocksIterator ( dBlocksIt[i], dIterators );
+	std::unique_ptr<BlockReader_i> pBlockReader { CreateBlockReader ( m_tReader.GetFD(), tCol, m_tSettings, uBlockBaseOff, pBounds ) } ;
+	for ( auto & i : dBlocksIt )
+		pBlockReader->CreateBlocksIterator ( i, *pIterators );
+
+	return iNumIterators;
 }
 
 
-void SecondaryIndex_c::GetRangeRows ( std::vector<BlockIterator_i *> & dIterators,  const Filter_t & tFilter, const RowidRange_t * pBounds ) const
+int64_t SecondaryIndex_c::GetRangeRows ( std::vector<BlockIterator_i *> * pIterators,  const Filter_t & tFilter, const RowidRange_t * pBounds ) const
 {
 	int iCol = GetColumnId ( tFilter.m_sName );
 	assert ( iCol>=0 );
@@ -287,20 +329,25 @@ void SecondaryIndex_c::GetRangeRows ( std::vector<BlockIterator_i *> & dIterator
 		tPos.m_iHi = std::max ( tFoundMin.m_iHi, tFoundMax.m_iHi );
 	}
 
+	int64_t iNumIterators = tPos.m_iHi-tPos.m_iLo;
+	if ( !pIterators )
+		return iNumIterators;
+
 	BlockIter_t tPosIt ( tPos, 0, uBlocksCount, m_iValuesPerBlock );
 
 	std::unique_ptr<BlockReader_i> pReader { CreateRangeReader ( m_tReader.GetFD(), tCol, m_tSettings, uBlockBaseOff, pBounds ) };
-	pReader->CreateBlocksIterator ( tPosIt, tFilter, dIterators );
+	pReader->CreateBlocksIterator ( tPosIt, tFilter, *pIterators );
+	return iNumIterators;
 }
 
 
-bool SecondaryIndex_c::CreateIterators ( std::vector<BlockIterator_i *> & dIterators, const Filter_t & tFilter, const RowidRange_t * pBounds, std::string & sError ) const
+const ColumnInfo_t * SecondaryIndex_c::GetAttr ( const Filter_t & tFilter, std::string & sError ) const
 {
 	int iCol = GetColumnId ( tFilter.m_sName );
 	if ( iCol==-1 )
 	{
 		sError = FormatStr ( "secondary index not found for attribute '%s'", tFilter.m_sName.c_str() );
-		return false;
+		return nullptr;
 	}
 
 	const auto & tCol = m_dAttrs[iCol];
@@ -308,28 +355,68 @@ bool SecondaryIndex_c::CreateIterators ( std::vector<BlockIterator_i *> & dItera
 	if ( tCol.m_eType==AttrType_e::NONE )
 	{
 		sError = FormatStr( "invalid attribute %s type %d", tCol.m_sName.c_str(), tCol.m_eType );
-		return false;
+		return nullptr;
 	}
 
+	return &tCol;
+}
+
+
+Filter_t FixupFilter ( const Filter_t & tFilter, const ColumnInfo_t & tCol )
+{
 	Filter_t tFixedFilter = tFilter;
 	FixupFilterSettings ( tFixedFilter, tCol.m_eType );
 	if ( tFixedFilter.m_eType==FilterType_e::STRINGS )
 		tFixedFilter = StringFilterToHashFilter ( tFixedFilter, false );
 
+	return tFixedFilter;
+}
+
+
+bool SecondaryIndex_c::CreateIterators ( std::vector<BlockIterator_i *> & dIterators, const Filter_t & tFilter, const RowidRange_t * pBounds, std::string & sError ) const
+{
+	const auto * pCol = GetAttr ( tFilter, sError );
+	if ( !pCol )
+		return false;
+
+	Filter_t tFixedFilter = FixupFilter ( tFilter, *pCol );
 	switch ( tFixedFilter.m_eType )
 	{
 	case FilterType_e::VALUES:
-		GetValsRows ( dIterators, tFixedFilter, pBounds );
+		GetValsRows ( &dIterators, tFixedFilter, pBounds );
 		return true;
 
 	case FilterType_e::RANGE:
 	case FilterType_e::FLOATRANGE:
-		GetRangeRows ( dIterators, tFixedFilter, pBounds );
+		GetRangeRows ( &dIterators, tFixedFilter, pBounds );
 		return true;
 
 	default:
 		sError = FormatStr ( "unhandled filter type '%d'", to_underlying ( tFixedFilter.m_eType ) );
 		return false;
+	}
+}
+
+
+uint32_t SecondaryIndex_c::GetNumIterators ( const common::Filter_t & tFilter ) const
+{
+	std::string sError;
+	const auto * pCol = GetAttr ( tFilter, sError );
+	if ( !pCol )
+		return 0;
+
+	Filter_t tFixedFilter = FixupFilter ( tFilter, *pCol );
+	switch ( tFixedFilter.m_eType )
+	{
+	case FilterType_e::VALUES:
+		return GetValsRows ( nullptr, tFixedFilter, nullptr );
+
+	case FilterType_e::RANGE:
+	case FilterType_e::FLOATRANGE:
+		return GetRangeRows ( nullptr, tFixedFilter, nullptr );
+
+	default:
+		return 0;
 	}
 }
 

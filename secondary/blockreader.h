@@ -16,7 +16,6 @@
 
 #pragma once
 
-#include "common.h"
 #include "util/codec.h"
 #include "common/filter.h"
 #include "common/blockiterator.h"
@@ -52,6 +51,7 @@ public:
 
 
 struct Settings_t;
+struct ColumnInfo_t;
 BlockReader_i * CreateBlockReader ( int iFD, const ColumnInfo_t & tCol, const Settings_t & tSettings, uint64_t uBlockBaseOff, const common::RowidRange_t * pBounds );
 BlockReader_i * CreateRangeReader ( int iFD, const ColumnInfo_t & tCol, const Settings_t & tSettings, uint64_t uBlockBaseOff, const common::RowidRange_t * pBounds );
 

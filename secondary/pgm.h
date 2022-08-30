@@ -17,7 +17,6 @@
 #ifndef _sipgm_
 #define _sipgm_
 
-#include "common.h"
 #include "reader.h"
 #include "pgm/pgm_index.hpp"
 

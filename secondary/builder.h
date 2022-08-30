@@ -16,7 +16,6 @@
 
 #pragma once
 
-#include "common.h"
 #include "util/util.h"
 #include "common/schema.h"
 

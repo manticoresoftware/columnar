@@ -51,7 +51,7 @@ STRING ( REGEX MATCH "[0-9]+" API_VER "${_verlist}" )
 set_property ( TARGET columnar_api PROPERTY INTERFACE_COLUMNAR_API_VERSION ${API_VER} ) # must be reconfigured if version in columnar.h changes
 set_property ( TARGET columnar_api APPEND PROPERTY COMPATIBLE_INTERFACE_STRING COLUMNAR_API_VERSION )
 
-FILE ( STRINGS secondary/common.h _verlist LIMIT_COUNT 1 REGEX "LIB_VERSION" )
+FILE ( STRINGS secondary/secondary.h _verlist LIMIT_COUNT 1 REGEX "LIB_VERSION" )
 STRING ( REGEX MATCH "[0-9]+" SI_API_VER "${_verlist}" )
 set_property ( TARGET columnar_api APPEND PROPERTY INTERFACE_SECONDARY_API_VERSION ${SI_API_VER} ) # must be reconfigured if version in columnar.h changes
 set_property ( TARGET columnar_api APPEND PROPERTY COMPATIBLE_INTERFACE_STRING ${SECONDARY_API_VERSION} )
@@ -87,7 +87,7 @@ if (INSTALL_API)
 	install ( FILES columnar/builder.h columnar/columnar.h DESTINATION ${_includes}/columnar )
 	install ( FILES util/util.h DESTINATION ${_includes}/util )
 	install ( FILES common/schema.h common/blockiterator.h common/filter.h DESTINATION ${_includes}/common )
-	install ( FILES secondary/secondary.h secondary/common.h secondary/builder.h secondary/iterator.h DESTINATION ${_includes}/secondary )
+	install ( FILES secondary/secondary.h secondary/builder.h secondary/iterator.h DESTINATION ${_includes}/secondary )
 
 	set ( API_CMAKE_DIR "lib/cmake/columnar" )
 	install ( EXPORT apiexport

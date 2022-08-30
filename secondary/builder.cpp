@@ -45,12 +45,13 @@ namespace SI
 class SIWriter_i
 {
 public:
-					SIWriter_i() = default;
-	virtual			~SIWriter_i() = default;
+						SIWriter_i() = default;
+	virtual				~SIWriter_i() = default;
 
-	virtual bool	Setup ( const std::string & sSrcFile, uint64_t iFileSize, std::vector<uint64_t> & dOffset, std::string & sError ) = 0;
-	virtual bool	Process ( FileWriter_c & tDstFile, FileWriter_c & tTmpBlocksOff, const std::string & sPgmValuesName, std::string & sError ) = 0;
+	virtual bool		Setup ( const std::string & sSrcFile, uint64_t iFileSize, std::vector<uint64_t> & dOffset, std::string & sError ) = 0;
+	virtual bool		Process ( FileWriter_c & tDstFile, FileWriter_c & tTmpBlocksOff, const std::string & sPgmValuesName, std::string & sError ) = 0;
 	virtual const std::vector<uint8_t> & GetPGM() = 0;
+	virtual uint32_t	GetCountDistinct() const = 0;
 };
 
 
@@ -244,6 +245,7 @@ public:
 	void		Done ( FileWriter_c & tWriter )	{ FlushBlock ( tWriter ); }
 	void		AddValue ( const RawValue_T<VALUE> & tBin );
 	void		NextValue ( const RawValue_T<VALUE> & tBin, FileWriter_c & m_tDstFile );
+	uint32_t	GetCountDistinct() const { return m_uTotalValues; }
 
 private:
 	std::vector<VALUE>		m_dValues;
@@ -259,6 +261,7 @@ private:
 	std::vector<uint8_t>	m_dRowsPacked;
 	std::vector<uint8_t>	m_dTmp;
 	VALUE					m_tLastValue { 0 };
+	uint32_t				m_uTotalValues = 0;
 
 	std::unique_ptr<IntCodec_i>	m_pCodec { nullptr };
 
@@ -402,6 +405,8 @@ void RowWriter_T<VALUE, FLOAT_VALUE>::FlushBlock ( FileWriter_c & tWriter )
 
 	// FIXME!!! pack per block meta
 
+	m_uTotalValues += iValues;
+
 	// pack rows
 	MemWriter_c tBlockWriter ( m_dRowsPacked );
 	m_dTypes.resize ( iValues );
@@ -482,20 +487,18 @@ template<typename SRC_VALUE, typename DST_VALUE>
 class SIWriter_T : public SIWriter_i
 {
 public:
-	SIWriter_T ( const Settings_t & tSettings )
-		: m_tSettings ( tSettings )
-	{}
-
-	virtual		~SIWriter_T() = default;
+				SIWriter_T ( const Settings_t & tSettings ) : m_tSettings ( tSettings ) {}
 
 	bool		Setup ( const std::string & sSrcFile, uint64_t iFileSize, std::vector<uint64_t> & dOffset, std::string & sError ) final;
 	bool		Process ( FileWriter_c & tDstFile, FileWriter_c & tTmpBlocksOff, const std::string & sPgmValuesName, std::string & sError ) final;
 	const std::vector<uint8_t> & GetPGM() { return m_dPGM; }
+	uint32_t	GetCountDistinct() const final { return m_uCountDistinct; }
 
 private:
 	Settings_t				m_tSettings;
 	std::string				m_sSrcName;
 	uint64_t				m_iFileSize = 0;
+	uint32_t				m_uCountDistinct = 0;
 	std::vector<uint8_t>	m_dPGM;
 	std::vector<uint64_t>	m_dOffset;
 };
@@ -572,6 +575,7 @@ bool SIWriter_T<SRC_VALUE, DST_VALUE>::Process ( FileWriter_c & tDstFile, FileWr
 	}
 
 	tWriter.Done ( tDstFile );
+	m_uCountDistinct = tWriter.GetCountDistinct();
 
 	dSrcFile.clear(); // to free up memory for PGM build phase
 	::unlink ( m_sSrcName.c_str() );
@@ -776,6 +780,7 @@ bool Builder_c::Done ( std::string & sError )
 		WriteVectorLen ( pWriter->GetPGM(), tTmpPgm );
 
 		// clean up used memory
+		m_dAttrs[iWriter].m_uCountDistinct = pWriter->GetCountDistinct();
 		m_dCidWriter[iWriter] = nullptr;
 	}
 
@@ -825,11 +830,8 @@ bool Builder_c::WriteMeta ( const std::string & sPgmName, const std::string & sB
 		tDstFile.Write_uint32 ( VALUES_PER_BLOCK );
 		
 		// write schema
-		for ( const auto & tInfo : m_dAttrs )
-		{
-			tDstFile.Write_string ( tInfo.m_sName );
-			tDstFile.Pack_uint32 ( (int)tInfo.m_eType );
-		}
+		for ( const auto & i : m_dAttrs )
+			i.Save(tDstFile);
 
 		WriteVectorPacked ( dBlocksOffStart, tDstFile );
 		WriteVectorPacked ( dBlocksCount, tDstFile );

@@ -20,7 +20,6 @@
 #include "util/codec.h"
 #include "common/filter.h"
 #include "common/blockiterator.h"
-#include "common.h"
 #include "builder.h"
 #include <memory>
 
