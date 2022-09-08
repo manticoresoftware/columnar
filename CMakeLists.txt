@@ -34,6 +34,25 @@ if (NOT _CMAKE_BUILD_TYPE AND CMAKE_BUILD_TYPE)
 	unset ( CMAKE_BUILD_TYPE CACHE )
 endif ()
 
+# check what we're build. api just packs headers and build nothing
+if (NOT API_ONLY)
+	set ( API_ONLY OFF)
+endif()
+
+if (API_ONLY)
+	message ( STATUS "Only api will be installed" )
+	set ( SKIP_COLUMNAR ON )
+	set ( SKIP_SECONDARY ON )
+endif()
+
+if (NOT SKIP_COLUMNAR)
+	set ( INSTALL_COLUMNAR ON )
+endif ()
+
+if (NOT API_SECONDARY)
+	set ( INSTALL_SECONDARY ON )
+endif ()
+
 SET ( CMAKE_MODULE_PATH "${columnar_SOURCE_DIR}/cmake" )
 
 # Version
@@ -43,7 +62,12 @@ include ( rev )
 # Note, first we provide headers which will be available even if build of the main lib itself will not succeed
 # (say, on aarch64 because of absent fastpfor). But as api target is already exposed, consumers still can use it.
 add_library ( columnar_api INTERFACE )
-add_library ( columnar::columnar_api ALIAS columnar_api ) # that will be used when build columnar alone for dev/testing
+add_library ( secondary_api INTERFACE )
+target_link_libraries ( secondary_api INTERFACE columnar_api ) # actually we need only common headers, so it can be changed in future
+
+# that will be used when build for dev/testing
+add_library ( columnar::columnar_api ALIAS columnar_api )
+add_library ( columnar::secondary_api ALIAS secondary_api )
 
 # interface property, so that consumer will fire an error on configure time if API version is not match
 FILE ( STRINGS columnar/columnar.h _verlist LIMIT_COUNT 1 REGEX "LIB_VERSION" )
@@ -53,40 +77,28 @@ set_property ( TARGET columnar_api APPEND PROPERTY COMPATIBLE_INTERFACE_STRING C
 
 FILE ( STRINGS secondary/secondary.h _verlist LIMIT_COUNT 1 REGEX "LIB_VERSION" )
 STRING ( REGEX MATCH "[0-9]+" SI_API_VER "${_verlist}" )
-set_property ( TARGET columnar_api APPEND PROPERTY INTERFACE_SECONDARY_API_VERSION ${SI_API_VER} ) # must be reconfigured if version in columnar.h changes
-set_property ( TARGET columnar_api APPEND PROPERTY COMPATIBLE_INTERFACE_STRING ${SECONDARY_API_VERSION} )
+set_property ( TARGET secondary_api APPEND PROPERTY INTERFACE_SECONDARY_API_VERSION ${SI_API_VER} ) # must be reconfigured if version in secondary.h changes
+set_property ( TARGET secondary_api APPEND PROPERTY COMPATIBLE_INTERFACE_STRING SECONDARY_API_VERSION )
 
+# Check below is only to provide human-readable match - that is we can see that package v. X.30.Y supports API v30.
 if (NOT PROJECT_VERSION_MINOR EQUAL API_VER)
-	message ( FATAL_ERROR "Minor (${PROJECT_VERSION_MINOR}) of project version ${PROJECT_VERSION} is not equal to LIB_VERSION (${API_VER}) in file columnar.h, need to upgrade project version!" )
+	message ( WARNING "Minor (${PROJECT_VERSION_MINOR}) of project version ${PROJECT_VERSION} is not equal to LIB_VERSION (${API_VER}) in file columnar.h. That is not critical, but it would be nice if V of API is reflected someway in project version with human-readable way." )
 endif ()
 
-# helpers and parts
-set ( SKIP_SECONDARY $ENV{SKIP_SECONDARY} )
-
-if (NOT SKIP_COLUMNAR)
-	set ( INSTALL_COLUMNAR ON )
-endif ()
-
-if (NOT SKIP_SECONDARY)
-	set ( INSTALL_SECONDARY ON )
-endif ()
-
-if (SKIP_SECONDARY AND SKIP_COLUMNAR)
-	set ( INSTALL_API ON )
-	message ( STATUS "Only api will be installed" )
-endif ()
-
-set (_includes include/manticore-columnar-lib)
+set (_includes include/manticore-columnar-api)
 target_include_directories ( columnar_api INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>$<INSTALL_INTERFACE:${_includes}> )
 
-# install columnar API (only headers, no packaging, don't build anything at all)
-if (INSTALL_API)
+# install columnar and secondary API (only headers, no packaging, don't build anything at all)
+if (API_ONLY)
 	install ( TARGETS columnar_api EXPORT apiexport )
+	install ( TARGETS secondary_api EXPORT apiexport )
 
 	# ensure ALL externally required headers are exported here
 	install ( FILES columnar/builder.h columnar/columnar.h DESTINATION ${_includes}/columnar )
 	install ( FILES util/util.h DESTINATION ${_includes}/util )
 	install ( FILES common/schema.h common/blockiterator.h common/filter.h DESTINATION ${_includes}/common )
+
+	# ensure ALL externally required headers of secondary are exported here
 	install ( FILES secondary/secondary.h secondary/builder.h secondary/iterator.h DESTINATION ${_includes}/secondary )
 
 	set ( API_CMAKE_DIR "lib/cmake/columnar" )
@@ -108,14 +120,10 @@ include(\"\${CMAKE_CURRENT_LIST_DIR}/columnar-targets.cmake\")" )
 			"${CMAKE_CURRENT_BINARY_DIR}/columnar-config.cmake" INSTALL_DESTINATION "${API_CMAKE_DIR}" )
 	install ( FILES "${CMAKE_CURRENT_BINARY_DIR}/columnar-config.cmake" DESTINATION "${API_CMAKE_DIR}" )
 
-if (NOT SKIP_SECONDARY AND SKIP_COLUMNAR)
-	write_basic_package_version_file ( "columnar-config-version.cmake" VERSION "${SI_API_VER}" COMPATIBILITY SameMinorVersion )
+	write_basic_package_version_file ( "columnar-config-version.cmake" VERSION "${API_VER}.${SI_API_VER}" COMPATIBILITY ExactVersion ARCH_INDEPENDENT )
 	install ( FILES "${CMAKE_CURRENT_BINARY_DIR}/columnar-config-version.cmake" DESTINATION "${API_CMAKE_DIR}" )
-else()
-	write_basic_package_version_file ( "columnar-config-version.cmake" COMPATIBILITY SameMinorVersion )
-	install ( FILES "${CMAKE_CURRENT_BINARY_DIR}/columnar-config-version.cmake" DESTINATION "${API_CMAKE_DIR}" )
-endif()	
 
+	# finish configuration, as it is API_ONLY
 	return()
 endif ()
 
@@ -175,7 +183,7 @@ if (TARGET FastPFOR::SIMDe)
 	target_link_libraries ( columnar_root INTERFACE FastPFOR::SIMDe )
 endif ()
 
-target_link_libraries ( columnar_root INTERFACE columnar_api )
+target_link_libraries ( columnar_root INTERFACE columnar::columnar_api )
 target_include_directories ( columnar_root INTERFACE columnar util common )
 set_property ( TARGET columnar_root PROPERTY INTERFACE_POSITION_INDEPENDENT_CODE TRUE )
 
