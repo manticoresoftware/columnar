@@ -6,11 +6,11 @@
 #
 cmake_minimum_required ( VERSION 3.17 )
 
-FOREACH (policy CMP0091 CMP0022)
-	IF (POLICY ${policy})
-		CMAKE_POLICY ( SET ${policy} NEW )
-	ENDIF ()
-ENDFOREACH ()
+foreach (policy CMP0091 CMP0022)
+	if (POLICY ${policy})
+		cmake_policy ( SET ${policy} NEW )
+	endif ()
+endforeach ()
 
 set ( _CMAKE_BUILD_TYPE ${CMAKE_BUILD_TYPE} )
 project ( FastPFOR LANGUAGES CXX C VERSION 0.1.9 )
@@ -28,7 +28,7 @@ if (NOT isMultiConfig AND NOT CMAKE_BUILD_TYPE)
 endif ()
 
 if (NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
-	MESSAGE ( FATAL_ERROR "Please use a 64-bit system. " )
+	message ( FATAL_ERROR "Please use a 64-bit system. " )
 endif ()
 
 set ( FastPFOR_SRCS

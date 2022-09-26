@@ -8,8 +8,8 @@
 
 # It gives possibility to add more choices without touching the rest of files.
 
-SET ( MENUDISTR )
-SET ( FILESDISTR )
+set ( MENUDISTR )
+set ( FILESDISTR )
 file ( GLOB _BUILDS "cmake/builds/build_*.cmake" )
 # list among all build_...cmake, take first line and extract name from it
 foreach (CHOICE ${_BUILDS})
@@ -21,11 +21,11 @@ foreach (CHOICE ${_BUILDS})
 	list ( APPEND FILESDISTR "${CHOICE}" )
 endforeach (CHOICE ${_BUILDS})
 
-IF (NOT DISTR)
-	SET ( DISTR "" CACHE STRING "Choose the distr." )
+if (NOT DISTR)
+	set ( DISTR "" CACHE STRING "Choose the distr." )
 endif ()
 
-IF (NOT DISTR)
+if (NOT DISTR)
 	message ( STATUS "Provide distr with -DDISTR=<distr>, one of: ${MENUDISTR}" )
 
 	if (WIN32)
@@ -44,7 +44,7 @@ IF (NOT DISTR)
 		set ( CPACK_GENERATOR "${SUGGEST_GENERATOR}" )
 	endif ()
 
-ENDIF ()
+endif ()
 
 set_property ( CACHE DISTR PROPERTY STRINGS ${MENUDISTR} )
 

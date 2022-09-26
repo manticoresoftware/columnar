@@ -1,7 +1,7 @@
 # only cmake since 3.13 supports packaging of debuginfo
 cmake_minimum_required ( VERSION 3.17 )
 
-SET ( CPACK_PACKAGING_INSTALL_PREFIX "/usr" )
+set ( CPACK_PACKAGING_INSTALL_PREFIX "/usr" )
 set ( CPACK_GENERATOR DEB )
 set ( CPACK_DEBIAN_FILE_NAME DEB-DEFAULT )
 set ( CPACK_DEB_COMPONENT_INSTALL ON )

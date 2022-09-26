@@ -56,7 +56,7 @@ endfunction ()
 # guess version strings from template header file (git archive mark it there)
 function ( extract_from_git_slug HEADER )
 	if (EXISTS "${HEADER}")
-		FILE ( STRINGS "${HEADER}" _CONTENT )
+		file ( STRINGS "${HEADER}" _CONTENT )
 		foreach (LINE ${_CONTENT})
 			# match definitions like - // GIT_*_ID VALUE
 			if ("${LINE}" MATCHES "^//[ \t]+(GIT_.*_ID)[ \t]\"(.*)\"")
@@ -108,5 +108,5 @@ if (NOT GIT_COMMIT_ID)
 endif ()
 
 # configure packaging
-SET ( ENV{SOURCE_DATE_EPOCH} "${SOURCE_DATE_EPOCH}" ) # that makes builds reproducable
+set ( ENV{SOURCE_DATE_EPOCH} "${SOURCE_DATE_EPOCH}" ) # that makes builds reproducable
 configure_file ( "${columnar_SOURCE_DIR}/cmake/CPackOptions.cmake.in" "${columnar_BINARY_DIR}/config/CPackOptions.cmake" @ONLY )

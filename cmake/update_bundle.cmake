@@ -8,7 +8,7 @@ set ( __update_bundle_columnar_included YES )
 include ( helpers )
 diag ( DIAGNOSTIC )
 
-SET ( SUFF "${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}" )
+set ( SUFF "${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}" )
 string ( TOLOWER "${SUFF}" SUFF )
 
 # SUFF is line like 'darwin-x86_64' (system-arch)

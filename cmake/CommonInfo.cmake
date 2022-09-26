@@ -17,16 +17,16 @@ set ( CPACK_PACKAGE_DESCRIPTION "Manticore Columnar Library is a column-oriented
 set ( CPACK_RPM_PACKAGE_DESCRIPTION "${CPACK_PACKAGE_DESCRIPTION}" ) # the description will default to the default one (This is an installer created using CPack..." otherwise, i.e. it doesn't take CPACK_PACKAGE_DESCRIPTION as a default
 
 ## Don't be confused; there is NO generic *_LICENSE variables in cmake/cpack, only for rpm and resource file
-#SET ( CPACK_PACKAGE_LICENSE "Apache-2.0" )
-SET ( CPACK_RPM_PACKAGE_LICENSE "Apache-2.0" )
-#SET ( CPACK_DEBIAN_PACKAGE_LICENSE "Apache-2.0" )
+#set ( CPACK_PACKAGE_LICENSE "Apache-2.0" )
+set ( CPACK_RPM_PACKAGE_LICENSE "Apache-2.0" )
+#set ( CPACK_DEBIAN_PACKAGE_LICENSE "Apache-2.0" )
 set ( CPACK_RESOURCE_FILE_LICENSE "${columnar_SOURCE_DIR}/LICENSE" )
 
-SET ( CPACK_PACKAGE_VERSION "${PROJECT_VERSION}-${GIT_TIMESTAMP_ID}-${GIT_COMMIT_ID}" )
-SET ( CPACK_RPM_PACKAGE_VERSION "${PROJECT_VERSION}_${GIT_TIMESTAMP_ID}.${GIT_COMMIT_ID}" )
+set ( CPACK_PACKAGE_VERSION "${PROJECT_VERSION}-${GIT_TIMESTAMP_ID}-${GIT_COMMIT_ID}" )
+set ( CPACK_RPM_PACKAGE_VERSION "${PROJECT_VERSION}_${GIT_TIMESTAMP_ID}.${GIT_COMMIT_ID}" )
 
 set ( CPACK_PACKAGE_NAME "manticore-columnar-lib" )
-SET ( CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}" )
+set ( CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}" )
 
 set ( CPACK_META_PACKAGE_NAME "manticore-extra")
 set ( CPACK_EXECUTOR_PACKAGE_NAME "manticore-executor")

@@ -14,9 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-CMAKE_MINIMUM_REQUIRED ( VERSION 3.17 )
+cmake_minimum_required ( VERSION 3.17 )
 
-ADD_LIBRARY ( accessor OBJECT
+add_library ( accessor OBJECT
 		attributeheader.cpp
 		accessor.cpp
 		accessorbool.cpp
