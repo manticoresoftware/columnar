@@ -17,7 +17,7 @@ if (NOT IS_ABSOLUTE ${LIBS_BUNDLE})
 	set ( LIBS_BUNDLE "${columnar_BINARY_DIR}/${LIBS_BUNDLE}" )
 endif ()
 
-SET ( LIBS_BUNDLE "${LIBS_BUNDLE}" CACHE PATH "Choose the path to the dir which contains downloaded sources for libs like re2, icu, stemmer, etc." FORCE )
+set ( LIBS_BUNDLE "${LIBS_BUNDLE}" CACHE PATH "Choose the path to the dir which contains downloaded sources for libs like re2, icu, stemmer, etc." FORCE )
 
 # cacheb (means 'cache binary') - contains unpacked sources and builds of 3-rd party libs, alive between rebuilds.
 # if not provided, set to folder 'cache' aside bundle. If not absolute, point it into binary (build) dir.
@@ -34,5 +34,5 @@ if (NOT IS_ABSOLUTE ${CACHEB})
 endif ()
 
 if (DEFINED CACHEB)
-	SET ( CACHEB "${CACHEB}" CACHE PATH "Cache dir where unpacked sources and builds found." )
+	set ( CACHEB "${CACHEB}" CACHE PATH "Cache dir where unpacked sources and builds found." )
 endif ()

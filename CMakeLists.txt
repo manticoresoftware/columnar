@@ -16,11 +16,11 @@
 
 cmake_minimum_required ( VERSION 3.17 )
 
-FOREACH (policy CMP0048 CMP0090 CMP0092 CMP0117)
-	IF (POLICY ${policy})
-		CMAKE_POLICY ( SET ${policy} NEW )
-	ENDIF ()
-ENDFOREACH ()
+foreach (policy CMP0048 CMP0090 CMP0092 CMP0117)
+	if (POLICY ${policy})
+		cmake_policy ( SET ${policy} NEW )
+	endif ()
+endforeach ()
 
 set ( CMAKE_INTERPROCEDURAL_OPTIMIZATION $ENV{CMAKE_INTERPROCEDURAL_OPTIMIZATION} )
 set ( _CMAKE_BUILD_TYPE ${CMAKE_BUILD_TYPE} )
@@ -53,7 +53,7 @@ if (NOT API_SECONDARY)
 	set ( INSTALL_SECONDARY ON )
 endif ()
 
-SET ( CMAKE_MODULE_PATH "${columnar_SOURCE_DIR}/cmake" )
+set ( CMAKE_MODULE_PATH "${columnar_SOURCE_DIR}/cmake" )
 
 # Version
 include ( rev )
@@ -70,13 +70,13 @@ add_library ( columnar::columnar_api ALIAS columnar_api )
 add_library ( columnar::secondary_api ALIAS secondary_api )
 
 # interface property, so that consumer will fire an error on configure time if API version is not match
-FILE ( STRINGS columnar/columnar.h _verlist LIMIT_COUNT 1 REGEX "LIB_VERSION" )
-STRING ( REGEX MATCH "[0-9]+" API_VER "${_verlist}" )
+file ( STRINGS columnar/columnar.h _verlist LIMIT_COUNT 1 REGEX "LIB_VERSION" )
+string ( REGEX MATCH "[0-9]+" API_VER "${_verlist}" )
 set_property ( TARGET columnar_api PROPERTY INTERFACE_COLUMNAR_API_VERSION ${API_VER} ) # must be reconfigured if version in columnar.h changes
 set_property ( TARGET columnar_api APPEND PROPERTY COMPATIBLE_INTERFACE_STRING COLUMNAR_API_VERSION )
 
-FILE ( STRINGS secondary/secondary.h _verlist LIMIT_COUNT 1 REGEX "LIB_VERSION" )
-STRING ( REGEX MATCH "[0-9]+" SI_API_VER "${_verlist}" )
+file ( STRINGS secondary/secondary.h _verlist LIMIT_COUNT 1 REGEX "LIB_VERSION" )
+string ( REGEX MATCH "[0-9]+" SI_API_VER "${_verlist}" )
 set_property ( TARGET secondary_api APPEND PROPERTY INTERFACE_SECONDARY_API_VERSION ${SI_API_VER} ) # must be reconfigured if version in secondary.h changes
 set_property ( TARGET secondary_api APPEND PROPERTY COMPATIBLE_INTERFACE_STRING SECONDARY_API_VERSION )
 
@@ -129,7 +129,7 @@ endif ()
 
 # here we came in case of full build (i.e. columnar and/or secondary)
 
-SET ( CMAKE_CXX_STANDARD 14 )
+set ( CMAKE_CXX_STANDARD 14 )
 
 # Helpers
 include ( helpers )
@@ -192,9 +192,9 @@ add_subdirectory ( common )
 
 include ( GNUInstallDirs )
 if (WIN32)
-	SET ( MODULES_DIR "${CMAKE_INSTALL_DATADIR}/modules" )
+	set ( MODULES_DIR "${CMAKE_INSTALL_DATADIR}/modules" )
 else()
-	SET ( MODULES_DIR "${CMAKE_INSTALL_DATADIR}/manticore/modules" )
+	set ( MODULES_DIR "${CMAKE_INSTALL_DATADIR}/manticore/modules" )
 endif()
 
 if (INSTALL_COLUMNAR)

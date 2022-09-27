@@ -25,7 +25,7 @@ endfunction ()
 # guess version strings from template header file (git archive mark it there)
 function ( extract_from_git_slug HEADER )
 	if (EXISTS "${HEADER}")
-		FILE ( STRINGS "${HEADER}" _CONTENT )
+		file ( STRINGS "${HEADER}" _CONTENT )
 		foreach (LINE ${_CONTENT})
 			# match definitions like - // GIT_*_ID VALUE
 			if ("${LINE}" MATCHES "^//[ \t]+(GIT_.*_ID)[ \t]\"(.*)\"")
