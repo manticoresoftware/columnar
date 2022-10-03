@@ -21,16 +21,15 @@ cmake_minimum_required ( VERSION 3.17 FATAL_ERROR )
 include ( update_bundle )
 
 # determine destination folder where we expect pre-built lib
-find_package ( CRoaring QUIET CONFIG )
-return_if_target_found ( CRoaring::CRoaring "ready (no need to build)" )
+find_package ( roaring QUIET CONFIG )
+return_if_target_found ( roaring::roaring "ready (no need to build)" )
 
 # not found. Populate and prepare sources
 select_nearest_url ( RB_PLACE roaring ${RB_BUNDLEZIP} ${RB_GITHUB} )
 fetch_sources ( roaring ${RB_PLACE} ROARING_SRC )
-execute_process ( COMMAND ${CMAKE_COMMAND} -E copy_if_different "${columnar_SOURCE_DIR}/roaring/CMakeLists.txt" "${ROARING_SRC}/CMakeLists.txt" )
 
 # build external project
 get_build ( ROARING_BUILD roaring )
-external_build ( CRoaring ROARING_SRC ROARING_BUILD )
+external_build ( roaring ROARING_SRC ROARING_BUILD )
 
-find_package ( CRoaring CONFIG REQUIRED )
+find_package ( roaring REQUIRED CONFIG )
