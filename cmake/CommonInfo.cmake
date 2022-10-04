@@ -27,10 +27,3 @@ set ( CPACK_RPM_PACKAGE_VERSION "${PROJECT_VERSION}_${GIT_TIMESTAMP_ID}.${GIT_CO
 
 set ( CPACK_PACKAGE_NAME "manticore-columnar-lib" )
 set ( CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}" )
-
-set ( CPACK_META_PACKAGE_NAME "manticore-extra")
-set ( CPACK_EXECUTOR_PACKAGE_NAME "manticore-executor")
-set ( CPACK_EXECUTOR_PACKAGE_VERSION "0.1.0")
-set ( CPACK_COMPONENT_GROUP_META_DISPLAY_NAME "Metapackage" )
-set ( CPACK_COMPONENT_META_DISPLAY_NAME "${CPACK_META_PACKAGE_NAME} meta-package" )
-set ( CPACK_COMPONENT_META_DESCRIPTION "${CPACK_META_PACKAGE_NAME} is a group package that installs Manticore Columnar Lib and Manticore Executor." )
