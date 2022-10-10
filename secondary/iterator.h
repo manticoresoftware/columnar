@@ -25,5 +25,5 @@
 
 namespace SI
 {
-	common::BlockIterator_i * CreateRowidIterator ( const std::string & sAttr, Packing_e eType, uint64_t uStartOffset, uint32_t uMinRowID, uint32_t uMaxRowID, std::shared_ptr<util::FileReader_c> & pSharedReader, std::shared_ptr<util::IntCodec_i> & pCodec, const common::RowidRange_t * pBounds );
+	common::BlockIterator_i * CreateRowidIterator ( const std::string & sAttr, Packing_e eType, uint64_t uStartOffset, uint32_t uMinRowID, uint32_t uMaxRowID, std::shared_ptr<util::FileReader_c> & pSharedReader, std::shared_ptr<util::IntCodec_i> & pCodec, const common::RowidRange_t * pBounds, bool bBitmap );
 }

@@ -474,7 +474,8 @@ public:
 
 	int Scan ( int iStart )
 	{
-		assert ( iStart<m_iSize );
+		if ( iStart>=m_iSize )
+			return m_iSize;
 
 		const T * pData = &m_dData.front();
 		int iIndex = iStart>>SHIFT;
