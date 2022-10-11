@@ -65,7 +65,7 @@ class Index_i
 public:
 	virtual				~Index_i() = default;
 
-	virtual bool		CreateIterators ( std::vector<common::BlockIterator_i *> & dIterators, const common::Filter_t & tFilter, const common::RowidRange_t * pBounds, uint32_t uMaxValues, std::string & sError ) const = 0;
+	virtual bool		CreateIterators ( std::vector<common::BlockIterator_i *> & dIterators, const common::Filter_t & tFilter, const common::RowidRange_t * pBounds, uint32_t uMaxValues, int64_t iRsetSize, std::string & sError ) const = 0;
 	virtual uint32_t	GetNumIterators ( const common::Filter_t & tFilter ) const = 0;
 	virtual bool		IsEnabled ( const std::string & sName ) const = 0;
 	virtual int64_t		GetCountDistinct ( const std::string & sName ) const = 0;
