@@ -35,7 +35,7 @@ namespace common
 namespace SI
 {
 
-static const int LIB_VERSION = 5;
+static const int LIB_VERSION = 6;
 static const uint32_t STORAGE_VERSION = 1;
 
 struct ColumnInfo_t

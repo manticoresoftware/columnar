@@ -45,7 +45,7 @@ class BlockReader_i
 public:
 	virtual			~BlockReader_i() = default;
 
-	virtual void	CreateBlocksIterator ( const BlockIter_t & tIt, std::vector<common::BlockIterator_i *> & dRes ) = 0;
+	virtual void	CreateBlocksIterator ( const std::vector<BlockIter_t> & dIt, std::vector<common::BlockIterator_i *> & dRes ) = 0;
 	virtual void	CreateBlocksIterator ( const BlockIter_t & tIt, const common::Filter_t & tVal, std::vector<common::BlockIterator_i *> & dRes ) = 0;
 };
 

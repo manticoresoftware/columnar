@@ -289,8 +289,7 @@ int64_t SecondaryIndex_c::GetValsRows ( std::vector<BlockIterator_i *> * pIterat
 	RsetInfo_t tRsetInfo { iNumIterators, uMaxValues, iRsetSize };
 
 	std::unique_ptr<BlockReader_i> pBlockReader { CreateBlockReader ( m_tReader.GetFD(), tCol, m_tSettings, uBlockBaseOff, pBounds, tRsetInfo ) } ;
-	for ( auto & i : dBlocksIt )
-		pBlockReader->CreateBlocksIterator ( i, *pIterators );
+	pBlockReader->CreateBlocksIterator ( dBlocksIt, *pIterators );
 
 	return iNumIterators;
 }
