@@ -57,21 +57,95 @@ struct FindValueResult_t
 };
 
 /////////////////////////////////////////////////////////////////////
-class BitmapIterator_c : public BlockIterator_i
+class SplitBitmap_c
 {
 public:
-				BitmapIterator_c ( uint32_t uNumValues );
+				SplitBitmap_c ( uint32_t uNumValues );
+
+	inline void BitSet ( int iBit );
+	inline int	Scan ( int iStart );
+	inline int	GetLength() const { return m_iSize; }
+
+private:
+	using BITMAP_TYPE = BitVec_T<uint64_t>;
+	const int	BITMAP_BITS = 16;
+	const int	VALUES_PER_BITMAP = 1 << BITMAP_BITS;
+
+	std::vector<std::unique_ptr<BITMAP_TYPE>> m_dBitmaps;
+	int			m_iSize = 0;
+};
+
+
+SplitBitmap_c::SplitBitmap_c ( uint32_t uNumValues )
+	: m_iSize ( uNumValues )
+{
+	m_dBitmaps.resize ( ( uNumValues+VALUES_PER_BITMAP-1 ) >> BITMAP_BITS );
+}
+
+
+void SplitBitmap_c::BitSet ( int iBit )
+{
+	int iBitmap = iBit >> BITMAP_BITS;
+	auto & pBitmap = m_dBitmaps[iBitmap];
+	if ( !pBitmap )
+		pBitmap = std::make_unique<BITMAP_TYPE>(VALUES_PER_BITMAP);
+
+	pBitmap->BitSet( iBit - ( iBitmap << BITMAP_BITS ) );
+}
+
+
+int SplitBitmap_c::Scan ( int iStart )
+{
+	if ( iStart>=m_iSize )
+		return m_iSize;
+
+	int iBitmap = iStart >> BITMAP_BITS;
+	auto & pBitmap = m_dBitmaps[iBitmap];
+	if ( !pBitmap )
+	{
+		iBitmap++;
+		while ( iBitmap<m_dBitmaps.size() && !m_dBitmaps[iBitmap] )
+			iBitmap++;
+
+		if ( iBitmap==m_dBitmaps.size() )
+			return m_iSize;
+
+		// since this bitmap exists, its guaranteed to have set bits
+		return m_dBitmaps[iBitmap]->Scan(0) + ( iBitmap << BITMAP_BITS );
+	}
+
+	// we have a valid bitmap, but there's no guarantee we still have set bits
+	int iBitmapStart = iBitmap << BITMAP_BITS;
+	int iRes = pBitmap->Scan ( iStart - iBitmapStart );
+	if ( iRes==pBitmap->GetLength() )
+		return Scan ( iBitmapStart + VALUES_PER_BITMAP );
+
+	return iRes + iBitmapStart;
+}
+
+/////////////////////////////////////////////////////////////////////
+class BitmapIterator_i : public BlockIterator_i
+{
+public:
+	virtual void Add ( BlockIterator_i * pIterator ) = 0;
+};
+
+template <typename BITMAP>
+class BitmapIterator_T : public BitmapIterator_i
+{
+public:
+				BitmapIterator_T ( uint32_t uNumValues );
 
 	bool		HintRowID ( uint32_t tRowID ) override;
 	bool		GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBlock ) override;
 	int64_t		GetNumProcessed() const override { return m_iNumProcessed; }
 	void		AddDesc ( std::vector<IteratorDesc_t> & dDesc ) const override;
 
-	void		Add ( BlockIterator_i * pIterator );
+	void		Add ( BlockIterator_i * pIterator ) override;
 
 private:
 	static const int			RESULT_BLOCK_SIZE = 1024;
-	BitVec_T<uint64_t>			m_tBitmap;
+	BITMAP						m_tBitmap;
 	std::vector<IteratorDesc_t> m_dDesc;
 	int64_t						m_iNumProcessed = 0;
 	bool						m_bFirst = true;
@@ -79,22 +153,22 @@ private:
 	SpanResizeable_T<uint32_t>	m_dRows;
 };
 
-
-BitmapIterator_c::BitmapIterator_c ( uint32_t uNumValues )
+template <typename BITMAP>
+BitmapIterator_T<BITMAP>::BitmapIterator_T ( uint32_t uNumValues )
 	: m_tBitmap(uNumValues)
 {
 	m_dRows.resize(RESULT_BLOCK_SIZE);
 }
 
-
-void BitmapIterator_c::AddDesc ( std::vector<IteratorDesc_t> & dDesc ) const
+template <typename BITMAP>
+void BitmapIterator_T<BITMAP>::AddDesc ( std::vector<IteratorDesc_t> & dDesc ) const
 {
 	for ( const auto & i : m_dDesc )
 		dDesc.push_back(i);
 }
 
-
-void BitmapIterator_c::Add ( BlockIterator_i * pIterator )
+template <typename BITMAP>
+void BitmapIterator_T<BITMAP>::Add ( BlockIterator_i * pIterator )
 {
 	assert(pIterator);
 
@@ -111,16 +185,16 @@ void BitmapIterator_c::Add ( BlockIterator_i * pIterator )
 	}
 }
 
-
-bool BitmapIterator_c::HintRowID ( uint32_t tRowID )
+template <typename BITMAP>
+bool BitmapIterator_T<BITMAP>::HintRowID ( uint32_t tRowID )
 {
 	m_bFirst = false;
 	m_iIndex = m_tBitmap.Scan(tRowID);
 	return m_iIndex < m_tBitmap.GetLength();
 }
 
-
-bool BitmapIterator_c::GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBlock )
+template <typename BITMAP>
+bool BitmapIterator_T<BITMAP>::GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBlock )
 {
 	if ( m_bFirst )
 	{
@@ -216,6 +290,7 @@ protected:
 	RsetInfo_t					m_tRsetInfo;
 
 	bool				NeedBitmapIterator() const;
+	BitmapIterator_i *	SpawnBitmapIterator() const;
 };
 
 
@@ -234,11 +309,26 @@ ReaderTraits_c::ReaderTraits_c ( const std::string & sAttr, std::shared_ptr<IntC
 
 bool ReaderTraits_c::NeedBitmapIterator() const
 {
-	const size_t BITMAP_ITERATOR_THRESH = 16;
-	const float	BITMAP_RATIO_THRESH = 0.002;
+	const size_t BITMAP_ITERATOR_THRESH = 8;
+	const int QUEUE_RSET_THRESH = 4096;
+	return m_tRsetInfo.m_iNumIterators>BITMAP_ITERATOR_THRESH || m_tRsetInfo.m_iRsetSize>QUEUE_RSET_THRESH;
+}
 
-	float fRsetRatio = float ( m_tRsetInfo.m_iRsetSize ) / m_tRsetInfo.m_uRowsCount;
-	return m_tRsetInfo.m_iNumIterators>BITMAP_ITERATOR_THRESH && fRsetRatio>=BITMAP_RATIO_THRESH;
+
+BitmapIterator_i * ReaderTraits_c::SpawnBitmapIterator() const
+{
+	if ( !NeedBitmapIterator() )
+		return nullptr;
+
+	const uint32_t SMALL_INDEX_THRESH = 262144;
+	if ( m_tRsetInfo.m_uRowsCount<=SMALL_INDEX_THRESH ) 
+		return new BitmapIterator_T<BitVec_T<uint64_t>> ( m_tRsetInfo.m_uRowsCount );
+
+	const float LARGE_BITMAP_RATIO = 0.01f;
+	if ( float(m_tRsetInfo.m_iRsetSize)/m_tRsetInfo.m_uRowsCount<=LARGE_BITMAP_RATIO )
+		return new BitmapIterator_T<SplitBitmap_c> ( m_tRsetInfo.m_uRowsCount );
+
+	return new BitmapIterator_T<BitVec_T<uint64_t>> ( m_tRsetInfo.m_uRowsCount );
 }
 
 /////////////////////////////////////////////////////////////////////
@@ -264,9 +354,9 @@ protected:
 	virtual FindValueResult_t FindValue ( uint64_t uRefVal ) const = 0;
 
 	BlockIterator_i	*		CreateIterator ( int iItem );
-	int						BlockLoadCreateIterator ( int iBlock, uint64_t uVal, std::vector<BlockIterator_i *> & dRes, BitmapIterator_c * pBitmapIterator );
-	void					AddIterator ( int iItem, std::vector<BlockIterator_i *> & dRes, BitmapIterator_c * pBitmapIterator );
-	void					CreateBlocksIterator ( const BlockIter_t & tIt, std::vector<BlockIterator_i *> & dRes, BitmapIterator_c * pBitmapIterator );
+	int						BlockLoadCreateIterator ( int iBlock, uint64_t uVal, std::vector<BlockIterator_i *> & dRes, BitmapIterator_i * pBitmapIterator );
+	void					AddIterator ( int iItem, std::vector<BlockIterator_i *> & dRes, BitmapIterator_i * pBitmapIterator );
+	void					CreateBlocksIterator ( const BlockIter_t & tIt, std::vector<BlockIterator_i *> & dRes, BitmapIterator_i * pBitmapIterator );
 };
 
 
@@ -276,7 +366,7 @@ BlockReader_c::BlockReader_c ( int iFD, const std::string & sAttr, std::shared_p
 {}
 
 
-void BlockReader_c::AddIterator ( int iItem, std::vector<BlockIterator_i *> & dRes, BitmapIterator_c * pBitmapIterator )
+void BlockReader_c::AddIterator ( int iItem, std::vector<BlockIterator_i *> & dRes, BitmapIterator_i * pBitmapIterator )
 {
 	std::unique_ptr<BlockIterator_i> pIterator ( CreateIterator(iItem) );
 	if ( !pIterator )
@@ -289,7 +379,7 @@ void BlockReader_c::AddIterator ( int iItem, std::vector<BlockIterator_i *> & dR
 }
 
 
-int BlockReader_c::BlockLoadCreateIterator ( int iBlock, uint64_t uVal, std::vector<BlockIterator_i *> & dRes, BitmapIterator_c * pBitmapIterator )
+int BlockReader_c::BlockLoadCreateIterator ( int iBlock, uint64_t uVal, std::vector<BlockIterator_i *> & dRes, BitmapIterator_i * pBitmapIterator )
 {
 	if ( iBlock!=-1 )
 	{
@@ -306,7 +396,7 @@ int BlockReader_c::BlockLoadCreateIterator ( int iBlock, uint64_t uVal, std::vec
 }
 
 
-void BlockReader_c::CreateBlocksIterator ( const BlockIter_t & tIt, std::vector<BlockIterator_i *> & dRes, BitmapIterator_c * pBitmapIterator )
+void BlockReader_c::CreateBlocksIterator ( const BlockIter_t & tIt, std::vector<BlockIterator_i *> & dRes, BitmapIterator_i * pBitmapIterator )
 {
 	m_iStartBlock = tIt.m_iStart;
 
@@ -350,8 +440,8 @@ void BlockReader_c::CreateBlocksIterator ( const BlockIter_t & tIt, std::vector<
 void BlockReader_c::CreateBlocksIterator ( const std::vector<BlockIter_t> & dIt, std::vector<BlockIterator_i *> & dRes )
 {
 	// add bitmap iterator as 1st element of dRes on exit
-	std::function<void( BitmapIterator_c * pIterator )> fnDeleter = [&]( BitmapIterator_c * pIterator ){ if ( pIterator ) { assert(dRes.empty()); dRes.push_back(pIterator); } };
-	std::unique_ptr<BitmapIterator_c, decltype(fnDeleter)> pBitmapIterator ( NeedBitmapIterator() ? new BitmapIterator_c ( m_tRsetInfo.m_uRowsCount ) : nullptr, fnDeleter );
+	std::function<void( BitmapIterator_i * pIterator )> fnDeleter = [&]( BitmapIterator_i * pIterator ){ if ( pIterator ) { assert(dRes.empty()); dRes.push_back(pIterator); } };
+	std::unique_ptr<BitmapIterator_i, decltype(fnDeleter)> pBitmapIterator ( SpawnBitmapIterator(), fnDeleter );
 
 	for ( auto & i : dIt )
 		CreateBlocksIterator ( i, dRes, pBitmapIterator.get() );
@@ -391,7 +481,7 @@ private:
 	void	LoadValues() override;
 	FindValueResult_t FindValue ( uint64_t uRefVal ) const override;
 
-	void	AddIterator ( int iValCur, bool bLoad, std::vector<BlockIterator_i *> & dRes, BitmapIterator_c * pBitmapIterator );
+	void	AddIterator ( int iValCur, bool bLoad, std::vector<BlockIterator_i *> & dRes, BitmapIterator_i * pBitmapIterator );
 };
 
 template<typename VALUE, bool FLOAT_VALUE>
@@ -526,7 +616,7 @@ protected:
 	virtual int			CmpBlock ( const Filter_t & tRange ) const = 0;
 
 	BlockIterator_i *	CreateIterator ( int iItem, bool bLoad, bool bBitmap );
-	void				AddIterator ( int iValCur, bool bLoad, std::vector<BlockIterator_i *> & dRes, BitmapIterator_c * pBitmapIterator );
+	void				AddIterator ( int iValCur, bool bLoad, std::vector<BlockIterator_i *> & dRes, BitmapIterator_i * pBitmapIterator );
 };
 
 
@@ -537,7 +627,7 @@ RangeReader_c::RangeReader_c ( int iFD, const std::string & sAttr, std::shared_p
 {}
 
 
-void RangeReader_c::AddIterator ( int iValCur, bool bLoad, std::vector<BlockIterator_i *> & dRes, BitmapIterator_c * pBitmapIterator )
+void RangeReader_c::AddIterator ( int iValCur, bool bLoad, std::vector<BlockIterator_i *> & dRes, BitmapIterator_i * pBitmapIterator )
 {
 	std::unique_ptr<BlockIterator_i> pIterator ( CreateIterator ( iValCur, bLoad, !!pBitmapIterator ) );
 	if ( !pIterator )
@@ -560,8 +650,8 @@ void RangeReader_c::CreateBlocksIterator ( const BlockIter_t & tIt, const Filter
 	int iBlockItCreated = -1;
 
 	// add bitmap iterator as 1st element of dRes on exit
-	std::function<void( BitmapIterator_c * pIterator )> fnDeleter = [&]( BitmapIterator_c * pIterator ){ if ( pIterator ) { assert(dRes.empty()); dRes.push_back(pIterator); } };
-	std::unique_ptr<BitmapIterator_c, decltype(fnDeleter)> pBitmapIterator ( NeedBitmapIterator() ? new BitmapIterator_c ( m_tRsetInfo.m_uRowsCount ) : nullptr, fnDeleter );
+	std::function<void( BitmapIterator_i * pIterator )> fnDeleter = [&]( BitmapIterator_i * pIterator ){ if ( pIterator ) { assert(dRes.empty()); dRes.push_back(pIterator); } };
+	std::unique_ptr<BitmapIterator_i, decltype(fnDeleter)> pBitmapIterator ( SpawnBitmapIterator(), fnDeleter );
 
 	// warmup
 	for ( ; iBlockCur<=tIt.m_iLast; iBlockCur++ )
