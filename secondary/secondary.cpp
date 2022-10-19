@@ -333,7 +333,7 @@ int64_t SecondaryIndex_c::GetRangeRows ( std::vector<BlockIterator_i *> * pItera
 		iNumIterators = tFoundMax.m_iPos-tFoundMin.m_iPos+1;
 	}
 
-	iNumIterators = std::max ( iNumIterators, 0LL );
+	iNumIterators = std::max ( iNumIterators, int64_t(0) );
 
 	if ( !pIterators )
 		return iNumIterators;
