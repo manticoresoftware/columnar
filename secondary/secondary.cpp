@@ -307,18 +307,21 @@ int64_t SecondaryIndex_c::GetRangeRows ( std::vector<BlockIterator_i *> * pItera
 
 	const bool bFloat = ( tCol.m_eType==AttrType_e::FLOAT );
 
+	int64_t iNumIterators = 0;
 	ApproxPos_t tPos { 0, 0, ( uBlocksCount - 1 ) * m_iValuesPerBlock };
 	if ( tFilter.m_bRightUnbounded )
 	{
 		ApproxPos_t tFound =  ( bFloat ? m_dIdx[iCol]->Search ( FloatToUint ( tFilter.m_fMinValue ) ) : m_dIdx[iCol]->Search ( tFilter.m_iMinValue ) );
 		tPos.m_iPos = tFound.m_iPos;
 		tPos.m_iLo = tFound.m_iLo;
+		iNumIterators = tPos.m_iHi-tPos.m_iPos;
 	}
 	else if ( tFilter.m_bLeftUnbounded )
 	{
 		ApproxPos_t tFound = ( bFloat ? m_dIdx[iCol]->Search ( FloatToUint ( tFilter.m_fMaxValue ) ) : m_dIdx[iCol]->Search ( tFilter.m_iMaxValue ) );
 		tPos.m_iPos = tFound.m_iPos;
 		tPos.m_iHi = tFound.m_iHi;
+		iNumIterators = tPos.m_iPos-tPos.m_iLo;
 	}
 	else
 	{
@@ -327,9 +330,11 @@ int64_t SecondaryIndex_c::GetRangeRows ( std::vector<BlockIterator_i *> * pItera
 		tPos.m_iLo = std::min ( tFoundMin.m_iLo, tFoundMax.m_iLo );
 		tPos.m_iPos = std::min ( tFoundMin.m_iPos, tFoundMax.m_iPos );
 		tPos.m_iHi = std::max ( tFoundMin.m_iHi, tFoundMax.m_iHi );
+		iNumIterators = tFoundMax.m_iPos-tFoundMin.m_iPos+1;
 	}
 
-	int64_t iNumIterators = tPos.m_iHi-tPos.m_iLo;
+	iNumIterators = std::max ( iNumIterators, 0LL );
+
 	if ( !pIterators )
 		return iNumIterators;
 
