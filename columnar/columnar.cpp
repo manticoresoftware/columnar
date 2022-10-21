@@ -234,6 +234,9 @@ public:
 	bool			Setup ( const std::vector<HeaderWithLocator_t> & dHeaders, SharedBlocks_c & pMatchingBlocks );
 	void			AddDesc ( std::vector<IteratorDesc_t> & dDesc ) const final;
 
+	void			SetCutoff ( int iCutoff ) final	{}
+	bool			WasCutoffHit() const final		{ return false; }
+
 private:
 	static const int MAX_COLLECTED = 128;
 

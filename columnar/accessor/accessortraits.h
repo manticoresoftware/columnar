@@ -116,9 +116,12 @@ class Analyzer_T : public Analyzer_i
 public:
 				Analyzer_T ( int iSubblockSize );
 
-	int64_t		GetNumProcessed() const final { return m_iNumProcessed; }
+	int64_t		GetNumProcessed() const final	{ return m_iNumProcessed; }
 	void		Setup ( SharedBlocks_c & pBlocks, uint32_t uTotalDocs ) final;
 	bool		HintRowID ( uint32_t tRowID ) final;
+
+	void		SetCutoff ( int iCutoff ) final	{}
+	bool		WasCutoffHit() const final		{ return false; }
 
 protected:
 	int			m_iNumProcessed = 0;

@@ -37,6 +37,9 @@ public:
 	virtual bool		GetNextRowIdBlock ( util::Span_T<uint32_t> & dRowIdBlock ) = 0;
 	virtual int64_t		GetNumProcessed() const = 0;
 
+	virtual void		SetCutoff ( int iCutoff ) = 0;
+	virtual bool		WasCutoffHit() const = 0;
+
 	virtual void		AddDesc ( std::vector<IteratorDesc_t> & dDesc ) const = 0;
 };
 

@@ -37,6 +37,9 @@ public:
 
 	void		AddDesc ( std::vector<IteratorDesc_t> & dDesc ) const override { dDesc.push_back ( { m_sAttr, "secondary" } ); }
 
+	void		SetCutoff ( int iCutoff ) override {}
+	bool		WasCutoffHit() const override { return false; }
+
 private:
 	std::string			m_sAttr;
 	Packing_e			m_eType = Packing_e::TOTAL;

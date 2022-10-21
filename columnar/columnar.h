@@ -30,7 +30,7 @@ namespace util
 namespace columnar
 {
 
-static const int LIB_VERSION = 16;
+static const int LIB_VERSION = 17;
 
 class Iterator_i
 {
