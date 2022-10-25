@@ -68,7 +68,7 @@ public:
 	inline int	GetLength() const { return m_iSize; }
 
 	template <typename RESULT>
-	void		Fetch ( int & iIterator, RESULT * & pRes, RESULT * pMax );
+	inline void	Fetch ( int & iIterator, int iBase, RESULT * & pRes, RESULT * pMax );
 
 private:
 	using BITMAP_TYPE = BitVec_T<uint64_t>;
@@ -128,14 +128,29 @@ int SplitBitmap_c::Scan ( int iStart )
 }
 
 template <typename RESULT>
-void SplitBitmap_c::Fetch ( int & iIterator, RESULT * & pRes, RESULT * pMax )
+void SplitBitmap_c::Fetch ( int & iIterator, int iBase, RESULT * & pRes, RESULT * pMax )
 {
 	int iBitmap = iIterator >> ( BITMAP_BITS-6 );
 	if ( iBitmap>=m_dBitmaps.size() )
 		return;
 
 	auto & pBitmap = m_dBitmaps[iBitmap];
-	if ( !pBitmap )
+	if ( pBitmap )
+	{
+		// we have a valid bitmap, but there's no guarantee we still have set bits
+		auto * pResStart = pRes;
+		int iBitmapStartIterator = iBitmap << ( BITMAP_BITS-6 );
+		int iIteratorInBitmap = iIterator - iBitmapStartIterator;
+		m_dBitmaps[iBitmap]->Fetch ( iIteratorInBitmap, iBitmapStartIterator << 6, pRes, pMax );
+		if ( pRes==pResStart )
+		{
+			iIterator = iBitmapStartIterator + ( VALUES_PER_BITMAP>>6 );
+			Fetch ( iIterator, 0, pRes, pMax );
+		}
+		else
+			iIterator = iIteratorInBitmap + iBitmapStartIterator;
+	}
+	else
 	{
 		iBitmap++;
 		while ( iBitmap<m_dBitmaps.size() && !m_dBitmaps[iBitmap] )
@@ -145,20 +160,9 @@ void SplitBitmap_c::Fetch ( int & iIterator, RESULT * & pRes, RESULT * pMax )
 			return;
 
 		// since this bitmap exists, its guaranteed to have set bits
-		iIterator = iBitmap << ( BITMAP_BITS-6 );
-		m_dBitmaps[iBitmap]->Fetch ( iIterator, pRes, pMax );
-	}
-	else
-	{
-		// we have a valid bitmap, but there's no guarantee we still have set bits
-		auto * pResStart = pRes;
-		iIterator = iBitmap << ( BITMAP_BITS-6 );
-		m_dBitmaps[iBitmap]->Fetch ( iIterator, pRes, pMax );
-		if ( pRes==pResStart )
-		{
-			iIterator += VALUES_PER_BITMAP>>6;
-			Fetch ( iIterator, pRes, pMax );
-		}
+		int iIteratorInBitmap = 0;
+		m_dBitmaps[iBitmap]->Fetch ( iIteratorInBitmap, iBitmap << BITMAP_BITS, pRes, pMax );
+		iIterator = iIteratorInBitmap + ( iBitmap << ( BITMAP_BITS-6 ) );
 	}
 }
 
@@ -243,7 +247,7 @@ bool BitmapIterator_T<BITMAP>::GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBloc
 	uint32_t * pData = m_dRows.data();
 	uint32_t * pPtr = pData;
 	
-	m_tBitmap.Fetch ( m_iIndex, pPtr, m_dRows.end() );
+	m_tBitmap.Fetch ( m_iIndex, 0, pPtr, m_dRows.end() );
 	dRowIdBlock = Span_T<uint32_t>( pData, pPtr-pData );
 
 	return !dRowIdBlock.empty();

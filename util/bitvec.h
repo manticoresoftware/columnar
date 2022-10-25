@@ -44,11 +44,11 @@ public:
 			return;
 
 		assert ( iBit>=0 && iBit<m_iSize );
-		m_dData [ iBit>>SHIFT ] |= ( ( (T)1 )<<( iBit&MASK ) );
+		m_dData [ iBit>>SHIFT ] |= ( (T)1 )<<( iBit&MASK );
 	}
 
 	template <typename RESULT>
-	void Fetch ( int & iIterator, RESULT * & pRes, RESULT * pMax )
+	void Fetch ( int & iIterator, int iBase, RESULT * & pRes, RESULT * pMax )
 	{
 		assert ( sizeof(T)==8 );	// this func should not be used with 32-bit based bitmaps
 
@@ -59,7 +59,7 @@ public:
 		pMax -= SIZEBITS;
 		assert ( pMax>=pRes );
 
-		RESULT tOutStart = iIterator << SHIFT;
+		RESULT tOutStart = ( iIterator << SHIFT ) + iBase;
 		for ( ; pRes<pMax && pData<pDataMax; pData++ )
 		{
 			uint64_t tVal = *pData;
