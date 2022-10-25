@@ -18,6 +18,7 @@
 #include "secondary.h"
 #include "delta.h"
 #include "interval.h"
+#include "bitvec.h"
 
 namespace SI
 {

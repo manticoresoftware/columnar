@@ -20,6 +20,7 @@
 #include "delta.h"
 #include "codec.h"
 #include "blockreader.h"
+#include "bitvec.h"
 
 #include <unordered_map>
 

@@ -19,6 +19,7 @@
 #include "codec.h"
 #include "delta.h"
 #include "pgm.h"
+#include "bitvec.h"
 
 #include <queue>
 

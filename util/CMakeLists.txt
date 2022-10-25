@@ -27,6 +27,7 @@ add_library ( util OBJECT
 		delta.h
 		reader.h
 		codec.h
+		bitvec.h
 		)
 
 include ( CheckFunctionExists )
