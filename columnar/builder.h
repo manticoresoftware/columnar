@@ -22,7 +22,7 @@
 namespace columnar
 {
 
-static const uint32_t STORAGE_VERSION = 9;
+static const uint32_t STORAGE_VERSION = 10;
 
 class Builder_i
 {

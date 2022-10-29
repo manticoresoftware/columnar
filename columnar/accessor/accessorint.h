@@ -34,7 +34,7 @@ class AttributeHeader_i;
 Iterator_i *	CreateIteratorUint32 ( const AttributeHeader_i & tHeader, util::FileReader_c * pReader );
 Iterator_i *	CreateIteratorUint64 ( const AttributeHeader_i & tHeader, util::FileReader_c * pReader );
 
-Analyzer_i *	CreateAnalyzerInt ( const AttributeHeader_i & tHeader, util::FileReader_c * pReader, const common::Filter_t & tSettings );
+Analyzer_i *	CreateAnalyzerInt ( const AttributeHeader_i & tHeader, util::FileReader_c * pReader, const common::Filter_t & tSettings, bool bHaveMatchingBlocks );
 
 Checker_i *		CreateCheckerInt ( const AttributeHeader_i & tHeader, util::FileReader_c * pReader, Reporter_fn & fnProgress, Reporter_fn & fnError );
 

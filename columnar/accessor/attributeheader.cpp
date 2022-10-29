@@ -166,7 +166,7 @@ public:
 
 	uint32_t				GetNumDocs() const override { return m_uTotalDocs; }
 	int						GetNumBlocks() const override { return (int)m_dBlocks.size(); }
-	uint32_t				GetNumDocs ( int iBlock ) const override ;
+	uint32_t				GetNumDocs ( int iBlock ) const override;
 	uint64_t				GetBlockOffset ( int iBlock ) const override { return m_dBlocks[iBlock]; }
 
 	int						GetNumMinMaxLevels() const override { return 0; }
@@ -278,7 +278,11 @@ bool AttributeHeader_Int_T<T>::Load ( FileReader_c & tReader, std::string & sErr
 	if ( !BASE::Load ( tReader, sError ) )
 		return false;
 
-	return m_tMinMax.Load ( tReader, sError );
+	bool bHaveMinMax = !!tReader.Read_uint8();
+	if ( bHaveMinMax )
+		return m_tMinMax.Load ( tReader, sError );
+
+	return !tReader.IsError();
 }
 
 template <typename T>
@@ -287,7 +291,14 @@ bool AttributeHeader_Int_T<T>::Check ( FileReader_c & tReader, Reporter_fn & fnE
 	if ( !BASE::Check ( tReader, fnError ) )
 		return false;
 
-	return m_tMinMax.Check ( tReader, fnError );
+	uint8_t uFlag = 0;
+	if ( !CheckUint8 ( tReader, 0, 1, "Minmax presence flag", uFlag, fnError ) )
+		return false;
+
+	if ( uFlag )
+		return m_tMinMax.Check ( tReader, fnError );
+
+	return true;
 }
 
 template <typename T>

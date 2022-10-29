@@ -231,6 +231,26 @@ bool CheckString ( FileReader_c & tReader, int iMinLength, int iMaxLength, const
 }
 
 
+bool CheckUint8 ( FileReader_c & tReader, uint8_t uMin, uint8_t uMax, const std::string & sMessage, Reporter_fn & fnError )
+{
+	uint8_t uValue = 0;
+	return CheckUint8 ( tReader, uMin, uMax, sMessage, uValue, fnError );
+}
+
+
+bool CheckUint8 ( FileReader_c & tReader, uint8_t uMin, uint8_t uMax, const std::string & sMessage, uint8_t & uValue, Reporter_fn & fnError )
+{
+	uValue = (int)tReader.Read_uint8();
+	if ( uValue<uMin || uValue>uMax )
+	{
+		fnError ( FormatStr ( "%s out of bounds: %d", sMessage.c_str(), uValue ).c_str() );
+		return false;
+	}
+
+	return true;
+}
+
+
 bool CheckInt32 ( FileReader_c & tReader, int iMin, int iMax, const std::string & sMessage, Reporter_fn & fnError )
 {
 	int iValue = 0;

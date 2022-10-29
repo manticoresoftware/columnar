@@ -52,6 +52,7 @@ bool AttributeHeaderBuilder_MVA_T<T>::Save ( FileWriter_c & tWriter, int64_t & t
 	if ( !BASE::Save ( tWriter, tBaseOffset, sError ) )
 		return false;
 
+	tWriter.Write_uint8(1); // minmax presence flag
 	return m_tMinMax.Save ( tWriter, sError );
 }
 

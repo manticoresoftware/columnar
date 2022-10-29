@@ -402,8 +402,7 @@ public:
 
 	Iterator_i *						CreateIterator ( const std::string & sName, const IteratorHints_t & tHints, columnar::IteratorCapabilities_t * pCapabilities, std::string & sError ) const final;
 	std::vector<BlockIterator_i *>		CreateAnalyzerOrPrefilter ( const std::vector<Filter_t> & dFilters, std::vector<int> & dDeletedFilters, const BlockTester_i & tBlockTester ) const final;
-	int									GetAttributeId ( const std::string & sName ) const final;
-	AttrType_e							GetType ( const std::string & sName ) const final;
+	bool								GetAttrInfo ( const std::string & sName, AttrInfo_t & tInfo ) const final;
 
 	bool								EarlyReject ( const std::vector<Filter_t> & dFilters, const BlockTester_i & tBlockTester ) const final;
 	bool								IsFilterDegenerate ( const Filter_t & tFilter ) const final;
@@ -528,8 +527,7 @@ Analyzer_i * Columnar_c::CreateAnalyzer ( const Filter_t & tSettings, bool bHave
 	case AttrType_e::TIMESTAMP:
 	case AttrType_e::FLOAT:
 	case AttrType_e::INT64:
-		assert ( bHaveMatchingBlocks );
-		return CreateAnalyzerInt ( *pHeader, pReader.release(), tSettings );
+		return CreateAnalyzerInt ( *pHeader, pReader.release(), tSettings, bHaveMatchingBlocks );
 
 	case AttrType_e::BOOLEAN:
 		return CreateAnalyzerBool ( *pHeader, pReader.release(), tSettings, bHaveMatchingBlocks );
@@ -543,7 +541,7 @@ Analyzer_i * Columnar_c::CreateAnalyzer ( const Filter_t & tSettings, bool bHave
 		{
 			const AttributeHeader_i * pHashHeader = GetHeader ( GenerateHashAttrName ( tSettings.m_sName ) );
 			if ( pHashHeader )
-				return CreateAnalyzerInt ( *pHashHeader, pReader.release(), StringFilterToHashFilter ( tSettings, true ) );
+				return CreateAnalyzerInt ( *pHashHeader, pReader.release(), StringFilterToHashFilter ( tSettings, true ), bHaveMatchingBlocks );
 		}
 
 		return CreateAnalyzerStr ( *pHeader, pReader.release(), tSettings, bHaveMatchingBlocks );
@@ -560,15 +558,15 @@ std::vector<HeaderWithLocator_t> Columnar_c::GetHeadersForMinMax ( const std::ve
 	std::vector<HeaderWithLocator_t> dHeaders;
 	for ( const auto & i : dFilters )
 	{
-		int iAttrIndex = GetAttributeId ( i.m_sName );
-		if ( iAttrIndex<0 )
+		AttrInfo_t tAttrInfo;
+		if ( !GetAttrInfo ( i.m_sName, tAttrInfo ) )
 			continue;
 
 		const AttributeHeader_i * pHeader = GetHeader ( i.m_sName );
 		if ( !pHeader || !pHeader->GetNumMinMaxLevels() )
 			continue;
 
-		dHeaders.push_back ( { pHeader, iAttrIndex } );
+		dHeaders.push_back ( { pHeader, tAttrInfo.m_iId } );
 		iBlocks = dHeaders.back().first->GetNumBlocks();
 	}
 
@@ -611,11 +609,13 @@ std::vector<BlockIterator_i *> Columnar_c::CreateAnalyzerOrPrefilter ( const std
 			break;
 		}
 
+	uint32_t uNumDocs = m_dHeaders[0]->GetNumDocs();
 	uint32_t uMinRowID = 0;
 	uint32_t uMaxRowID = INVALID_ROW_ID;
 	if ( pRowIdFilter )
-		FetchRowIdLimits ( *pRowIdFilter, m_dHeaders[0]->GetNumDocs(), uMinRowID, uMaxRowID );
+		FetchRowIdLimits ( *pRowIdFilter, uNumDocs, uMinRowID, uMaxRowID );
 
+	int iSubblockSize = m_dHeaders[0]->GetSettings().m_iSubblockSize;
 	bool bMinMaxBlocks = !!pMatchingBlocks;
 	if ( bMinMaxBlocks )
 	{
@@ -629,11 +629,15 @@ std::vector<BlockIterator_i *> Columnar_c::CreateAnalyzerOrPrefilter ( const std
 			MinMaxEval_T<false> tMinMaxEval ( dHeaders, tBlockTester, pMatchingBlocks, uMinRowID, uMaxRowID );
 			tMinMaxEval.Eval();
 		}
+
+		int iTotalBlocks = ( uNumDocs + iSubblockSize - 1 ) / iSubblockSize;
+		if ( iTotalBlocks==pMatchingBlocks->GetNumBlocks() )
+			pMatchingBlocks = nullptr;
 	}
-	else
+	else if ( pRowIdFilter )
 	{
 		pMatchingBlocks = SharedBlocks_c ( new MatchingBlocks_c );
-		PopulateMatchingBlocks ( *pMatchingBlocks, m_dHeaders[0]->GetSettings().m_iSubblockSize, uMinRowID, uMaxRowID );
+		PopulateMatchingBlocks ( *pMatchingBlocks, iSubblockSize, uMinRowID, uMaxRowID );
 	}
 
 	std::vector<BlockIterator_i *> dAnalyzers = TryToCreateAnalyzers ( dFilters, dDeletedFilters, pMatchingBlocks );
@@ -647,17 +651,19 @@ std::vector<BlockIterator_i *> Columnar_c::CreateAnalyzerOrPrefilter ( const std
 }
 
 
-int Columnar_c::GetAttributeId ( const std::string & sName ) const
+bool Columnar_c::GetAttrInfo ( const std::string & sName, AttrInfo_t & tInfo ) const
 {
 	const auto & tFound = m_hHeaders.find(sName);
-	return tFound==m_hHeaders.end() ? -1 : tFound->second.second;
-}
+	if ( tFound==m_hHeaders.end() )
+		return false;
+	
+	tInfo.m_iId = tFound->second.second;
+	tInfo.m_eType = tFound->second.first->GetType();
 
+	const auto & tHashFound = m_hHeaders.find ( GenerateHashAttrName(sName) );
+	tInfo.m_bHasHash = tHashFound!=m_hHeaders.end();
 
-AttrType_e Columnar_c::GetType ( const std::string & sName ) const
-{
-	const auto & tFound = m_hHeaders.find(sName);
-	return tFound==m_hHeaders.end() ? AttrType_e::NONE : tFound->second.first->GetType();
+	return true;
 }
 
 
@@ -694,9 +700,8 @@ std::vector<BlockIterator_i *> Columnar_c::TryToCreateAnalyzers ( const std::vec
 	for ( size_t i = 0; i<dFilters.size(); i++ )
 	{
 		const auto & tFilter = dFilters[i];
-
-		int iAttrIndex = GetAttributeId ( tFilter.m_sName );
-		if ( iAttrIndex<0 )
+		AttrInfo_t tAttrInfo;
+		if ( !GetAttrInfo ( tFilter.m_sName, tAttrInfo ) )
 			continue;
 
 		const AttributeHeader_i * pHeader = GetHeader ( tFilter.m_sName );

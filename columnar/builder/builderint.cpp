@@ -33,11 +33,13 @@ class AttributeHeaderBuilder_Int_T : public AttributeHeaderBuilder_c
 	using BASE = AttributeHeaderBuilder_c;
 
 public:
-	MinMaxBuilder_T<T>	m_tMinMax;
-
 			AttributeHeaderBuilder_Int_T ( const Settings_t & tSettings, const std::string & sName, AttrType_e eType );
 
 	bool	Save ( FileWriter_c & tWriter, int64_t & tBaseOffset, std::string & sError );
+	void	Add ( T tValue ) { m_tMinMax.Add(tValue); }
+
+protected:
+	MinMaxBuilder_T<T>	m_tMinMax;
 };
 
 template <typename T>
@@ -52,36 +54,30 @@ bool AttributeHeaderBuilder_Int_T<T>::Save ( FileWriter_c & tWriter, int64_t & t
 	if ( !BASE::Save ( tWriter, tBaseOffset, sError ) )
 		return false;
 
+	tWriter.Write_uint8(1);	// means we have minmax
 	return m_tMinMax.Save ( tWriter, sError );
 }
 
 //////////////////////////////////////////////////////////////////////////
 
-class AttributeHeaderBuilder_Float_c : public AttributeHeaderBuilder_c
+class AttributeHeaderBuilder_Hash_c : public AttributeHeaderBuilder_c
 {
 	using BASE = AttributeHeaderBuilder_c;
+	using BASE::BASE;
 
 public:
-	MinMaxBuilder_T<float>	m_tMinMax;
-
-			AttributeHeaderBuilder_Float_c ( const Settings_t & tSettings, const std::string & sName, AttrType_e eType );
-
 	bool	Save ( FileWriter_c & tWriter, int64_t & tBaseOffset, std::string & sError );
+	void	Add ( uint64_t tValue ) {}
 };
 
 
-AttributeHeaderBuilder_Float_c::AttributeHeaderBuilder_Float_c ( const Settings_t & tSettings, const std::string & sName, AttrType_e eType )
-	: BASE ( tSettings, sName, eType )
-	, m_tMinMax ( tSettings )
-{}
-
-
-bool AttributeHeaderBuilder_Float_c::Save ( FileWriter_c & tWriter, int64_t & tBaseOffset, std::string & sError )
+bool AttributeHeaderBuilder_Hash_c::Save ( FileWriter_c & tWriter, int64_t & tBaseOffset, std::string & sError )
 {
 	if ( !BASE::Save ( tWriter, tBaseOffset, sError ) )
 		return false;
 
-	return m_tMinMax.Save ( tWriter, sError );
+	tWriter.Write_uint8(0);	// no minmax
+	return !tWriter.IsError();
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -208,7 +204,7 @@ void Packer_Int_T<T,HEADER>::AnalyzeCollected ( int64_t tAttr )
 		m_iUniques++;
 	}
 
-	m_tHeader.m_tMinMax.Add(tValue);
+	BASE::m_tHeader.Add(tValue);
 
 	m_tPrevValue = tValue;
 }
@@ -431,9 +427,9 @@ void Packer_Int_T<T,HEADER>::WritePackedSubblocks ( IntPacking_e ePacking, WRITE
 
 //////////////////////////////////////////////////////////////////////////
 
-class Packer_Float_c : public Packer_Int_T<uint32_t, AttributeHeaderBuilder_Float_c>
+class Packer_Float_c : public Packer_Int_T<uint32_t, AttributeHeaderBuilder_Int_T<float>>
 {
-	using BASE = Packer_Int_T<uint32_t, AttributeHeaderBuilder_Float_c>;
+	using BASE = Packer_Int_T<uint32_t, AttributeHeaderBuilder_Int_T<float>>;
 
 public:
 	Packer_Float_c ( const Settings_t & tSettings, const std::string & sName ) : BASE ( tSettings, sName, AttrType_e::FLOAT ) {}
@@ -441,9 +437,9 @@ public:
 
 //////////////////////////////////////////////////////////////////////////
 
-class Packer_Hash_c : public Packer_Int_T<uint64_t,AttributeHeaderBuilder_Int_T<uint64_t>>
+class Packer_Hash_c : public Packer_Int_T<uint64_t,AttributeHeaderBuilder_Hash_c>
 {
-	using BASE = Packer_Int_T<uint64_t,AttributeHeaderBuilder_Int_T<uint64_t>>;
+	using BASE = Packer_Int_T<uint64_t,AttributeHeaderBuilder_Hash_c>;
 
 public:
 			Packer_Hash_c ( const Settings_t & tSettings, const std::string & sName, StringHash_fn fnCalcHash );

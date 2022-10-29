@@ -43,6 +43,8 @@ protected:
 void	CheckStorage ( const std::string & sFilename, uint32_t uNumRows, Reporter_fn & fnError, Reporter_fn & fnProgress );
 
 bool	CheckString ( util::FileReader_c & tReader, int iMinLength, int iMaxLength, const std::string & sMessage, Reporter_fn & fnError );
+bool	CheckUint8 ( util::FileReader_c & tReader, uint8_t uMin, uint8_t uMax, const std::string & sMessage, Reporter_fn & fnError );
+bool	CheckUint8 ( util::FileReader_c & tReader, uint8_t uMin, uint8_t uMax, const std::string & sMessage, uint8_t & uValue, Reporter_fn & fnError );
 bool	CheckInt32 ( util::FileReader_c & tReader, int iMin, int iMax, const std::string & sMessage, Reporter_fn & fnError );
 bool	CheckInt32 ( util::FileReader_c & tReader, int iMin, int iMax, const std::string & sMessage, int & iValue, Reporter_fn & fnError );
 bool	CheckInt32Packed ( util::FileReader_c & tReader, int iMin, int iMax, const std::string & sMessage, Reporter_fn & fnError );
