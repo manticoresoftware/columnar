@@ -160,16 +160,17 @@ class AttributeHeader_c : public AttributeHeader_i, public Settings_t
 public:
 							AttributeHeader_c ( AttrType_e eType, uint32_t uTotalDocs );
 
-	const std::string &		GetName() const override { return m_sName; }
-	AttrType_e				GetType() const override { return m_eType; }
-	const Settings_t &		GetSettings() const override { return m_tSettings; }
+	const std::string &		GetName() const override			{ return m_sName; }
+	AttrType_e				GetType() const override			{ return m_eType; }
+	float					GetComplexity() const override		{ return m_fComplexity; }
+	const Settings_t &		GetSettings() const override		{ return m_tSettings; }
 
-	uint32_t				GetNumDocs() const override { return m_uTotalDocs; }
-	int						GetNumBlocks() const override { return (int)m_dBlocks.size(); }
+	uint32_t				GetNumDocs() const override			{ return m_uTotalDocs; }
+	int						GetNumBlocks() const override		{ return (int)m_dBlocks.size(); }
 	uint32_t				GetNumDocs ( int iBlock ) const override;
 	uint64_t				GetBlockOffset ( int iBlock ) const override { return m_dBlocks[iBlock]; }
 
-	int						GetNumMinMaxLevels() const override { return 0; }
+	int						GetNumMinMaxLevels() const override	{ return 0; }
 	int						GetNumMinMaxBlocks ( int iLevel ) const override { return 0; }
 	std::pair<int64_t,int64_t> GetMinMax ( int iLevel, int iBlock ) const override { return {0, 0}; }
 
@@ -179,10 +180,15 @@ public:
 private:
 	std::string				m_sName;
 	AttrType_e				m_eType = AttrType_e::NONE;
+	float					m_fComplexity = 0.0f;
 	uint32_t				m_uTotalDocs = 0;
 	Settings_t				m_tSettings;
 
-	std::vector<uint64_t>	m_dBlocks{0};
+	std::vector<uint64_t>	m_dBlocks;
+	std::vector<uint32_t>	m_dPackings;
+
+	float					CalcComplexity() const;
+	float					CalcIntComplexity() const;
 };
 
 
@@ -219,6 +225,12 @@ bool AttributeHeader_c::Load ( FileReader_c & tReader, std::string & sError )
 	for ( size_t i=1; i < m_dBlocks.size(); i++ )
 		m_dBlocks[i] = tReader.Unpack_uint64() + m_dBlocks[i-1];
 
+	m_dPackings.resize ( tReader.Unpack_uint32() );
+	for ( auto & i : m_dPackings )
+		i = tReader.Unpack_uint32();
+
+	m_fComplexity = CalcComplexity();
+
 	if ( tReader.IsError() )
 	{
 		sError = tReader.GetError();
@@ -250,6 +262,46 @@ bool AttributeHeader_c::Check ( FileReader_c & tReader, Reporter_fn & fnError )
 	}
 
 	return true;
+}
+
+
+float AttributeHeader_c::CalcIntComplexity() const
+{
+	static const float dPackingComplexity[] =
+	{
+		0.0f,	// CONST
+		0.5f,	// TABLE
+		1.0f,	// DELTA
+		1.0f,	// GENERIC
+		1.0f	// HASH
+	};
+
+	uint32_t uTotal = 0;
+	for ( auto i : m_dPackings )
+		uTotal += i;
+
+	float fComplexity = 0.0f;
+	for ( int i = 0; i < m_dPackings.size(); i++ )
+		fComplexity += dPackingComplexity[i]*m_dPackings[i]/uTotal;
+
+	return fComplexity;
+}
+
+
+float AttributeHeader_c::CalcComplexity() const
+{
+	switch ( m_eType )
+	{
+		case AttrType_e::UINT32:
+		case AttrType_e::TIMESTAMP:
+		case AttrType_e::INT64:
+		case AttrType_e::UINT64:
+		case AttrType_e::FLOAT:
+			return CalcIntComplexity();
+
+		default:
+			return 1.0f;		// fixme! add all types
+	}
 }
 
 //////////////////////////////////////////////////////////////////////////

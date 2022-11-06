@@ -33,6 +33,7 @@ public:
 
 	virtual const std::string &	GetName() const = 0;
 	virtual common::AttrType_e	GetType() const = 0;
+	virtual float				GetComplexity() const = 0;
 	virtual const Settings_t &	GetSettings() const = 0;
 
 	virtual uint32_t			GetNumDocs() const = 0;

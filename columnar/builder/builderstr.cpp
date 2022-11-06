@@ -144,9 +144,9 @@ void Packer_String_c::Flush()
 	if ( m_dCollected.empty() )
 		return;
 
-	m_tHeader.AddBlock ( m_tWriter.GetPos() );
-
-	WriteToFile ( ChoosePacking() );
+	auto ePacking = ChoosePacking();
+	m_tHeader.AddBlock ( m_tWriter.GetPos(), to_underlying(ePacking) );
+	WriteToFile(ePacking);
 
 	m_dCollected.resize(0);
 

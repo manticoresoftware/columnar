@@ -35,7 +35,7 @@ public:
 
 	common::AttrType_e	GetType() const { return m_eType; }
 	const		Settings_t & GetSettings() const { return m_tSettings; }
-	void		AddBlock ( uint64_t tOffset ) { m_dBlocks.push_back(tOffset); }
+	void		AddBlock ( uint64_t uOffset, uint32_t uPacking ) { m_dBlocks.push_back ( { uOffset, uPacking } ); }
 	bool		Save ( util::FileWriter_c & tWriter, int64_t & tBaseOffset, std::string & sError );
 
 private:
@@ -43,7 +43,7 @@ private:
 	common::AttrType_e		m_eType = common::AttrType_e::NONE;
 	Settings_t				m_tSettings;
 
-	std::vector<int64_t>	m_dBlocks;
+	std::vector<std::pair<int64_t,uint32_t>>	m_dBlocks;
 };
 
 class Packer_i

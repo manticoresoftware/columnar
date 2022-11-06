@@ -42,13 +42,23 @@ bool AttributeHeaderBuilder_c::Save ( FileWriter_c & tWriter, int64_t & tBaseOff
 	tWriter.Write_uint64 ( 0 ); // stub
 	tWriter.Pack_uint32 ( (uint32_t)m_dBlocks.size() );
 	int64_t tPrevOffset = 0;
+	uint32_t uMaxPacking = 0;
 
 	// no offset for 1st block
 	for ( size_t i=1; i < m_dBlocks.size(); i++ )
 	{
-		tWriter.Pack_uint64 ( m_dBlocks[i]-tPrevOffset );
-		tPrevOffset = m_dBlocks[i];
+		tWriter.Pack_uint64 ( m_dBlocks[i].first - tPrevOffset );
+		tPrevOffset = m_dBlocks[i].first;
+		uMaxPacking = std::max ( m_dBlocks[i].second, uMaxPacking );
 	}
+
+	std::vector<uint32_t> dPackings ( uMaxPacking+1, 0 );
+	for ( const auto & i : m_dBlocks )
+		dPackings[i.second]++;
+
+	tWriter.Pack_uint32 ( dPackings.size() );
+	for ( auto i : dPackings )
+		tWriter.Pack_uint32(i);
 
 	return !tWriter.IsError();
 }

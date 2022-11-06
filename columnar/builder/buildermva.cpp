@@ -190,10 +190,10 @@ void Packer_MVA_T<T,HEADER_T>::Flush()
 {
 	if ( m_dCollectedLengths.empty() )
 		return;
-
-	BASE::m_tHeader.AddBlock ( BASE::m_tWriter.GetPos() );
-
-	WriteToFile ( ChoosePacking() );
+	
+	auto ePacking = ChoosePacking();
+	BASE::m_tHeader.AddBlock ( BASE::m_tWriter.GetPos(), to_underlying(ePacking) );
+	WriteToFile(ePacking);
 
 	m_dCollectedLengths.resize(0);
 	m_dCollectedValues.resize(0);

@@ -662,6 +662,7 @@ bool Columnar_c::GetAttrInfo ( const std::string & sName, AttrInfo_t & tInfo ) c
 
 	const auto & tHashFound = m_hHeaders.find ( GenerateHashAttrName(sName) );
 	tInfo.m_bHasHash = tHashFound!=m_hHeaders.end();
+	tInfo.m_fComplexity = tInfo.m_bHasHash ? tHashFound->second.first->GetComplexity() : tFound->second.first->GetComplexity();
 
 	return true;
 }
