@@ -22,4 +22,7 @@ set ( CPACK_RPM_PACKAGE_ARCHITECTURE ${CMAKE_SYSTEM_PROCESSOR} )
 set ( CPACK_RPM_COMPONENT_INSTALL OFF )
 set ( CPACK_RPM_INSTALL_WITH_EXEC ON )
 set ( CPACK_RPM_DEBUGINFO_PACKAGE ON )
-set ( CPACK_RPM_BUILD_SOURCE_DIRS_PREFIX "/tmp" )
+#set ( CPACK_RPM_BUILD_SOURCE_DIRS_PREFIX "/tmp" )
+
+# uncomment this line to produce long (really long) verbose output of rpm building
+#set ( CPACK_RPM_PACKAGE_DEBUG ON )
