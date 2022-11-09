@@ -267,3 +267,22 @@ collect_jammy:
   needs: [ jammy, jammy_arm ]
   variables:
     DISTRO: jammy
+
+
+# ==================== Debian Bookworm ======================
+
+bookworm:
+  extends: [ .build ]
+  variables:
+    DISTR: bookworm
+
+bookworm_arm:
+  extends: [ bookworm ]
+  variables:
+    arch: aarch64
+
+collect_bookworm:
+  extends: [ .collect_deb ]
+  needs: [ bookworm, bookworm_arm ]
+  variables:
+    DISTRO: bookworm
