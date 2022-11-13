@@ -145,6 +145,7 @@ Checker_i * StorageChecker_c::CreateChecker ( const AttributeHeader_i & tHeader 
 	case AttrType_e::TIMESTAMP:
 	case AttrType_e::FLOAT:
 	case AttrType_e::INT64:
+	case AttrType_e::UINT64:
 		return CreateCheckerInt ( tHeader, pReader.release(), m_fnProgress, m_fnError );
 
 	case AttrType_e::BOOLEAN:
