@@ -809,7 +809,7 @@ int AnalyzerBlock_Int_Values_T<VALUES,ACCESSOR_VALUES>::ProcessSubblock_ValuesBi
 
 	for ( auto i : dValues )
 	{
-		if ( std::binary_search ( m_dValues.cbegin(), m_dValues.cend(), (VALUES)i ) ^ (!EQ) )
+		if ( std::binary_search ( m_dValues.cbegin(), m_dValues.cend(), (int64_t)i ) ^ (!EQ) )
 			*pRowID++ = tRowID;
 
 		tRowID++;
