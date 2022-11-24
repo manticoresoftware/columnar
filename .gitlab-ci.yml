@@ -63,15 +63,15 @@ job_mirror:
   artifacts:
     when: on_success
     expire_in: 12 hrs
-  paths:
-    - build/xml
-    - build/columnar/lib_manticore_columnar.so
-    - build/secondary/lib_manticore_secondary.so
-    - build/_deps/manticore-build/src/searchd
-    - build/_deps/manticore-build/src/indexer
-    - build/_deps/manticore-build/src/indextool
-    - build/_deps/manticore-build/config/*.c
-    - build/_deps/manticore-build/config/*.h
+    paths:
+      - build/xml
+      - build/columnar/lib_manticore_columnar.so
+      - build/secondary/lib_manticore_secondary.so
+      - build/_deps/manticore-build/src/searchd
+      - build/_deps/manticore-build/src/indexer
+      - build/_deps/manticore-build/src/indextool
+      - build/_deps/manticore-build/config/*.c
+      - build/_deps/manticore-build/config/*.h
 
 # ==================== .helper testing ======================
 
