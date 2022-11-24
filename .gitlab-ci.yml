@@ -99,7 +99,7 @@ simple_build:
     paths:
       - build/xml_simple_build
       - build/columnar/lib_manticore_columnar.so
-#      - build/secondary/lib_manticore_secondary.so
+      - build/secondary/lib_manticore_secondary.so
       - build/_deps/manticore-build/src/searchd
       - build/_deps/manticore-build/src/indexer
       - build/_deps/manticore-build/config/*.c
@@ -141,7 +141,7 @@ release_build:
     paths:
       - build/xml_release_build
       - build/columnar/lib_manticore_columnar.so
-#      - build/secondary/lib_manticore_secondary.so
+      - build/secondary/lib_manticore_secondary.so
       - build/_deps/manticore-build/src/searchd
       - build/_deps/manticore-build/src/indexer
       - build/_deps/manticore-build/config/*.c
@@ -185,7 +185,7 @@ win_build:
     paths:
       - build/xml_win_build
       - build/columnar/$CTEST_CONFIGURATION_TYPE/lib_manticore_columnar.dll
-#      - build/secondary/$CTEST_CONFIGURATION_TYPE/lib_manticore_secondary.dll
+      - build/secondary/$CTEST_CONFIGURATION_TYPE/lib_manticore_secondary.dll
       - build/_deps/manticore-build/src/$CTEST_CONFIGURATION_TYPE/indexer.exe
       - build/_deps/manticore-build/src/$CTEST_CONFIGURATION_TYPE/searchd.exe
 # Commented out usually need, but not on our dev where everything is installed into system
