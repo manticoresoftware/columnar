@@ -51,6 +51,11 @@ job_mirror:
     arch: x86_64
     boost: boost_nov22
     sysroot: roots_nov22
+  script:
+    - ctest -VV -S cmake/citest.cmake --no-compress-output
+  after_script:
+    - cd build && mkdir xml
+    - cp -r Testing/2*/*.xml xml
   cache:
     paths:
       - $CI_PROJECT_DIR/cache
@@ -72,7 +77,11 @@ job_mirror:
     NO_BUILD: 1
   script:
     - bash /root/aot.sh
-    - ctest -VV -S cmake/citest.cmake
+    - ctest -VV -S cmake/citest.cmake --no-compress-output
+  after_script:
+    - cd build
+    - cp -r Testing/2*/Test.xml .
+    - xsltproc -o junit_tests.xml ../misc/junit/ctest2junit.xsl Test.xml
   cache:
     key: bionic_test
     paths:
@@ -80,6 +89,8 @@ job_mirror:
   artifacts:
     expire_in: 12 hrs
     when: always
+    reports:
+      junit: build/junit_tests.xml
   retry: 1
 
 # ==================== Simple build, then test ======================
@@ -91,15 +102,11 @@ simple_build:
     - if: $TEST =~ /simple/
   variables:
     CTEST_CONFIGURATION_TYPE: Debug
-  script:
-    - ctest -VV -S cmake/citest.cmake
-    - cd build && mkdir xml_simple_build
-    - cp -r Testing/2*/*.xml xml_simple_build
   artifacts:
     paths:
-      - build/xml_simple_build
+      - build/xml
       - build/columnar/lib_manticore_columnar.so
-#      - build/secondary/lib_manticore_secondary.so
+      - build/secondary/lib_manticore_secondary.so
       - build/_deps/manticore-build/src/searchd
       - build/_deps/manticore-build/src/indexer
       - build/_deps/manticore-build/config/*.c
@@ -113,12 +120,9 @@ simple_tests:
     - if: $TEST =~ /simple/
   variables:
     CTEST_CONFIGURATION_TYPE: Debug
-  after_script:
-    - cd build && mkdir xml_simple_tests
-    - cp -r Testing/2*/*.xml xml_simple_tests
   artifacts:
     paths:
-      - build/xml_simple_*
+      - build/junit_tests.xml
       - build/_deps/manticore-build/test/test_*/report.txt
       - build/_deps/manticore-build/test/error*.txt
       - build/_deps/manticore-build/test/searchd.log
@@ -133,15 +137,11 @@ release_build:
   variables:
     CMAKE_INTERPROCEDURAL_OPTIMIZATION: 1
     CTEST_CONFIGURATION_TYPE: RelWithDebInfo
-  script:
-    - ctest -VV -S cmake/citest.cmake
-    - cd build && mkdir xml_release_build
-    - cp -r Testing/2*/*.xml xml_release_build
   artifacts:
     paths:
-      - build/xml_release_build
+      - build/xml
       - build/columnar/lib_manticore_columnar.so
-#      - build/secondary/lib_manticore_secondary.so
+      - build/secondary/lib_manticore_secondary.so
       - build/_deps/manticore-build/src/searchd
       - build/_deps/manticore-build/src/indexer
       - build/_deps/manticore-build/config/*.c
@@ -155,12 +155,9 @@ release_tests:
     - if: $TEST =~ /release/
   variables:
     CTEST_CONFIGURATION_TYPE: RelWithDebInfo
-  after_script:
-    - cd build && mkdir xml_release_tests
-    - cp -r Testing/2*/*.xml xml_release_tests
   artifacts:
     paths:
-      - build/xml_release_*
+      - build/junit_tests.xml
       - build/_deps/manticore-build/test/test_*/report.txt
       - build/_deps/manticore-build/test/error*.txt
       - build/_deps/manticore-build/test/searchd.log
@@ -177,15 +174,11 @@ win_build:
     arch: x64
     CTEST_CMAKE_GENERATOR: "Ninja Multi-Config"
     CTEST_CONFIGURATION_TYPE: Debug
-  script:
-    - ctest -VV -S cmake/citest.cmake -C $CTEST_CONFIGURATION_TYPE
-    - cd build && mkdir xml_win_build
-    - cp -r Testing/2*/*.xml xml_win_build
   artifacts:
     paths:
-      - build/xml_win_build
+      - build/xml
       - build/columnar/$CTEST_CONFIGURATION_TYPE/lib_manticore_columnar.dll
-#      - build/secondary/$CTEST_CONFIGURATION_TYPE/lib_manticore_secondary.dll
+      - build/secondary/$CTEST_CONFIGURATION_TYPE/lib_manticore_secondary.dll
       - build/_deps/manticore-build/src/$CTEST_CONFIGURATION_TYPE/indexer.exe
       - build/_deps/manticore-build/src/$CTEST_CONFIGURATION_TYPE/searchd.exe
 # Commented out usually need, but not on our dev where everything is installed into system
@@ -211,15 +204,15 @@ win_tests:
     NO_BUILD: 1
   script:
     - 'net use x: \\\\VBOXSRV\\shared'
-    - ctest -VV -S cmake/citest.cmake -C $CTEST_CONFIGURATION_TYPE
+    - ctest -VV -S cmake/citest.cmake -C $CTEST_CONFIGURATION_TYPE --no-compress-output
   after_script:
-    - cd build && mkdir xml_win_tests
-    - cp -r Testing/2*/*.xml xml_win_tests
+    - cd build
+    - cp -r Testing/2*/*.xml xml
   artifacts:
     expire_in: 12 hrs
     when: always
     paths:
-      - build/xml_win_*
+      - build/xml
       - build/_deps/manticore-build/test/test_*/report.txt
       - build/_deps/manticore-build/test/error*.txt
       - build/_deps/manticore-build/test/searchd.log
@@ -229,7 +222,7 @@ win_tests:
 # ==================== Publish (push) pipeline results ======================
 
 # build and upload on regular commits
-push_results:
+convert_win_junit:
   stage: publish
   rules:
     - if: ( $WHAT=='$WHAT' || $WHAT==null )
@@ -238,19 +231,17 @@ push_results:
     - docker
   image: registry.gitlab.com/manticoresearch/dev/ubertests_public:320
   needs:
-    - simple_tests
-    - release_tests
     - win_tests
   variables:
     GIT_STRATEGY: fetch
   script:
-    - cmake -P misc/junit/citestresult.cmake
+    - xsltproc -o build/junit_tests.xml misc/junit/ctest2junit.xsl build/xml/Test.xml
   artifacts:
+    paths:
+      - build/junit_tests.xml
     reports:
-      junit: build/junit_*.xml
+      junit: build/junit_tests.xml
   cache: { }
-  retry: 1
-  allow_failure: true
 
 # ==================== Run secondary pipeline ======================
 
