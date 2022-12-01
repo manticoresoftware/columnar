@@ -20,10 +20,12 @@ workflow:
   needs: [ ]
   tags:
     - docker
-  image: registry.gitlab.com/manticoresearch/dev/external_toolchain:clang13_cmake3232
+  image: registry.gitlab.com/manticoresearch/dev/external_toolchain:clang15_cmake3243
   variables:
     CACHEB: $CI_PROJECT_DIR/cache
     arch: x86_64
+    boost: boost_nov22
+    sysroot: roots_nov22
   script:
     - mkdir build && cd build
     - cmake -DPACK=1 $XTRAFLAGS ..
@@ -35,12 +37,21 @@ workflow:
   artifacts:
     paths:
       - build/manticore*deb
-      - build/manticore*rpm
       - build/manticore-*.tar.gz
       - build/manticore-*.zip
       - build/manticore-*.exe
     when: on_success
     expire_in: 12 hrs
+
+
+.build_rhel:
+  extends: [ .build ]
+  before_script:
+    - ln -s $(pwd) /builds_manticoresearch_dev_usr_src_debug_manticore_component_src_0
+    - cd /builds_manticoresearch_dev_usr_src_debug_manticore_component_src_0
+  artifacts:
+    paths:
+      - build/manticore*rpm
 
 # ==================== .helper generic and specific collect of built artifacts ======================
 
@@ -109,7 +120,7 @@ collect_windows:
 # ==================== Centos 7 ======================
 
 rhel7:
-  extends: [ .build ]
+  extends: [ .build_rhel ]
   variables:
     DISTR: rhel7
 
@@ -128,7 +139,7 @@ collect_rhel7:
 # ==================== Centos 8 ======================
 
 rhel8:
-  extends: [ .build ]
+  extends: [ .build_rhel ]
   variables:
     DISTR: rhel8
 
@@ -143,46 +154,25 @@ collect_rhel8:
   variables:
     DISTRO: 8
 
+# ==================== RHEL 9 ======================
+
+rhel9:
+  extends: [ .build_rhel ]
+  variables:
+    DISTR: rhel9
+
+rhel9_arm:
+  extends: [ rhel9 ]
+  variables:
+    arch: aarch64
+
+collect_rhel9:
+  extends: [ .collect_rpm ]
+  needs: [ rhel9, rhel9_arm ]
+  variables:
+    DISTRO: 9
+
 # ==================== Debian-based ======================
-
-# ==================== Debian Stretch ======================
-
-stretch:
-  extends: [ .build ]
-  variables:
-    DISTR: stretch
-
-stretch_arm:
-  extends: [ stretch ]
-  variables:
-    arch: aarch64
-
-collect_stretch:
-  extends: [ .collect_deb ]
-  needs: [ stretch, stretch_arm ]
-  variables:
-    DISTRO: stretch
-
-
-# ==================== Ubuntu Xenial ======================
-
-xenial:
-  extends: [ .build ]
-  variables:
-    DISTR: xenial
-
-xenial_arm:
-  extends: [ xenial ]
-  variables:
-    arch: aarch64
-
-collect_xenial:
-  extends: [ .collect_deb ]
-  needs: [ xenial, xenial_arm ]
-  variables:
-    DISTRO: xenial
-
-
 
 # ==================== Ubuntu Bionic ======================
 
@@ -277,3 +267,22 @@ collect_jammy:
   needs: [ jammy, jammy_arm ]
   variables:
     DISTRO: jammy
+
+
+# ==================== Debian Bookworm ======================
+
+bookworm:
+  extends: [ .build ]
+  variables:
+    DISTR: bookworm
+
+bookworm_arm:
+  extends: [ bookworm ]
+  variables:
+    arch: aarch64
+
+collect_bookworm:
+  extends: [ .collect_deb ]
+  needs: [ bookworm, bookworm_arm ]
+  variables:
+    DISTRO: bookworm
