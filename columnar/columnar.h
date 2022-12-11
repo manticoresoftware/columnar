@@ -30,7 +30,7 @@ namespace util
 namespace columnar
 {
 
-static const int LIB_VERSION = 17;
+static const int LIB_VERSION = 18;
 
 class Iterator_i
 {
@@ -91,7 +91,6 @@ struct AttrInfo_t
 {
 	int					m_iId = -1;
 	common::AttrType_e	m_eType = common::AttrType_e::NONE;
-	bool				m_bHasHash = false;
 	float				m_fComplexity = 0.0f; 
 };
 
@@ -103,6 +102,7 @@ public:
 
 	virtual Iterator_i *	CreateIterator ( const std::string & sName, const IteratorHints_t & tHints, columnar::IteratorCapabilities_t * pCapabilities, std::string & sError ) const = 0;
 	virtual std::vector<common::BlockIterator_i *> CreateAnalyzerOrPrefilter ( const std::vector<common::Filter_t> & dFilters, std::vector<int> & dDeletedFilters, const BlockTester_i & tBlockTester ) const = 0;
+	virtual int64_t			EstimateMinMax ( const common::Filter_t & tFilter, const BlockTester_i & tBlockTester ) const = 0;
 	virtual bool			GetAttrInfo ( const std::string & sName, AttrInfo_t & tInfo ) const = 0;
 
 	virtual bool			EarlyReject ( const std::vector<common::Filter_t> & dFilters, const BlockTester_i & tBlockTester ) const = 0;

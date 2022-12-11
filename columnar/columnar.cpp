@@ -34,14 +34,15 @@ using namespace common;
 
 using HeaderWithLocator_t = std::pair<const AttributeHeader_i*, int>;
 
-template <bool ROWID_LIMITS>
+template <bool ROWID_LIMITS, bool COUNT>
 class MinMaxEval_T
 {
 public:
-			MinMaxEval_T ( const std::vector<HeaderWithLocator_t> & dHeaders, const BlockTester_i & tBlockTester, SharedBlocks_c & pMatchingBlocks, uint32_t uMinRowID, uint32_t uMaxRowID );
+			MinMaxEval_T ( const std::vector<HeaderWithLocator_t> & dHeaders, const BlockTester_i & tBlockTester, SharedBlocks_c & pMatchingBlocks, uint32_t uMinRowID, uint32_t uMaxRowID, int iStopAtLevel = -1 );
 
 	void	Eval();
 	bool	EvalAll();
+	int		GetNumMatchedBlocks() const	{ return m_iTotal; }
 
 private:
 	const std::vector<HeaderWithLocator_t> & m_dHeaders;
@@ -52,19 +53,21 @@ private:
 	MinMaxVec_t				m_dMinMax;
 	int						m_iNumLevels = 0;
 	int						m_iMinMaxLeafShift = 0;
+	int						m_iStopAtLevel = 0;
+	int						m_iTotal = 0;
 	uint32_t				m_uMinRowID = 0;
 	uint32_t				m_uMaxRowID = INVALID_ROW_ID;
 
 	void					DoEval ( int iLevel, int iBlock );
 	void					ResizeMinMax();
 	FORCE_INLINE bool		FillMinMax ( int iLevel, int iBlock );
-	FORCE_INLINE uint32_t	MinMaxBlockId2RowId ( int iBlockId ) const;
-	FORCE_INLINE uint32_t	MinMaxBlockId2RowId ( int iBlockId, int iLevel ) const;
-	FORCE_INLINE bool		RangesOverlap ( uint32_t uMin, uint32_t uMax ) const;
+	FORCE_INLINE uint32_t	MinMaxBlockId2RowId ( int iBlockId ) const				{ return iBlockId<<m_iMinMaxLeafShift; }
+	FORCE_INLINE uint32_t	MinMaxBlockId2RowId ( int iBlockId, int iLevel ) const	{ return iBlockId << ( m_iNumLevels - iLevel - 1 + m_iMinMaxLeafShift ); }
+	FORCE_INLINE bool		RangesOverlap ( uint32_t uMin, uint32_t uMax ) const	{ return uMin<=m_uMaxRowID && uMax>=m_uMinRowID; }
 };
 
-template <bool ROWID_LIMITS>
-MinMaxEval_T<ROWID_LIMITS>::MinMaxEval_T ( const std::vector<HeaderWithLocator_t> & dHeaders, const BlockTester_i & tBlockTester, SharedBlocks_c & pMatchingBlocks, uint32_t uMinRowID, uint32_t uMaxRowID )
+template <bool ROWID_LIMITS, bool COUNT>
+MinMaxEval_T<ROWID_LIMITS,COUNT>::MinMaxEval_T ( const std::vector<HeaderWithLocator_t> & dHeaders, const BlockTester_i & tBlockTester, SharedBlocks_c & pMatchingBlocks, uint32_t uMinRowID, uint32_t uMaxRowID, int iStopAtLevel )
 	: m_dHeaders ( dHeaders )
 	, m_tBlockTester ( tBlockTester )
 	, m_pMatchingBlocks ( pMatchingBlocks )
@@ -75,6 +78,7 @@ MinMaxEval_T<ROWID_LIMITS>::MinMaxEval_T ( const std::vector<HeaderWithLocator_t
 
 	// do this to avoid multiple vcalls when evaluating
 	m_iNumLevels = m_dHeaders[0].first->GetNumMinMaxLevels();
+	m_iStopAtLevel = iStopAtLevel==-1 ? std::max ( 0, m_iNumLevels-1 ) : iStopAtLevel;
 	m_iMinMaxLeafShift = CalcNumBits ( m_dHeaders[0].first->GetSettings().m_iSubblockSize ) - 1;
 
 	m_dBlocksOnLevel.resize(m_iNumLevels);
@@ -83,15 +87,16 @@ MinMaxEval_T<ROWID_LIMITS>::MinMaxEval_T ( const std::vector<HeaderWithLocator_t
 		m_dBlocksOnLevel[i] = m_dHeaders[0].first->GetNumMinMaxBlocks ( (int)i );
 }
 
-template <bool ROWID_LIMITS>
-void MinMaxEval_T<ROWID_LIMITS>::Eval()
+template <bool ROWID_LIMITS, bool COUNT>
+void MinMaxEval_T<ROWID_LIMITS,COUNT>::Eval()
 {
+	m_iTotal = 0;
 	ResizeMinMax();
 	DoEval ( 0, 0 );
 }
 
-template <bool ROWID_LIMITS>
-bool MinMaxEval_T<ROWID_LIMITS>::EvalAll()
+template <bool ROWID_LIMITS, bool COUNT>
+bool MinMaxEval_T<ROWID_LIMITS,COUNT>::EvalAll()
 {
 	ResizeMinMax();
 	if ( !FillMinMax ( 0, 0 ) )
@@ -100,21 +105,15 @@ bool MinMaxEval_T<ROWID_LIMITS>::EvalAll()
 	return m_tBlockTester.Test(m_dMinMax);
 }
 
-template <bool ROWID_LIMITS>
-bool MinMaxEval_T<ROWID_LIMITS>::RangesOverlap ( uint32_t uMin, uint32_t uMax ) const
-{
-	return uMin<=m_uMaxRowID && uMax>=m_uMinRowID;
-}
-
-template <bool ROWID_LIMITS>
-void MinMaxEval_T<ROWID_LIMITS>::DoEval ( int iLevel, int iBlock )
+template <bool ROWID_LIMITS, bool COUNT>
+void MinMaxEval_T<ROWID_LIMITS,COUNT>::DoEval ( int iLevel, int iBlock )
 {
 	if ( !FillMinMax ( iLevel, iBlock ) )
 		return;
 
 	if ( m_tBlockTester.Test ( m_dMinMax ) )
 	{
-		if ( iLevel==m_iNumLevels-1 )
+		if ( iLevel==m_iStopAtLevel )
 		{
 			if ( ROWID_LIMITS )
 			{
@@ -125,7 +124,12 @@ void MinMaxEval_T<ROWID_LIMITS>::DoEval ( int iLevel, int iBlock )
 					m_pMatchingBlocks->Add(iBlock);
 			}
 			else
-				m_pMatchingBlocks->Add(iBlock);
+			{
+				if ( COUNT )
+					m_iTotal++;
+				else
+					m_pMatchingBlocks->Add(iBlock);
+			}
 		}
 		else
 		{
@@ -154,8 +158,8 @@ void MinMaxEval_T<ROWID_LIMITS>::DoEval ( int iLevel, int iBlock )
 	}
 }
 
-template <bool ROWID_LIMITS>
-void MinMaxEval_T<ROWID_LIMITS>::ResizeMinMax()
+template <bool ROWID_LIMITS, bool COUNT>
+void MinMaxEval_T<ROWID_LIMITS,COUNT>::ResizeMinMax()
 {
 	int iMaxLocator = 0;
 	for ( const auto & i : m_dHeaders )
@@ -166,8 +170,8 @@ void MinMaxEval_T<ROWID_LIMITS>::ResizeMinMax()
 		i = {0,0};
 }
 
-template <bool ROWID_LIMITS>
-bool MinMaxEval_T<ROWID_LIMITS>::FillMinMax ( int iLevel, int iBlock )
+template <bool ROWID_LIMITS, bool COUNT>
+bool MinMaxEval_T<ROWID_LIMITS,COUNT>::FillMinMax ( int iLevel, int iBlock )
 {
 	int iNumBlocksOnLevel = m_dBlocksOnLevel[iLevel];
 	if ( iBlock>=iNumBlocksOnLevel )
@@ -180,18 +184,6 @@ bool MinMaxEval_T<ROWID_LIMITS>::FillMinMax ( int iLevel, int iBlock )
 	}
 
 	return true;
-}
-
-template <bool ROWID_LIMITS>
-uint32_t MinMaxEval_T<ROWID_LIMITS>::MinMaxBlockId2RowId ( int iBlockId ) const
-{
-	return iBlockId<<m_iMinMaxLeafShift;
-}
-
-template <bool ROWID_LIMITS>
-uint32_t MinMaxEval_T<ROWID_LIMITS>::MinMaxBlockId2RowId ( int iBlockId, int iLevel ) const
-{
-	return iBlockId << ( m_iNumLevels - iLevel - 1 + m_iMinMaxLeafShift );
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -402,6 +394,7 @@ public:
 
 	Iterator_i *						CreateIterator ( const std::string & sName, const IteratorHints_t & tHints, columnar::IteratorCapabilities_t * pCapabilities, std::string & sError ) const final;
 	std::vector<BlockIterator_i *>		CreateAnalyzerOrPrefilter ( const std::vector<Filter_t> & dFilters, std::vector<int> & dDeletedFilters, const BlockTester_i & tBlockTester ) const final;
+	int64_t								EstimateMinMax ( const Filter_t & tFilter, const BlockTester_i & tBlockTester ) const final;
 	bool								GetAttrInfo ( const std::string & sName, AttrInfo_t & tInfo ) const final;
 
 	bool								EarlyReject ( const std::vector<Filter_t> & dFilters, const BlockTester_i & tBlockTester ) const final;
@@ -417,6 +410,7 @@ private:
 	const AttributeHeader_i *			GetHeader ( const std::string & sName ) const;
 	bool								LoadHeaders ( FileReader_c & tReader, int iNumAttrs, std::string & sError );
 	FileReader_c *						CreateFileReader() const;
+	HeaderWithLocator_t					GetHeaderForMinMax ( const Filter_t & tFilter ) const;
 	std::vector<HeaderWithLocator_t>	GetHeadersForMinMax ( const std::vector<Filter_t> & dFilters ) const;
 
 	Analyzer_i *						CreateAnalyzer ( const Filter_t & tSettings, bool bHaveMatchingBlocks ) const;
@@ -552,21 +546,31 @@ Analyzer_i * Columnar_c::CreateAnalyzer ( const Filter_t & tSettings, bool bHave
 }
 
 
+HeaderWithLocator_t Columnar_c::GetHeaderForMinMax ( const Filter_t & tFilter ) const
+{
+	AttrInfo_t tAttrInfo;
+	if ( !GetAttrInfo ( tFilter.m_sName, tAttrInfo ) )
+		return { nullptr, 0 };
+
+	const AttributeHeader_i * pHeader = GetHeader ( tFilter.m_sName );
+	if ( !pHeader || !pHeader->GetNumMinMaxLevels() )
+		return { nullptr, 0 };
+	
+	return { pHeader, tAttrInfo.m_iId };
+}
+
+
 std::vector<HeaderWithLocator_t> Columnar_c::GetHeadersForMinMax ( const std::vector<Filter_t> & dFilters ) const
 {
 	int iBlocks=0;
 	std::vector<HeaderWithLocator_t> dHeaders;
 	for ( const auto & i : dFilters )
 	{
-		AttrInfo_t tAttrInfo;
-		if ( !GetAttrInfo ( i.m_sName, tAttrInfo ) )
+		HeaderWithLocator_t tHeader = GetHeaderForMinMax(i);
+		if ( !tHeader.first )
 			continue;
 
-		const AttributeHeader_i * pHeader = GetHeader ( i.m_sName );
-		if ( !pHeader || !pHeader->GetNumMinMaxLevels() )
-			continue;
-
-		dHeaders.push_back ( { pHeader, tAttrInfo.m_iId } );
+		dHeaders.push_back(tHeader);
 		iBlocks = dHeaders.back().first->GetNumBlocks();
 	}
 
@@ -621,12 +625,12 @@ std::vector<BlockIterator_i *> Columnar_c::CreateAnalyzerOrPrefilter ( const std
 	{
 		if ( pRowIdFilter )
 		{
-			MinMaxEval_T<true> tMinMaxEval ( dHeaders, tBlockTester, pMatchingBlocks, uMinRowID, uMaxRowID );
+			MinMaxEval_T<true,false> tMinMaxEval ( dHeaders, tBlockTester, pMatchingBlocks, uMinRowID, uMaxRowID );
 			tMinMaxEval.Eval();
 		}
 		else
 		{
-			MinMaxEval_T<false> tMinMaxEval ( dHeaders, tBlockTester, pMatchingBlocks, uMinRowID, uMaxRowID );
+			MinMaxEval_T<false,false> tMinMaxEval ( dHeaders, tBlockTester, pMatchingBlocks, uMinRowID, uMaxRowID );
 			tMinMaxEval.Eval();
 		}
 
@@ -651,6 +655,35 @@ std::vector<BlockIterator_i *> Columnar_c::CreateAnalyzerOrPrefilter ( const std
 }
 
 
+int64_t Columnar_c::EstimateMinMax ( const Filter_t & tFilter, const BlockTester_i & tBlockTester ) const
+{
+	HeaderWithLocator_t tHeader = GetHeaderForMinMax(tFilter);
+	if ( !tHeader.first )
+		return -1;
+
+	std::vector<HeaderWithLocator_t> dHeaders;
+	dHeaders.push_back(tHeader);
+
+	int iNumLevels = tHeader.first->GetNumMinMaxLevels();
+	int iStopAtLevel = std::max ( 0, iNumLevels-1 );
+	int iReducedSubblockSize = tHeader.first->GetSettings().m_iSubblockSize;
+
+	const int MIN_REDUCE_LEVELS = 8;
+	const int REDUCE_STEP = 2;
+	if ( iNumLevels>=MIN_REDUCE_LEVELS )
+	{
+		iStopAtLevel -= REDUCE_STEP;
+		iReducedSubblockSize <<= REDUCE_STEP;
+	}
+
+	SharedBlocks_c pShared(nullptr);
+	MinMaxEval_T<false,true> tMinMaxEval ( dHeaders, tBlockTester, pShared, 0, INVALID_ROW_ID, iStopAtLevel );
+	tMinMaxEval.Eval();
+	
+	return int64_t(tMinMaxEval.GetNumMatchedBlocks())*iReducedSubblockSize;
+}
+
+
 bool Columnar_c::GetAttrInfo ( const std::string & sName, AttrInfo_t & tInfo ) const
 {
 	const auto & tFound = m_hHeaders.find(sName);
@@ -661,8 +694,8 @@ bool Columnar_c::GetAttrInfo ( const std::string & sName, AttrInfo_t & tInfo ) c
 	tInfo.m_eType = tFound->second.first->GetType();
 
 	const auto & tHashFound = m_hHeaders.find ( GenerateHashAttrName(sName) );
-	tInfo.m_bHasHash = tHashFound!=m_hHeaders.end();
-	tInfo.m_fComplexity = tInfo.m_bHasHash ? tHashFound->second.first->GetComplexity() : tFound->second.first->GetComplexity();
+	bool bHasHash = tHashFound!=m_hHeaders.end();
+	tInfo.m_fComplexity = bHasHash ? tHashFound->second.first->GetComplexity() : tFound->second.first->GetComplexity();
 
 	return true;
 }
@@ -675,7 +708,7 @@ bool Columnar_c::EarlyReject ( const std::vector<Filter_t> & dFilters, const Blo
 		return false;
 
 	SharedBlocks_c pShared(nullptr);
-	MinMaxEval_T<false> tMinMaxEval ( dHeaders, tBlockTester, pShared, 0, INVALID_ROW_ID );
+	MinMaxEval_T<false,true> tMinMaxEval ( dHeaders, tBlockTester, pShared, 0, INVALID_ROW_ID );
 	return !tMinMaxEval.EvalAll();
 }
 
