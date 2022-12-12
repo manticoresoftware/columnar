@@ -270,7 +270,7 @@ float AttributeHeader_c::CalcIntComplexity() const
 	static const float dPackingComplexity[] =
 	{
 		0.0f,	// CONST
-		0.5f,	// TABLE
+		0.4f,	// TABLE
 		1.0f,	// DELTA
 		1.0f,	// GENERIC
 		1.0f	// HASH
