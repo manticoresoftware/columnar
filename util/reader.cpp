@@ -334,6 +334,20 @@ int64_t GetFileSize ( int iFD, std::string * sError )
 	return st.st_size;
 }
 
+bool IsFileExists ( const std::string & sName )
+{
+	struct_stat st = {0};
+	if( stat( sName.c_str(), &st ) != 0 )
+	{
+		return false;
+	} else if ( st.st_mode & S_IFDIR )
+	{
+		return false;
+	}
+
+	return true;
+}
+
 class MappedBuffer_c : public MappedBuffer_i
 {
 public:

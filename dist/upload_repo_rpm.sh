@@ -33,7 +33,25 @@ for f in build/*.rpm; do
       fi
     fi
 
-    ~/sign_rpm.sh $GPG_SECRET $f
+
+    if [[ ! $ARCH == "none" ]]; then
+      FILENAME=$(basename "$f")
+      cp $f /work/repomanager/docker/rpm_signer/data/$DISTRO/$ARCH/$FILENAME
+
+      /usr/bin/docker exec rpm_signer /worker.sh $DISTRO $ARCH
+      if [[ ! $? -eq 0 ]]; then
+        echo "Error signing $FILENAME"
+        exit 1
+      fi
+
+      mv /work/repomanager/docker/rpm_signer/data/$DISTRO/$ARCH/$FILENAME $f
+
+      SIGNATURE=$(rpm -qpi $f 2>/dev/null | grep Signature)
+      if [[ $(echo $SIGNATURE | grep "(none)") ]]; then
+        echo "Error $FILENAME was not signed"
+        exit 1
+      fi
+    fi
 
     if [[ $ARCH == "x86_64" ]]; then
       copy_to $f x86_64/

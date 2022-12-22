@@ -74,6 +74,7 @@ public:
 	virtual void	Done() = 0;
 
 	virtual SIWriter_i * GetWriter ( std::string & sError ) = 0;
+	virtual std::string GetFilename() const = 0;
 };
 
 template<typename VALUE>
@@ -171,6 +172,10 @@ struct RawWriter_T : public RawWriter_i
 	void	SetAttr ( uint32_t tRowID, const int64_t * pData, int iLength ) final;
 
 	SIWriter_i * GetWriter ( std::string & sError ) final;
+	std::string GetFilename() const final
+	{
+		return m_tFile.GetFilename();
+	}
 
 private:
 	Settings_t	m_tSettings;
@@ -604,6 +609,21 @@ bool SIWriter_T<SRC_VALUE, DST_VALUE>::Process ( FileWriter_c & tDstFile, FileWr
 
 /////////////////////////////////////////////////////////////////////
 
+struct ScopedFilesRemoval_t
+{
+	~ScopedFilesRemoval_t()
+	{
+		for ( const std::string & sFile : m_dFiles )
+		{
+			if ( IsFileExists ( sFile ))
+				::unlink ( sFile.c_str() );
+		}
+	}
+	std::vector<std::string> m_dFiles;
+};
+
+/////////////////////////////////////////////////////////////////////
+
 class Builder_c final : public Builder_i
 {
 public:
@@ -624,6 +644,7 @@ private:
 	std::vector<std::shared_ptr<SIWriter_i>>	m_dCidWriter;
 
 	std::vector<ColumnInfo_t>					m_dAttrs;
+	ScopedFilesRemoval_t						m_tCleanup;
 
 	void Flush();
 	bool WriteMeta ( const std::string & sPgmName, const std::string & sBlocksName, const std::vector<uint64_t> & dBlocksOffStart, const std::vector<uint64_t> & dBlocksCount, uint64_t uMetaOff, std::string & sError ) const;
@@ -688,8 +709,13 @@ bool Builder_c::Setup ( const Settings_t & tSettings, const Schema_t & tSchema, 
 	m_iMaxRows = std::max ( 1000, iMemoryLimit / 3 / iRowSize );
 
 	for ( auto & pWriter : m_dRawWriter )
-		if ( pWriter )
-			pWriter->SetItemsCount ( m_iMaxRows );
+	{
+		if ( !pWriter )
+			continue;
+
+		pWriter->SetItemsCount ( m_iMaxRows );
+		m_tCleanup.m_dFiles.push_back ( pWriter->GetFilename() );
+	}
 
 	return true;
 }

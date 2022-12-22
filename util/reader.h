@@ -150,6 +150,7 @@ void ReadVectorData ( VEC & dData, FileReader_c & tReader )
 }
 
 int64_t GetFileSize ( int iFD, std::string * sError );
+bool IsFileExists ( const std::string & sName );
 
 class MappedBuffer_i
 {
