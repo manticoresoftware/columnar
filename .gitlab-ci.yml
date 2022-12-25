@@ -80,7 +80,7 @@ job_mirror:
   needs: [ ]
   tags:
     - specdocker
-  image: registry.gitlab.com/manticoresearch/dev/ubertests_public:320
+  image: registry.gitlab.com/manticoresearch/dev/ubertests_public:3201
   variables:
     CACHEB: $CI_PROJECT_DIR/cache
     NO_BUILD: 1
@@ -213,7 +213,7 @@ convert_win_junit:
       when: always
   tags:
     - docker
-  image: registry.gitlab.com/manticoresearch/dev/ubertests_public:320
+  image: registry.gitlab.com/manticoresearch/dev/ubertests_public:3201
   needs:
     - win_tests
   variables:
