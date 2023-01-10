@@ -266,6 +266,9 @@ int64_t SecondaryIndex_c::GetValsRows ( std::vector<BlockIterator_i *> * pIterat
 	int iCol = GetColumnId ( tFilter.m_sName );
 	assert ( iCol>=0 );
 
+	if ( m_dIdx[iCol]->IsEmpty() )
+		return 0;
+
 	const auto & tCol = m_dAttrs[iCol];
 	
  	// m_dBlockStartOff is 0based need to set to start of offsets vector
@@ -300,6 +303,9 @@ int64_t SecondaryIndex_c::GetRangeRows ( std::vector<BlockIterator_i *> * pItera
 {
 	int iCol = GetColumnId ( tFilter.m_sName );
 	assert ( iCol>=0 );
+
+	if ( m_dIdx[iCol]->IsEmpty() )
+		return 0;
 
 	const auto & tCol = m_dAttrs[iCol];
 
