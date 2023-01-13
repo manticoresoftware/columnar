@@ -869,7 +869,7 @@ public:
 					Analyzer_INT_T ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings );
 
 	bool			GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBlock ) final;
-	void			AddDesc ( std::vector<IteratorDesc_t> & dDesc ) const final { dDesc.push_back ( { ACCESSOR::m_tHeader.GetName(), "analyzer" } ); }
+	void			AddDesc ( std::vector<IteratorDesc_t> & dDesc ) const final { dDesc.push_back ( { ACCESSOR::m_tHeader.GetName(), "ColumnarScan" } ); }
 
 private:
 	AnalyzerBlock_Int_Const_c	m_tBlockConst;

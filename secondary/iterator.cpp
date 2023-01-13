@@ -36,7 +36,7 @@ public:
 	bool		GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBlock ) override;
 	int64_t		GetNumProcessed() const override { return 0; }
 
-	void		AddDesc ( std::vector<IteratorDesc_t> & dDesc ) const override { dDesc.push_back ( { m_sAttr, "secondary" } ); }
+	void		AddDesc ( std::vector<IteratorDesc_t> & dDesc ) const override { dDesc.push_back ( { m_sAttr, "SecondaryIndex" } ); }
 
 	void		SetCutoff ( int iCutoff ) override {}
 	bool		WasCutoffHit() const override { return false; }
