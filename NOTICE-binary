@@ -1,0 +1,50 @@
+Copyright 2017-2023 Manticore Software, Ltd.
+
+-------------------------------------------------------------------------------
+The binary distribution of this product bundles binaries of
+FastPFor https://github.com/lemire/FastPFor, which contains file AUTHORS.txt with the following list of names:
+
+1. Daniel Lemire
+2. Leonid Boytsov
+3. Owen Kaser
+4. Maxime Caron
+5. Louis Dionne
+6. Michel Lemay
+7. Erik Kruus
+8. Andrea Bedini
+9. Matthias Petri
+10. Robson Braga Araujo
+11. Patrick Damme
+12. Xiening Dai
+13. Pavel Pavlov
+
+-------------------------------------------------------------------------------
+The binary distribution of this product bundles binaries of PGM index https://github.com/manticoresoftware/PGM-index,
+which has the following notices:
+
+If you use the library please put a link to the website (https://pgm.di.unipi.it/ ) and cite the following paper:
+
+Paolo Ferragina and Giorgio Vinciguerra. The PGM-index: a fully-dynamic compressed learned index with provable worst-case bounds. PVLDB, 13(8): 1162-1175, 2020.
+
+@article{Ferragina:2020pgm,
+  Author = {Paolo Ferragina and Giorgio Vinciguerra},
+  Title = {The {PGM-index}: a fully-dynamic compressed learned index with provable worst-case bounds},
+  Year = {2020},
+  Volume = {13},
+  Number = {8},
+  Pages = {1162--1175},
+  Doi = {10.14778/3389133.3389135},
+  Url = {https://pgm.di.unipi.it},
+  Issn = {2150-8097},
+  Journal = {{PVLDB}}}
+  
+  Doi = {10.14778/3389133.3389135},
+  Url = {https://pgm.di.unipi.it},
+  Issn = {2150-8097},
+  Journal = {{PVLDB}}}`
+-------------------------------------------------------------------------------
+The binary distribution of this product bundles binaries of simde
+https://github.com/simd-everywhere/simde, which has the
+following notices:
+
+Copyright (c) 2017 Evan Nemerson <evan@nemerson.com>
