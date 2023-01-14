@@ -481,7 +481,7 @@ class AnalyzerBlock_Int_Const_c : public AnalyzerBlock_c
 public:
 	template<typename T, typename RANGE_EVAL>
 	FORCE_INLINE bool	SetupNextBlock ( const StoredBlock_Int_Const_T<T> & tBlock, bool bEq );
-	FORCE_INLINE int	ProcessSubblock ( uint32_t * & pRowID, int iNumValues );
+	FORCE_INLINE int	ProcessSubblock ( uint32_t * & pRowID, int iNumValues ) { return FillWithIncreasingValues ( pRowID, iNumValues, m_tRowID ); }
 };
 
 
@@ -525,19 +525,6 @@ bool AnalyzerBlock_Int_Const_c::SetupNextBlock ( const StoredBlock_Int_Const_T<T
 	return false;
 }
 
-
-int AnalyzerBlock_Int_Const_c::ProcessSubblock ( uint32_t * & pRowID, int iNumValues )
-{
-	uint32_t tRowID = m_tRowID;
-
-	// FIXME! use SSE here
-	for ( int i = 0; i < iNumValues; i++ )
-		*pRowID++ = tRowID++;
-
-	m_tRowID = tRowID;
-	return iNumValues;
-}
-
 //////////////////////////////////////////////////////////////////////////
 
 class AnalyzerBlock_Int_Table_c : public AnalyzerBlock_c
@@ -564,15 +551,8 @@ int AnalyzerBlock_Int_Table_c::ProcessSubblock_SingleValue ( uint32_t * & pRowID
 {
 	uint32_t tRowID = m_tRowID;
 
-	// FIXME! use SSE here
 	if ( !EQ && m_iTableValueId==-1 ) // accept all values
-	{
-		uint32_t * pRowIDMax = pRowID + dValueIndexes.size();
-		while ( pRowID < pRowIDMax )
-			*pRowID++ = tRowID++;
-
-		return (int)dValueIndexes.size();
-	}
+		return FillWithIncreasingValues ( pRowID, dValueIndexes.size(), tRowID );
 
 	assert ( m_iTableValueId>=0 );
 
@@ -593,15 +573,8 @@ int AnalyzerBlock_Int_Table_c::ProcessSubblock_ValuesLinear ( uint32_t * & pRowI
 {
 	uint32_t tRowID = m_tRowID;
 
-	// FIXME! use SSE here
 	if ( !EQ && m_dTableValues.empty() ) // accept all values
-	{
-		uint32_t * pRowIDMax = pRowID + dValueIndexes.size();
-		while ( pRowID < pRowIDMax )
-			*pRowID++ = tRowID++;
-
-		return (int)dValueIndexes.size();
-	}
+		return FillWithIncreasingValues ( pRowID, (uint32_t)dValueIndexes.size(), tRowID );
 
 	for ( auto i : dValueIndexes )
 	{
@@ -640,15 +613,8 @@ int AnalyzerBlock_Int_Table_c::ProcessSubblock_ValuesBinary ( uint32_t * & pRowI
 {
 	uint32_t tRowID = m_tRowID;
 
-	// FIXME! use SSE here
 	if ( !EQ && m_dTableValues.empty() ) // accept all values
-	{
-		uint32_t * pRowIDMax = pRowID + dValueIndexes.size();
-		while ( pRowID < pRowIDMax )
-			*pRowID++ = tRowID++;
-
-		return (int)dValueIndexes.size();
-	}
+		return FillWithIncreasingValues ( pRowID, dValueIndexes.size(), tRowID );
 
 	for ( auto i : dValueIndexes )
 	{
@@ -765,7 +731,6 @@ int AnalyzerBlock_Int_Values_T<VALUES,ACCESSOR_VALUES>::ProcessSubblock_SingleVa
 {
 	uint32_t tRowID = m_tRowID;
 
-	// FIXME! use SSE here
 	for ( auto & i : dValues )
 	{
 		if ( ( i==(ACCESSOR_VALUES)m_tValue ) ^ (!EQ) )
@@ -784,7 +749,6 @@ int AnalyzerBlock_Int_Values_T<VALUES,ACCESSOR_VALUES>::ProcessSubblock_ValuesLi
 {
 	uint32_t tRowID = m_tRowID;
 
-	// FIXME! use SSE here
 	for ( auto i : dValues )
 	{
 		for ( auto j : m_dValues )

@@ -682,7 +682,7 @@ class AnalyzerBlock_MVA_Const_c : public AnalyzerBlock_MVA_c
 public:
 	template<typename T, typename T_COMP, typename FUNC>
 	FORCE_INLINE bool	SetupNextBlock ( const StoredBlock_MvaConst_T<T> & tBlock );
-	FORCE_INLINE int	ProcessSubblock ( uint32_t * & pRowID, int iNumValues );
+	FORCE_INLINE int	ProcessSubblock ( uint32_t * & pRowID, int iNumValues ) { return FillWithIncreasingValues ( pRowID, iNumValues, m_tRowID ); }
 };
 
 template<typename T, typename T_COMP, typename FUNC>
@@ -711,19 +711,6 @@ bool AnalyzerBlock_MVA_Const_c::SetupNextBlock ( const StoredBlock_MvaConst_T<T>
 	}
 
 	return false;
-}
-
-
-int AnalyzerBlock_MVA_Const_c::ProcessSubblock ( uint32_t * & pRowID, int iNumValues )
-{
-	uint32_t tRowID = m_tRowID;
-
-	// FIXME! use SSE here
-	for ( int i = 0; i < iNumValues; i++ )
-		*pRowID++ = tRowID++;
-
-	m_tRowID = tRowID;
-	return iNumValues;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -823,7 +810,6 @@ int AnalyzerBlock_MVA_Values_c::ProcessSubblock_SingleValue ( uint32_t * & pRowI
 {
 	uint32_t tRowID = m_tRowID;
 
-	// FIXME! use SSE here
 	for ( const auto & i : dValues )
 	{
 		if ( FUNC::Test ( Span_T<T_COMP> ( (T_COMP*)i.data(), i.size() ), m_iValue ) )
@@ -841,7 +827,6 @@ int AnalyzerBlock_MVA_Values_c::ProcessSubblock_Values ( uint32_t * & pRowID, co
 {
 	uint32_t tRowID = m_tRowID;
 
-	// FIXME! use SSE here
 	for ( const auto & i : dValues )
 	{
 		if ( FUNC::Test ( Span_T<T_COMP> ( (T_COMP*)i.data(), i.size() ), m_dValues ) )
@@ -859,7 +844,6 @@ int AnalyzerBlock_MVA_Values_c::ProcessSubblock_Range ( uint32_t * & pRowID, con
 {
 	uint32_t tRowID = m_tRowID;
 
-	// FIXME! use SSE here
 	for ( const auto & i : dValues )
 	{
 		if ( FUNC::Test ( Span_T<T_COMP> ( (T_COMP*)i.data(), i.size() ), m_iMinValue, m_iMaxValue ) )

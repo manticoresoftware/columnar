@@ -632,7 +632,7 @@ class AnalyzerBlock_Str_Const_T : public AnalyzerBlock_Str_T<EQ>
 
 public:
 	FORCE_INLINE bool	SetupNextBlock ( StoredBlock_StrConst_c & tBlock );
-	FORCE_INLINE int	ProcessSubblock ( uint32_t * & pRowID, int iNumValues );
+	FORCE_INLINE int	ProcessSubblock ( uint32_t * & pRowID, int iNumValues ) { return FillWithIncreasingValues ( pRowID, iNumValues, BASE::m_tRowID ); }
 };
 
 template <bool EQ>
@@ -640,19 +640,6 @@ bool AnalyzerBlock_Str_Const_T<EQ>::SetupNextBlock ( StoredBlock_StrConst_c & tB
 {
 	assert ( BASE::m_eType==FilterType_e::STRINGS );
 	return BASE::template CompareStrings<false> ( 0, tBlock.GetValueLength(), [&tBlock](int){ return tBlock.GetValue<false>(); } );
-}
-
-template <bool EQ>
-int AnalyzerBlock_Str_Const_T<EQ>::ProcessSubblock ( uint32_t * & pRowID, int iNumValues )
-{
-	uint32_t tRowID = BASE::m_tRowID;
-
-	// FIXME! use SSE here
-	for ( int i = 0; i < iNumValues; i++ )
-		*pRowID++ = tRowID++;
-
-	BASE::m_tRowID = tRowID;
-	return iNumValues;
 }
 
 //////////////////////////////////////////////////////////////////////////

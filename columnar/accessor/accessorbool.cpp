@@ -240,7 +240,7 @@ public:
 						AnalyzerBlock_Bool_Const_c ( uint32_t & tRowID ) : m_tRowID ( tRowID ) {}
 
 	FORCE_INLINE bool	SetupNextBlock ( const StoredBlock_Bool_Const_c & tBlock );
-	FORCE_INLINE int	ProcessSubblock ( uint32_t * & pRowID, int iNumValues );
+	FORCE_INLINE int	ProcessSubblock ( uint32_t * & pRowID, int iNumValues ) { return FillWithIncreasingValues ( pRowID, iNumValues, m_tRowID ); }
 	void				Setup ( bool bFilterValue ) { m_bFilterValue=bFilterValue; }
 
 private:
@@ -253,19 +253,6 @@ bool AnalyzerBlock_Bool_Const_c::SetupNextBlock ( const StoredBlock_Bool_Const_c
 {
 	int64_t tValue = tBlock.GetValue();
 	return m_bFilterValue==!!tValue;
-}
-
-
-int AnalyzerBlock_Bool_Const_c::ProcessSubblock ( uint32_t * & pRowID, int iNumValues )
-{
-	uint32_t tRowID = m_tRowID;
-
-	// FIXME! use SSE here
-	for ( int i = 0; i < iNumValues; i++ )
-		*pRowID++ = tRowID++;
-
-	m_tRowID = tRowID;
-	return iNumValues;
 }
 
 //////////////////////////////////////////////////////////////////////////
