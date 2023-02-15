@@ -5,7 +5,7 @@
 </p>
 
 <h1 align="center">
-  Manticore Columnar Library 1.15.4
+  Manticore Columnar Library
 </h1>
 
 Manticore Columnar Library is a column-oriented storage and secondary indexing library, aiming to provide **decent performance with low memory footprint at big data volume**.
@@ -17,30 +17,36 @@ When used in combination with [Manticore Search](https://github.com/manticoresof
 
 ## Getting started
 
+### Requirements
+
+1. CPU: with SSE >= 4.2
+2. Architecture: arm64 or x86_64 
+3. OS: Debian-based OS (Debian, Ubuntu, Mint), RHEL-based (RHEL, Centos, Alma, Oracle Linux, Amazon Linux) OS, Windows, MacOS
+
 ### Installation from yum/apt repositories
 #### Ubuntu, Debian:
 ```bash
 wget https://repo.manticoresearch.com/manticore-repo.noarch.deb
 sudo dpkg -i manticore-repo.noarch.deb
 sudo apt update
-sudo apt install manticore manticore-columnar-lib
+sudo apt install manticore-columnar-lib
 ```
 
 #### Centos:
 ```bash
 sudo yum install https://repo.manticoresearch.com/manticore-repo.noarch.rpm
-sudo yum install manticore manticore-columnar-lib
+sudo yum install manticore-columnar-lib
 ```
 
 `searchd -v` should include `columnar x.y.z`, e.g.:
 ```bash
 root@srv# searchd -v
-Manticore 4.0.2 af497f245@210921 release (columnar 1.11.2 69d3780@210921)
+Manticore 6.0.2 89c7a5139@230210 (columnar 2.0.0 a7c703d@230130) (secondary 2.0.0 a7c703d@230130)
 ```
 
 ### Basic usage:
-1. Read https://manual.manticoresearch.com/Creating_an_index/Data_types#How-to-switch-between-the-storages
-2. Create plain or real-time index specifying that the columnar storage should be used
+1. Read https://manual.manticoresearch.com/Creating_a_table/Data_types#Row-wise-and-columnar-attribute-storages
+2. Create plain or real-time table specifying that the columnar storage should be used
 
 ## Benchmarks
 
