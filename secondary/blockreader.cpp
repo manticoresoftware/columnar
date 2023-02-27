@@ -46,9 +46,9 @@ BlockIter_t::BlockIter_t ( const ApproxPos_t & tFrom, uint64_t uVal, uint64_t uB
 	m_iLast = GetValueBlock ( tFrom.m_iHi, iValuesPerBlock );
 
 	if ( m_iStart+m_iPos>=uBlocksCount )
-		m_iPos = uBlocksCount - 1 - m_iStart;
+		m_iPos = 0;
 	if ( m_iLast>=uBlocksCount )
-		m_iLast = uBlocksCount - m_iStart;
+		m_iLast = uBlocksCount - 1;
 }
 
 struct FindValueResult_t
