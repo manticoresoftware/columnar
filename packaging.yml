@@ -67,7 +67,7 @@ workflow:
     - if: $CI_MERGE_REQUEST_ID
       when: manual
       allow_failure: true
-    - if: $CI_COMMIT_BRANCH =~ /^manticore-.*$/
+    - if: $CI_COMMIT_BRANCH =~ /^columnar-.*$/
       when: manual
     - if: $CI_COMMIT_BRANCH == "master"
       when: on_success
