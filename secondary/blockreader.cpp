@@ -513,7 +513,7 @@ BlockIterator_i * BlockReader_c::CreateIterator ( int iItem )
 
 /////////////////////////////////////////////////////////////////////
 
-template<typename VALUE, bool FLOAT_VALUE>
+template<typename VALUE, typename STORED_VALUE>
 class BlockReader_T : public BlockReader_c
 {
 public:
@@ -528,20 +528,20 @@ private:
 	void	AddIterator ( int iValCur, bool bLoad, std::vector<BlockIterator_i *> & dRes, BitmapIterator_i * pBitmapIterator );
 };
 
-template<typename VALUE, bool FLOAT_VALUE>
-BlockReader_T<VALUE, FLOAT_VALUE>::BlockReader_T ( int iFD, const std::string & sAttr, std::shared_ptr<IntCodec_i> & pCodec, uint64_t uBlockBaseOff, const RowidRange_t * pBounds, const RsetInfo_t & tInfo, int iCutoff )
+template<typename VALUE, typename STORED_VALUE>
+BlockReader_T<VALUE, STORED_VALUE>::BlockReader_T ( int iFD, const std::string & sAttr, std::shared_ptr<IntCodec_i> & pCodec, uint64_t uBlockBaseOff, const RowidRange_t * pBounds, const RsetInfo_t & tInfo, int iCutoff )
 	: BlockReader_c ( iFD, sAttr, pCodec, uBlockBaseOff, pBounds, tInfo, iCutoff )
 {}
 
-template<typename VALUE, bool FLOAT_VALUE>
-void BlockReader_T<VALUE, FLOAT_VALUE>::LoadValues()
+template<typename VALUE, typename STORED_VALUE>
+void BlockReader_T<VALUE, STORED_VALUE>::LoadValues()
 {
 	DecodeBlock ( m_dValues, m_pCodec.get(), m_dBufTmp, *m_pFileReader.get() );
 	m_iOffPastValues = m_pFileReader->GetPos();
 }
 
 template<>
-FindValueResult_t BlockReader_T<uint32_t, false>::FindValue ( uint64_t uRefVal ) const
+FindValueResult_t BlockReader_T<uint32_t, uint32_t>::FindValue ( uint64_t uRefVal ) const
 {
 	uint32_t uVal = uRefVal;
 	int iItem = binary_search_idx ( m_dValues, uVal );
@@ -555,7 +555,7 @@ FindValueResult_t BlockReader_T<uint32_t, false>::FindValue ( uint64_t uRefVal )
 }
 
 template<>
-FindValueResult_t BlockReader_T<uint64_t, false>::FindValue ( uint64_t uRefVal ) const
+FindValueResult_t BlockReader_T<uint64_t, int64_t>::FindValue ( uint64_t uRefVal ) const
 {
 	const auto tFirst = m_dValues.begin();
 	const auto tLast = m_dValues.end();
@@ -570,7 +570,22 @@ FindValueResult_t BlockReader_T<uint64_t, false>::FindValue ( uint64_t uRefVal )
 }
 
 template<>
-FindValueResult_t BlockReader_T<uint32_t, true>::FindValue ( uint64_t uRefVal ) const
+FindValueResult_t BlockReader_T<uint64_t, uint64_t>::FindValue ( uint64_t uRefVal ) const
+{
+	const auto tFirst = m_dValues.begin();
+	const auto tLast = m_dValues.end();
+	auto tFound = std::lower_bound ( tFirst, tLast, uRefVal );
+	if ( tFound!=tLast && *tFound==uRefVal )
+		return FindValueResult_t { (int)( tFound-tFirst ), 0 };
+
+	if ( !m_dValues.size() || ( m_dValues.size() && m_dValues.front()<=uRefVal && uRefVal<=m_dValues.back() ) )
+		return FindValueResult_t { -1, 0 };
+
+	return FindValueResult_t { -1, m_dValues.back()<uRefVal ? 1 : -1 };
+}
+
+template<>
+FindValueResult_t BlockReader_T<uint32_t, float>::FindValue ( uint64_t uRefVal ) const
 {
 	float fVal = UintToFloat ( uRefVal );
 	const auto tFirst = m_dValues.begin();
@@ -599,17 +614,20 @@ BlockReader_i * CreateBlockReader ( int iFD, const ColumnInfo_t & tCol, const Se
 		case AttrType_e::TIMESTAMP:
 		case AttrType_e::UINT32SET:
 		case AttrType_e::BOOLEAN:
-			return new BlockReader_T<uint32_t, false> ( iFD, tCol.m_sName, pCodec, uBlockBaseOff, pBounds, tInfo, iCutoff );
+			return new BlockReader_T<uint32_t, uint32_t> ( iFD, tCol.m_sName, pCodec, uBlockBaseOff, pBounds, tInfo, iCutoff );
 			break;
 
 		case AttrType_e::FLOAT:
-			return new BlockReader_T<uint32_t, true> ( iFD, tCol.m_sName, pCodec, uBlockBaseOff, pBounds, tInfo, iCutoff );
+			return new BlockReader_T<uint32_t, float> ( iFD, tCol.m_sName, pCodec, uBlockBaseOff, pBounds, tInfo, iCutoff );
 			break;
 
 		case AttrType_e::STRING:
+			return new BlockReader_T<uint64_t, uint64_t> ( iFD, tCol.m_sName, pCodec, uBlockBaseOff, pBounds, tInfo, iCutoff );
+			break;
+
 		case AttrType_e::INT64:
 		case AttrType_e::INT64SET:
-			return new BlockReader_T<uint64_t, false> ( iFD, tCol.m_sName, pCodec, uBlockBaseOff, pBounds, tInfo, iCutoff );
+			return new BlockReader_T<uint64_t, int64_t> ( iFD, tCol.m_sName, pCodec, uBlockBaseOff, pBounds, tInfo, iCutoff );
 			break;
 
 		default: return nullptr;
