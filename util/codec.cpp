@@ -105,7 +105,7 @@ bool IntCodec_c::Decode ( const util::Span_T<uint32_t> & dCompressed, util::Span
 template <typename T>
 void IntCodec_c::Encode ( const util::Span_T<T> & dUncompressed, std::vector<uint32_t> & dCompressed, FastPForLib::IntegerCODEC & tCodec )
 {
-	const size_t EXTRA_GAP = 1024;
+	const size_t EXTRA_GAP = 4096;
 	dCompressed.resize ( dUncompressed.size() + EXTRA_GAP );
 	size_t uCompressedSize = dCompressed.size();
 	tCodec.encodeArray ( dUncompressed.data(), dUncompressed.size(), dCompressed.data(), uCompressedSize );
