@@ -309,6 +309,9 @@ int64_t SecondaryIndex_c::GetValsRows ( std::vector<BlockIterator_i *> * pIterat
 	if ( !PrepareBlocksValues ( tFilter, dBlocksIt, uBlockBaseOff, pIterators ? nullptr : &iNumIterators ) )
 		return 0;
 
+	if ( !pIterators )
+		return iNumIterators;
+
 	RsetInfo_t tRsetInfo { iNumIterators, uMaxValues, iRsetSize };
 	const auto & tCol = m_dAttrs[GetColumnId ( tFilter.m_sName )];
 	std::unique_ptr<BlockReader_i> pBlockReader { CreateBlockReader ( m_tReader.GetFD(), tCol, m_tSettings, m_uVersion, uBlockBaseOff, pBounds, tRsetInfo, iCutoff ) } ;
@@ -390,6 +393,9 @@ int64_t SecondaryIndex_c::GetRangeRows ( std::vector<BlockIterator_i *> * pItera
 	uint64_t uBlocksCount = 0;
 	if ( !PrepareBlocksRange ( tFilter, tPos, uBlockBaseOff, uBlocksCount, pIterators ? nullptr : &iNumIterators ) )
 		return 0;
+
+	if ( !pIterators )
+		return iNumIterators;
 
 	BlockIter_t tPosIt ( tPos, 0, uBlocksCount, m_iValuesPerBlock );
 	RsetInfo_t tRsetInfo { iNumIterators, uMaxValues, iRsetSize };

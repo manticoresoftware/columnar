@@ -938,7 +938,7 @@ BlockIterator_i * RangeReader_c::CreateIterator ( int iItem, bool bLoad, bool bB
 uint32_t RangeReader_c::CountValues ( int iItem, bool bLoad )
 {
 	if ( bLoad )
-		LoadValueBlockData ( false, *m_pBlockReader.get() );
+		LoadValueBlockData ( true, *m_pBlockReader.get() );
 
 	return m_dCount[iItem];
 }
