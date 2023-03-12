@@ -100,8 +100,8 @@ private:
 	int64_t		GetRangeRows ( std::vector<BlockIterator_i *> * pIterators, const Filter_t & tFilter, const RowidRange_t * pBounds, uint32_t uMaxValues, int64_t iRsetSize, int iCutof ) const;
 	uint32_t	CalcValsRows ( const Filter_t & tFilter ) const;
 	uint32_t	CalcRangeRows ( const Filter_t & tFilter ) const;
-	bool		PrepareBlocksValues ( const Filter_t & tFilter, std::vector<BlockIter_t> & dBlocksIt, uint64_t & uBlockBaseOff, int64_t * pNumIterators ) const;
-	bool		PrepareBlocksRange ( const Filter_t & tFilter, ApproxPos_t & tPos, uint64_t & uBlockBaseOff, uint64_t & uBlocksCount, int64_t * pNumIterators ) const;
+	bool		PrepareBlocksValues ( const Filter_t & tFilter, std::vector<BlockIter_t> * pBlocksIt, uint64_t & uBlockBaseOff, int64_t & iNumIterators ) const;
+	bool		PrepareBlocksRange ( const Filter_t & tFilter, ApproxPos_t & tPos, uint64_t & uBlockBaseOff, uint64_t & uBlocksCount, int64_t & iNumIterators ) const;
 	int			GetColumnId ( const std::string & sName ) const;
 	const ColumnInfo_t * GetAttr ( const Filter_t & tFilter, std::string & sError ) const;
 };
@@ -267,10 +267,9 @@ void SecondaryIndex_c::ColumnUpdated ( const char * sName )
 }
 
 
-bool SecondaryIndex_c::PrepareBlocksValues ( const Filter_t & tFilter, std::vector<BlockIter_t> & dBlocksIt, uint64_t & uBlockBaseOff, int64_t * pNumIterators ) const
+bool SecondaryIndex_c::PrepareBlocksValues ( const Filter_t & tFilter, std::vector<BlockIter_t> * pBlocksIt, uint64_t & uBlockBaseOff, int64_t & iNumIterators ) const
 {
-	if ( pNumIterators )
-		*pNumIterators = 0;
+	iNumIterators = 0;
 
 	int iCol = GetColumnId ( tFilter.m_sName );
 	assert ( iCol>=0 );
@@ -285,17 +284,14 @@ bool SecondaryIndex_c::PrepareBlocksValues ( const Filter_t & tFilter, std::vect
 	for ( const uint64_t uVal : tFilter.m_dValues )
 	{
 		ApproxPos_t tPos = m_dIdx[iCol]->Search(uVal);
-		if ( pNumIterators )
-			*pNumIterators += tPos.m_iHi-tPos.m_iLo;
-		else
-			dBlocksIt.emplace_back ( BlockIter_t ( tPos, uVal, uBlocksCount, m_iValuesPerBlock ) );
+		iNumIterators += tPos.m_iHi-tPos.m_iLo;
+		if ( pBlocksIt )
+			pBlocksIt->emplace_back ( BlockIter_t ( tPos, uVal, uBlocksCount, m_iValuesPerBlock ) );
 	}
 
-	if ( pNumIterators )
-		return true;
-
 	// sort by block start offset
-	std::sort ( dBlocksIt.begin(), dBlocksIt.end(), [] ( const BlockIter_t & tA, const BlockIter_t & tB ) { return tA.m_iStart<tB.m_iStart; } );
+	if ( pBlocksIt )
+		std::sort ( pBlocksIt->begin(), pBlocksIt->end(), [] ( const BlockIter_t & tA, const BlockIter_t & tB ) { return tA.m_iStart<tB.m_iStart; } );
 
 	return true;
 }
@@ -306,7 +302,7 @@ int64_t SecondaryIndex_c::GetValsRows ( std::vector<BlockIterator_i *> * pIterat
 	std::vector<BlockIter_t> dBlocksIt;
 	int64_t iNumIterators = 0;
 	uint64_t uBlockBaseOff = 0;
-	if ( !PrepareBlocksValues ( tFilter, dBlocksIt, uBlockBaseOff, pIterators ? nullptr : &iNumIterators ) )
+	if ( !PrepareBlocksValues ( tFilter, pIterators ? &dBlocksIt : nullptr, uBlockBaseOff, iNumIterators ) )
 		return 0;
 
 	if ( !pIterators )
@@ -325,7 +321,8 @@ uint32_t SecondaryIndex_c::CalcValsRows ( const Filter_t & tFilter ) const
 {
 	std::vector<BlockIter_t> dBlocksIt;
 	uint64_t uBlockBaseOff = 0;
-	if ( !PrepareBlocksValues ( tFilter, dBlocksIt, uBlockBaseOff, nullptr ) )
+	int64_t iNumIterators = 0;
+	if ( !PrepareBlocksValues ( tFilter, &dBlocksIt, uBlockBaseOff, iNumIterators ) )
 		return 0;
 
 	const auto & tCol = m_dAttrs[GetColumnId ( tFilter.m_sName )];
@@ -334,10 +331,9 @@ uint32_t SecondaryIndex_c::CalcValsRows ( const Filter_t & tFilter ) const
 }
 
 
-bool SecondaryIndex_c::PrepareBlocksRange ( const Filter_t & tFilter, ApproxPos_t & tPos, uint64_t & uBlockBaseOff, uint64_t & uBlocksCount, int64_t * pNumIterators ) const
+bool SecondaryIndex_c::PrepareBlocksRange ( const Filter_t & tFilter, ApproxPos_t & tPos, uint64_t & uBlockBaseOff, uint64_t & uBlocksCount, int64_t & iNumIterators ) const
 {
-	if ( pNumIterators )
-		*pNumIterators = 0;
+	iNumIterators = 0;
 
 	int iCol = GetColumnId ( tFilter.m_sName );
 	assert ( iCol>=0 );
@@ -352,7 +348,6 @@ bool SecondaryIndex_c::PrepareBlocksRange ( const Filter_t & tFilter, ApproxPos_
 
 	const bool bFloat = tCol.m_eType==AttrType_e::FLOAT;
 
-	int64_t iNumIterators = 0;
 	tPos = { 0, 0, ( uBlocksCount - 1 ) * m_iValuesPerBlock };
 	if ( tFilter.m_bRightUnbounded )
 	{
@@ -378,9 +373,7 @@ bool SecondaryIndex_c::PrepareBlocksRange ( const Filter_t & tFilter, ApproxPos_
 		iNumIterators = tFoundMax.m_iPos-tFoundMin.m_iPos+1;
 	}
 
-	if ( pNumIterators )
-		*pNumIterators = std::max ( iNumIterators, int64_t(0) );
-
+	iNumIterators = std::max ( iNumIterators, int64_t(0) );
 	return true;
 }
 
@@ -391,7 +384,7 @@ int64_t SecondaryIndex_c::GetRangeRows ( std::vector<BlockIterator_i *> * pItera
 	int64_t iNumIterators = 0;
 	uint64_t uBlockBaseOff = 0;
 	uint64_t uBlocksCount = 0;
-	if ( !PrepareBlocksRange ( tFilter, tPos, uBlockBaseOff, uBlocksCount, pIterators ? nullptr : &iNumIterators ) )
+	if ( !PrepareBlocksRange ( tFilter, tPos, uBlockBaseOff, uBlocksCount, iNumIterators ) )
 		return 0;
 
 	if ( !pIterators )
@@ -413,7 +406,8 @@ uint32_t SecondaryIndex_c::CalcRangeRows ( const Filter_t & tFilter ) const
 	ApproxPos_t tPos;
 	uint64_t uBlockBaseOff = 0;
 	uint64_t uBlocksCount = 0;
-	if ( !PrepareBlocksRange ( tFilter, tPos, uBlockBaseOff, uBlocksCount, nullptr ) )
+	int64_t iNumIterators = 0;
+	if ( !PrepareBlocksRange ( tFilter, tPos, uBlockBaseOff, uBlocksCount, iNumIterators ) )
 		return 0;
 
 	BlockIter_t tPosIt ( tPos, 0, uBlocksCount, m_iValuesPerBlock );
@@ -445,14 +439,19 @@ const ColumnInfo_t * SecondaryIndex_c::GetAttr ( const Filter_t & tFilter, std::
 }
 
 
-Filter_t FixupFilter ( const Filter_t & tFilter, const ColumnInfo_t & tCol )
+ bool FixupFilter ( Filter_t & tFixedFilter, const Filter_t & tFilter, const ColumnInfo_t & tCol )
 {
-	Filter_t tFixedFilter = tFilter;
+	tFixedFilter = tFilter;
 	FixupFilterSettings ( tFixedFilter, tCol.m_eType );
 	if ( tFixedFilter.m_eType==FilterType_e::STRINGS )
-		tFixedFilter = StringFilterToHashFilter ( tFixedFilter, false );
+	{
+		if ( !tFixedFilter.m_fnCalcStrHash )
+			return false;
 
-	return tFixedFilter;
+		tFixedFilter = StringFilterToHashFilter ( tFixedFilter, false );
+	}
+
+	return true;
 }
 
 
@@ -462,7 +461,10 @@ bool SecondaryIndex_c::CreateIterators ( std::vector<BlockIterator_i *> & dItera
 	if ( !pCol )
 		return false;
 
-	Filter_t tFixedFilter = FixupFilter ( tFilter, *pCol );
+	Filter_t tFixedFilter;
+	if ( !FixupFilter ( tFixedFilter, tFilter, *pCol ) )
+		return false;
+
 	switch ( tFixedFilter.m_eType )
 	{
 	case FilterType_e::VALUES:
@@ -492,7 +494,10 @@ bool SecondaryIndex_c::CalcCount ( uint32_t & uCount, const common::Filter_t & t
 	if ( !pCol )
 		return false;
 
-	Filter_t tFixedFilter = FixupFilter ( tFilter, *pCol );
+	Filter_t tFixedFilter;
+	if ( !FixupFilter ( tFixedFilter, tFilter, *pCol ) )
+		return false;
+
 	switch ( tFixedFilter.m_eType )
 	{
 	case FilterType_e::VALUES:
@@ -518,7 +523,10 @@ uint32_t SecondaryIndex_c::GetNumIterators ( const common::Filter_t & tFilter ) 
 	if ( !pCol )
 		return 0;
 
-	Filter_t tFixedFilter = FixupFilter ( tFilter, *pCol );
+	Filter_t tFixedFilter;
+	if ( !FixupFilter ( tFixedFilter, tFilter, *pCol ) )
+		return 0;
+
 	switch ( tFixedFilter.m_eType )
 	{
 	case FilterType_e::VALUES:
