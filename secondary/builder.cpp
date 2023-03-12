@@ -256,6 +256,7 @@ public:
 private:
 	std::vector<VALUE>		m_dValues;
 	std::vector<uint32_t>	m_dTypes;
+	std::vector<uint32_t>	m_dCount;
 	std::vector<uint32_t>	m_dRowStart;
 	std::vector<uint32_t>	m_dMin;
 	std::vector<uint32_t>	m_dMax;
@@ -389,6 +390,7 @@ void RowWriter_T<VALUE, FLOAT_VALUE>::ResetData()
 	m_dValues.resize(0);
 	m_dTypes.resize(0);
 	m_dRowStart.resize(0);
+	m_dCount.resize(0);
 	m_dMin.resize(0);
 	m_dMax.resize(0);
 	m_dRows.resize(0);
@@ -418,6 +420,7 @@ void RowWriter_T<VALUE, FLOAT_VALUE>::FlushBlock ( FileWriter_c & tWriter )
 	m_dTypes.resize ( iValues );
 	m_dMin.resize ( iValues );
 	m_dMax.resize ( iValues );
+	m_dCount.resize ( iValues );
 	for ( size_t iItem=0; iItem<iValues; iItem++)
 	{
 		uint32_t uSrcRowsStart = m_dRowStart[iItem];
@@ -426,6 +429,7 @@ void RowWriter_T<VALUE, FLOAT_VALUE>::FlushBlock ( FileWriter_c & tWriter )
 		m_dRowStart[iItem] = (uint32_t)tBlockWriter.GetPos();
 		m_dMin[iItem] = m_dRows[uSrcRowsStart];
 		m_dMax[iItem] = m_dRows[uSrcRowsStart + uSrcRowsCount - 1];
+		m_dCount[iItem] = uSrcRowsCount;
 
 		if ( uSrcRowsCount==1 )
 			WriteSingleRow ( iItem, uSrcRowsStart );
@@ -446,6 +450,7 @@ void RowWriter_T<VALUE, FLOAT_VALUE>::FlushBlock ( FileWriter_c & tWriter )
 	EncodeBlock ( m_dMin, m_pCodec.get(), m_dBufTmp, tWriter );
 	EncodeBlock ( m_dMax, m_pCodec.get(), m_dBufTmp, tWriter );
 	EncodeBlock ( m_dRowStart, m_pCodec.get(), m_dBufTmp, tWriter );
+	EncodeBlockWoDelta ( m_dCount, m_pCodec.get(), m_dBufTmp, tWriter );
 	WriteVector ( m_dRowsPacked, tWriter );
 
 	ResetData();

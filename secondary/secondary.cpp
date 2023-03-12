@@ -69,6 +69,7 @@ public:
 	bool		Setup ( const std::string & sFile, std::string & sError );
 
 	bool		CreateIterators ( std::vector<BlockIterator_i *> & dIterators, const Filter_t & tFilter, const RowidRange_t * pBounds, uint32_t uMaxValues, int64_t iRsetSize, int iCutoff, std::string & sError ) const override;
+	bool		CalcCount ( uint32_t & uCount, const common::Filter_t & tFilter, std::string & sError ) const override;
 	uint32_t	GetNumIterators ( const common::Filter_t & tFilter ) const override;
 	bool		IsEnabled ( const std::string & sName ) const override;
 	int64_t		GetCountDistinct ( const std::string & sName ) const override;
@@ -85,17 +86,22 @@ private:
 	util::FileReader_c m_tReader;
 
 	std::vector<ColumnInfo_t> m_dAttrs;
-	bool m_bUpdated { false };
 	std::unordered_map<std::string, int> m_hAttrs;
 	std::vector<uint64_t> m_dBlockStartOff;			// per attribute vector of offsets to every block of values-rows-meta
 	std::vector<uint64_t> m_dBlocksCount;			// per attribute vector of blocks count
 	std::vector<std::shared_ptr<PGM_i>> m_dIdx;
-	int64_t m_iBlocksBase = 0;						// start of offsets at file
+	bool		m_bUpdated = false;
+	int64_t		m_iBlocksBase = 0;					// start of offsets at file
+	uint32_t	m_uVersion = 0;						// storage version
 
 	std::string m_sFileName;
 
 	int64_t		GetValsRows ( std::vector<BlockIterator_i *> * pIterators, const Filter_t & tFilter, const RowidRange_t * pBounds, uint32_t uMaxValues, int64_t iRsetSize, int iCutoff ) const;
 	int64_t		GetRangeRows ( std::vector<BlockIterator_i *> * pIterators, const Filter_t & tFilter, const RowidRange_t * pBounds, uint32_t uMaxValues, int64_t iRsetSize, int iCutof ) const;
+	uint32_t	CalcValsRows ( const Filter_t & tFilter ) const;
+	uint32_t	CalcRangeRows ( const Filter_t & tFilter ) const;
+	bool		PrepareBlocksValues ( const Filter_t & tFilter, std::vector<BlockIter_t> & dBlocksIt, uint64_t & uBlockBaseOff, int64_t * pNumIterators ) const;
+	bool		PrepareBlocksRange ( const Filter_t & tFilter, ApproxPos_t & tPos, uint64_t & uBlockBaseOff, uint64_t & uBlocksCount, int64_t * pNumIterators ) const;
 	int			GetColumnId ( const std::string & sName ) const;
 	const ColumnInfo_t * GetAttr ( const Filter_t & tFilter, std::string & sError ) const;
 };
@@ -105,10 +111,10 @@ bool SecondaryIndex_c::Setup ( const std::string & sFile, std::string & sError )
 	if ( !m_tReader.Open ( sFile, sError ) )
 		return false;
 
-	uint32_t uVersion = m_tReader.Read_uint32();
-	if ( uVersion!=LIB_VERSION )
+	m_uVersion = m_tReader.Read_uint32();
+	if ( m_uVersion!=STORAGE_VERSION )
 	{
-		sError = FormatStr ( "Unable to load inverted index: %s is v.%d, binary is v.%d", sFile.c_str(), uVersion, LIB_VERSION );
+		sError = FormatStr ( "Unable to load inverted index: %s is v.%d, binary is v.%d", sFile.c_str(), m_uVersion, STORAGE_VERSION );
 		return false;
 	}
 		
@@ -261,46 +267,75 @@ void SecondaryIndex_c::ColumnUpdated ( const char * sName )
 }
 
 
-int64_t SecondaryIndex_c::GetValsRows ( std::vector<BlockIterator_i *> * pIterators,  const Filter_t & tFilter, const RowidRange_t * pBounds, uint32_t uMaxValues, int64_t iRsetSize, int iCutoff ) const
+bool SecondaryIndex_c::PrepareBlocksValues ( const Filter_t & tFilter, std::vector<BlockIter_t> & dBlocksIt, uint64_t & uBlockBaseOff, int64_t * pNumIterators ) const
 {
+	if ( pNumIterators )
+		*pNumIterators = 0;
+
 	int iCol = GetColumnId ( tFilter.m_sName );
 	assert ( iCol>=0 );
 
 	if ( m_dIdx[iCol]->IsEmpty() )
-		return 0;
+		return false;
 
-	const auto & tCol = m_dAttrs[iCol];
-	
- 	// m_dBlockStartOff is 0based need to set to start of offsets vector
-	uint64_t uBlockBaseOff = m_iBlocksBase + m_dBlockStartOff[iCol];
+	// m_dBlockStartOff is 0based need to set to start of offsets vector
+	uBlockBaseOff = m_iBlocksBase + m_dBlockStartOff[iCol];
 	uint64_t uBlocksCount = m_dBlocksCount[iCol];
 
-	std::vector<BlockIter_t> dBlocksIt;
-	int64_t iNumIterators = 0;
- 	for ( const uint64_t uVal : tFilter.m_dValues )
+	for ( const uint64_t uVal : tFilter.m_dValues )
 	{
 		ApproxPos_t tPos = m_dIdx[iCol]->Search(uVal);
-		iNumIterators += tPos.m_iHi-tPos.m_iLo;
-		if ( pIterators )
+		if ( pNumIterators )
+			*pNumIterators += tPos.m_iHi-tPos.m_iLo;
+		else
 			dBlocksIt.emplace_back ( BlockIter_t ( tPos, uVal, uBlocksCount, m_iValuesPerBlock ) );
 	}
 
-	if ( !pIterators )
-		return iNumIterators;
+	if ( pNumIterators )
+		return true;
 
 	// sort by block start offset
 	std::sort ( dBlocksIt.begin(), dBlocksIt.end(), [] ( const BlockIter_t & tA, const BlockIter_t & tB ) { return tA.m_iStart<tB.m_iStart; } );
-	RsetInfo_t tRsetInfo { iNumIterators, uMaxValues, iRsetSize };
 
-	std::unique_ptr<BlockReader_i> pBlockReader { CreateBlockReader ( m_tReader.GetFD(), tCol, m_tSettings, uBlockBaseOff, pBounds, tRsetInfo, iCutoff ) } ;
+	return true;
+}
+
+
+int64_t SecondaryIndex_c::GetValsRows ( std::vector<BlockIterator_i *> * pIterators,  const Filter_t & tFilter, const RowidRange_t * pBounds, uint32_t uMaxValues, int64_t iRsetSize, int iCutoff ) const
+{
+	std::vector<BlockIter_t> dBlocksIt;
+	int64_t iNumIterators = 0;
+	uint64_t uBlockBaseOff = 0;
+	if ( !PrepareBlocksValues ( tFilter, dBlocksIt, uBlockBaseOff, pIterators ? nullptr : &iNumIterators ) )
+		return 0;
+
+	RsetInfo_t tRsetInfo { iNumIterators, uMaxValues, iRsetSize };
+	const auto & tCol = m_dAttrs[GetColumnId ( tFilter.m_sName )];
+	std::unique_ptr<BlockReader_i> pBlockReader { CreateBlockReader ( m_tReader.GetFD(), tCol, m_tSettings, m_uVersion, uBlockBaseOff, pBounds, tRsetInfo, iCutoff ) } ;
 	pBlockReader->CreateBlocksIterator ( dBlocksIt, *pIterators );
 
 	return iNumIterators;
 }
 
 
-int64_t SecondaryIndex_c::GetRangeRows ( std::vector<BlockIterator_i *> * pIterators,  const Filter_t & tFilter, const RowidRange_t * pBounds, uint32_t uMaxValues, int64_t iRsetSize, int iCutoff ) const
+uint32_t SecondaryIndex_c::CalcValsRows ( const Filter_t & tFilter ) const
 {
+	std::vector<BlockIter_t> dBlocksIt;
+	uint64_t uBlockBaseOff = 0;
+	if ( !PrepareBlocksValues ( tFilter, dBlocksIt, uBlockBaseOff, nullptr ) )
+		return 0;
+
+	const auto & tCol = m_dAttrs[GetColumnId ( tFilter.m_sName )];
+	std::unique_ptr<BlockReader_i> pBlockReader { CreateBlockReader ( m_tReader.GetFD(), tCol, m_tSettings, m_uVersion, uBlockBaseOff, nullptr, {}, 0 ) } ;
+	return pBlockReader->CalcValueCount(dBlocksIt);
+}
+
+
+bool SecondaryIndex_c::PrepareBlocksRange ( const Filter_t & tFilter, ApproxPos_t & tPos, uint64_t & uBlockBaseOff, uint64_t & uBlocksCount, int64_t * pNumIterators ) const
+{
+	if ( pNumIterators )
+		*pNumIterators = 0;
+
 	int iCol = GetColumnId ( tFilter.m_sName );
 	assert ( iCol>=0 );
 
@@ -309,13 +344,13 @@ int64_t SecondaryIndex_c::GetRangeRows ( std::vector<BlockIterator_i *> * pItera
 
 	const auto & tCol = m_dAttrs[iCol];
 
-	uint64_t uBlockBaseOff = m_iBlocksBase + m_dBlockStartOff[iCol];
-	uint64_t uBlocksCount = m_dBlocksCount[iCol];
+	uBlockBaseOff = m_iBlocksBase + m_dBlockStartOff[iCol];
+	uBlocksCount = m_dBlocksCount[iCol];
 
-	const bool bFloat = ( tCol.m_eType==AttrType_e::FLOAT );
+	const bool bFloat = tCol.m_eType==AttrType_e::FLOAT;
 
 	int64_t iNumIterators = 0;
-	ApproxPos_t tPos { 0, 0, ( uBlocksCount - 1 ) * m_iValuesPerBlock };
+	tPos = { 0, 0, ( uBlocksCount - 1 ) * m_iValuesPerBlock };
 	if ( tFilter.m_bRightUnbounded )
 	{
 		ApproxPos_t tFound =  ( bFloat ? m_dIdx[iCol]->Search ( FloatToUint ( tFilter.m_fMinValue ) ) : m_dIdx[iCol]->Search ( tFilter.m_iMinValue ) );
@@ -340,17 +375,46 @@ int64_t SecondaryIndex_c::GetRangeRows ( std::vector<BlockIterator_i *> * pItera
 		iNumIterators = tFoundMax.m_iPos-tFoundMin.m_iPos+1;
 	}
 
-	iNumIterators = std::max ( iNumIterators, int64_t(0) );
+	if ( pNumIterators )
+		*pNumIterators = std::max ( iNumIterators, int64_t(0) );
 
-	if ( !pIterators )
-		return iNumIterators;
+	return true;
+}
+
+
+int64_t SecondaryIndex_c::GetRangeRows ( std::vector<BlockIterator_i *> * pIterators,  const Filter_t & tFilter, const RowidRange_t * pBounds, uint32_t uMaxValues, int64_t iRsetSize, int iCutoff ) const
+{
+	ApproxPos_t tPos;
+	int64_t iNumIterators = 0;
+	uint64_t uBlockBaseOff = 0;
+	uint64_t uBlocksCount = 0;
+	if ( !PrepareBlocksRange ( tFilter, tPos, uBlockBaseOff, uBlocksCount, pIterators ? nullptr : &iNumIterators ) )
+		return 0;
 
 	BlockIter_t tPosIt ( tPos, 0, uBlocksCount, m_iValuesPerBlock );
 	RsetInfo_t tRsetInfo { iNumIterators, uMaxValues, iRsetSize };
 
-	std::unique_ptr<BlockReader_i> pReader { CreateRangeReader ( m_tReader.GetFD(), tCol, m_tSettings, uBlockBaseOff, pBounds, tRsetInfo, iCutoff ) };
+	const auto & tCol = m_dAttrs[GetColumnId ( tFilter.m_sName )];
+	std::unique_ptr<BlockReader_i> pReader { CreateRangeReader ( m_tReader.GetFD(), tCol, m_tSettings, m_uVersion, uBlockBaseOff, pBounds, tRsetInfo, iCutoff ) };
 	pReader->CreateBlocksIterator ( tPosIt, tFilter, *pIterators );
+
 	return iNumIterators;
+}
+
+
+uint32_t SecondaryIndex_c::CalcRangeRows ( const Filter_t & tFilter ) const
+{
+	ApproxPos_t tPos;
+	uint64_t uBlockBaseOff = 0;
+	uint64_t uBlocksCount = 0;
+	if ( !PrepareBlocksRange ( tFilter, tPos, uBlockBaseOff, uBlocksCount, nullptr ) )
+		return 0;
+
+	BlockIter_t tPosIt ( tPos, 0, uBlocksCount, m_iValuesPerBlock );
+
+	const auto & tCol = m_dAttrs[GetColumnId ( tFilter.m_sName )];
+	std::unique_ptr<BlockReader_i> pReader { CreateRangeReader ( m_tReader.GetFD(), tCol, m_tSettings, m_uVersion, uBlockBaseOff, nullptr, {}, 0 ) };
+	return pReader->CalcValueCount ( tPosIt, tFilter );
 }
 
 
@@ -402,6 +466,36 @@ bool SecondaryIndex_c::CreateIterators ( std::vector<BlockIterator_i *> & dItera
 	case FilterType_e::RANGE:
 	case FilterType_e::FLOATRANGE:
 		GetRangeRows ( &dIterators, tFixedFilter, pBounds, uMaxValues, iRsetSize, iCutoff );
+		return true;
+
+	default:
+		sError = FormatStr ( "unhandled filter type '%d'", to_underlying ( tFixedFilter.m_eType ) );
+		return false;
+	}
+}
+
+
+bool SecondaryIndex_c::CalcCount ( uint32_t & uCount, const common::Filter_t & tFilter, std::string & sError ) const
+{
+	uCount = 0;
+
+	if ( m_uVersion < 7 )
+		return false;
+
+	const auto * pCol = GetAttr ( tFilter, sError );
+	if ( !pCol )
+		return false;
+
+	Filter_t tFixedFilter = FixupFilter ( tFilter, *pCol );
+	switch ( tFixedFilter.m_eType )
+	{
+	case FilterType_e::VALUES:
+		uCount = CalcValsRows ( tFixedFilter );
+		return true;
+
+	case FilterType_e::RANGE:
+	case FilterType_e::FLOATRANGE:
+		uCount = CalcRangeRows ( tFixedFilter );
 		return true;
 
 	default:

@@ -43,10 +43,12 @@ struct BlockIter_t
 class BlockReader_i
 {
 public:
-	virtual			~BlockReader_i() = default;
+	virtual				~BlockReader_i() = default;
 
-	virtual void	CreateBlocksIterator ( const std::vector<BlockIter_t> & dIt, std::vector<common::BlockIterator_i *> & dRes ) = 0;
-	virtual void	CreateBlocksIterator ( const BlockIter_t & tIt, const common::Filter_t & tVal, std::vector<common::BlockIterator_i *> & dRes ) = 0;
+	virtual void		CreateBlocksIterator ( const std::vector<BlockIter_t> & dIt, std::vector<common::BlockIterator_i *> & dRes ) = 0;
+	virtual void		CreateBlocksIterator ( const BlockIter_t & tIt, const common::Filter_t & tVal, std::vector<common::BlockIterator_i *> & dRes ) = 0;
+	virtual uint32_t	CalcValueCount ( const std::vector<BlockIter_t> & dIt ) = 0;
+	virtual uint32_t	CalcValueCount ( const BlockIter_t & tIt, const common::Filter_t & tVal ) = 0;
 };
 
 struct RsetInfo_t
@@ -58,7 +60,7 @@ struct RsetInfo_t
 
 struct Settings_t;
 struct ColumnInfo_t;
-BlockReader_i * CreateBlockReader ( int iFD, const ColumnInfo_t & tCol, const Settings_t & tSettings, uint64_t uBlockBaseOff, const common::RowidRange_t * pBounds, const RsetInfo_t & tInfo, int iCutoff );
-BlockReader_i * CreateRangeReader ( int iFD, const ColumnInfo_t & tCol, const Settings_t & tSettings, uint64_t uBlockBaseOff, const common::RowidRange_t * pBounds, const RsetInfo_t & tInfo, int iCutoff );
+BlockReader_i * CreateBlockReader ( int iFD, const ColumnInfo_t & tCol, const Settings_t & tSettings, uint32_t uVersion, uint64_t uBlockBaseOff, const common::RowidRange_t * pBounds, const RsetInfo_t & tInfo, int iCutoff );
+BlockReader_i * CreateRangeReader ( int iFD, const ColumnInfo_t & tCol, const Settings_t & tSettings, uint32_t uVersion, uint64_t uBlockBaseOff, const common::RowidRange_t * pBounds, const RsetInfo_t & tInfo, int iCutoff );
 
 } // namespace SI

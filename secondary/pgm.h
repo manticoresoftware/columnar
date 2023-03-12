@@ -32,10 +32,12 @@ namespace SI
 	class PGM_i
 	{
 	public:
-		virtual size_t Save ( std::vector<uint8_t> & dData ) const = 0;
-		virtual void Load ( util::FileReader_c & tRd ) = 0;
-		virtual ApproxPos_t Search ( uint64_t uVal ) const = 0;
-		virtual bool IsEmpty() const = 0;
+		virtual				~PGM_i() = default;
+
+		virtual size_t		Save ( std::vector<uint8_t> & dData ) const = 0;
+		virtual void		Load ( util::FileReader_c & tRd ) = 0;
+		virtual ApproxPos_t	Search ( uint64_t uVal ) const = 0;
+		virtual bool		IsEmpty() const = 0;
 	};
 
 	template <typename VALUE>
