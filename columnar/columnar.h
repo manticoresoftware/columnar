@@ -34,7 +34,8 @@ namespace util
 namespace columnar
 {
 
-static const int LIB_VERSION = 18;
+// v19 - remove poisoned hardware headers from utils.h
+static const int LIB_VERSION = 19;
 
 class Iterator_i
 {
