@@ -793,7 +793,7 @@ bool Builder_c::Done ( std::string & sError )
 	std::string sPgmValuesName = m_sFile + ".tmp.pgmvalues";
 
 	// reserve space at main file for meta
-	tDstFile.Write_uint32 ( LIB_VERSION ); // version of library that builds the index
+	tDstFile.Write_uint32 ( STORAGE_VERSION ); // storage version
 	tDstFile.Write_uint64 ( 0 ); // offset to meta itself
 
 	std::vector<uint64_t> dBlocksOffStart ( m_dCidWriter.size() );
