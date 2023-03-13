@@ -27,18 +27,12 @@ job_mirror:
   stage: mirroring
   rules:
     - if: $TEST==null && $CI_COMMIT_BRANCH == "master"
-    - if: $TEST==null && $CI_COMMIT_BRANCH =~ /^columnari-.*$/
+    - if: $TEST==null && $CI_COMMIT_BRANCH =~ /^columnar-.*$/
   tags:
     - dev-host
   dependencies: []
   script:
-    - rm -fr gitlab_github_sync
-    - git clone git@gitlab.com:manticoresearch/columnar.git gitlab_github_sync
-    - cd gitlab_github_sync
-    - git checkout $CI_COMMIT_BRANCH
-    - git remote add github git@github.com:manticoresoftware/columnar.git
-    - git fetch github
-    - git push -u github $CI_COMMIT_BRANCH
+    - gitsync_columnar.sh
   cache: {}
 
 # ==================== .helper build ======================
