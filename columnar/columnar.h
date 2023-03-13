@@ -28,13 +28,13 @@
 namespace util
 {
 	class FileReader_c;
+	class FileWriter_c;
 }
 
 namespace columnar
 {
 
-// v19 - remove poisoned hardware headers from utils.h
-static const int LIB_VERSION = 19;
+static const int LIB_VERSION = 20;
 
 class Iterator_i
 {

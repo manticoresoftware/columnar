@@ -18,7 +18,7 @@
 cmake_minimum_required ( VERSION 3.17 )
 
 add_library ( util OBJECT
-		util.cpp
+		util_private.cpp
 		version.cpp
 		delta.cpp
 		reader.cpp

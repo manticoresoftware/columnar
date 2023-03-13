@@ -15,6 +15,7 @@
 // limitations under the License.
 
 #include "util_private.h"
+
 #include <stdexcept>
 #include <cerrno>
 #include <cmath>
@@ -25,6 +26,7 @@
 #else
 	#include <unistd.h>
 #endif
+
 
 namespace util
 {
