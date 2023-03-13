@@ -70,12 +70,12 @@ add_library ( columnar::columnar_api ALIAS columnar_api )
 add_library ( columnar::secondary_api ALIAS secondary_api )
 
 # interface property, so that consumer will fire an error on configure time if API version is not match
-file ( STRINGS columnar/columnar.h _verlist LIMIT_COUNT 1 REGEX "LIB_VERSION" )
+file ( STRINGS columnar/columnar.h _verlist LIMIT_COUNT 2 REGEX "LIB_VERSION" )
 string ( REGEX MATCH "[0-9]+" API_VER "${_verlist}" )
 set_property ( TARGET columnar_api PROPERTY INTERFACE_COLUMNAR_API_VERSION ${API_VER} ) # must be reconfigured if version in columnar.h changes
 set_property ( TARGET columnar_api APPEND PROPERTY COMPATIBLE_INTERFACE_STRING COLUMNAR_API_VERSION )
 
-file ( STRINGS secondary/secondary.h _verlist LIMIT_COUNT 1 REGEX "LIB_VERSION" )
+file ( STRINGS secondary/secondary.h _verlist LIMIT_COUNT 2 REGEX "LIB_VERSION" )
 string ( REGEX MATCH "[0-9]+" SI_API_VER "${_verlist}" )
 set_property ( TARGET secondary_api APPEND PROPERTY INTERFACE_SECONDARY_API_VERSION ${SI_API_VER} ) # must be reconfigured if version in secondary.h changes
 set_property ( TARGET secondary_api APPEND PROPERTY COMPATIBLE_INTERFACE_STRING SECONDARY_API_VERSION )
