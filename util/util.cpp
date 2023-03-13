@@ -14,9 +14,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "util.h"
+#include "util_private.h"
 #include <stdexcept>
-#include <errno.h>
+#include <cerrno>
 #include <cmath>
 #include <limits>
 

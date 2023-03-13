@@ -17,7 +17,7 @@
 #pragma once
 
 #include "builder.h"
-#include "util.h"
+#include "util_private.h"
 #include "delta.h"
 #include "codec.h"
 #include <cassert>

@@ -14,6 +14,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+/// This file is part of common headers (API)
+/// You MUST bump LIB_VERSION in columnar.h or secondary.h when perform any
+/// significant change with this file
+
 #pragma once
 
 #include <cstdint>
@@ -25,16 +29,7 @@
 #include <type_traits>
 #include <fcntl.h>
 #include <climits>
-#include <assert.h>
-
-#if defined(USE_SIMDE)
-	#define SIMDE_ENABLE_NATIVE_ALIASES 1
-	#include <simde/x86/sse4.1.h>
-#elif _MSC_VER
-	#include <intrin.h>
-#else
-	#include <x86intrin.h>
-#endif
+#include <cassert>
 
 namespace util
 {
@@ -455,26 +450,6 @@ constexpr int Log2 ( T tValue )
 	}
 
 	return iBits;
-}
-
-inline int FillWithIncreasingValues ( uint32_t * & pRowID, size_t uNumValues, uint32_t & tRowID )
-{
-	__m128i tAdd = _mm_set_epi32 ( tRowID+3, tRowID+2, tRowID+1, tRowID );
-	size_t uValuesInBlocks = ( uNumValues >> 2 ) << 2;
-	uint32_t * pRowIDMax = pRowID + uValuesInBlocks;
-	while ( pRowID<pRowIDMax )
-	{
-		_mm_storeu_si128 ( (__m128i*)pRowID, tAdd );
-		tAdd = _mm_add_epi32 ( tAdd, _mm_set1_epi32(4) );
-		pRowID += 4;
-	}
-
-	size_t uValuesLeft = uNumValues - uValuesInBlocks;
-	pRowIDMax = pRowID + uValuesLeft;
-	while ( pRowID < pRowIDMax )
-		*pRowID++ = tRowID++;
-
-	return (int)uNumValues;
 }
 
 } // namespace util

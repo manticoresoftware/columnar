@@ -24,6 +24,7 @@ add_library ( util OBJECT
 		reader.cpp
 		codec.cpp
 		util.h
+		util_private.h
 		delta.h
 		reader.h
 		codec.h

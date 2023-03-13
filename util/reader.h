@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include "util.h"
+#include "util_private.h"
 #include <cassert>
 
 namespace util
