@@ -14,9 +14,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-/// This file is part of common headers (API)
-/// You MUST bump LIB_VERSION in columnar.h when perform any
-/// significant change with this file
+// This file is a part of the common headers (API).
+// If you make any significant changes to this file, you MUST bump the LIB_VERSION in columnar.h
 
 #pragma once
 
