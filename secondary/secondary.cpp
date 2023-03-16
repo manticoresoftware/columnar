@@ -112,7 +112,9 @@ bool SecondaryIndex_c::Setup ( const std::string & sFile, std::string & sError )
 		return false;
 
 	m_uVersion = m_tReader.Read_uint32();
-	if ( m_uVersion!=STORAGE_VERSION )
+
+	// starting with v.6 we have backward compatibility
+	if ( m_uVersion<6 )
 	{
 		sError = FormatStr ( "Unable to load inverted index: %s is v.%d, binary is v.%d", sFile.c_str(), m_uVersion, STORAGE_VERSION );
 		return false;
