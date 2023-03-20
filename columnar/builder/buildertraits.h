@@ -167,9 +167,13 @@ static void WriteValues_Delta_PFOR ( const util::Span_T<T> & dValues, std::vecto
 template <typename T, typename WRITER>
 static void WriteValues_PFOR ( const util::Span_T<T> & dValues, std::vector<T> & dTmpUncompressed, std::vector<uint32_t> & dTmpCompressed, WRITER & tWriter, util::IntCodec_i * pCodec, bool bWriteLength )
 {
-	T uMin = dValues[0];
-	for ( size_t i = 1; i < dValues.size(); i++ )
-		uMin = std::min ( uMin, dValues[i] );
+	T uMin = (T)0;
+	if ( !dValues.empty() )
+	{
+		uMin = dValues[0];
+		for ( size_t i = 1; i < dValues.size(); i++ )
+			uMin = std::min ( uMin, dValues[i] );
+	}
 
 	dTmpUncompressed.resize ( dValues.size() );
 	for ( size_t i = 0; i < dValues.size(); i++ )

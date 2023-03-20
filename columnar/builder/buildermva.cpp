@@ -267,10 +267,13 @@ void Packer_MVA_T<T,HEADER_T>::WritePacked_Table()
 		int iNumValues = (int)dMVA.size();
 		m_dTableLengths.push_back(iNumValues);
 
-		size_t uOldSize = m_dTableValues.size();
-		m_dTableValues.resize ( uOldSize + dMVA.size() );
-		T * pNew = &m_dTableValues[uOldSize];
-		memcpy ( pNew, dMVA.data(), dMVA.size()*sizeof ( dMVA[0] ) );
+		if ( iNumValues )
+		{
+			size_t uOldSize = m_dTableValues.size();
+			m_dTableValues.resize ( uOldSize + dMVA.size() );
+			T * pNew = &m_dTableValues[uOldSize];
+			memcpy ( pNew, dMVA.data(), dMVA.size()*sizeof ( dMVA[0] ) );
+		}
 	}
 
 	WriteValues_PFOR ( Span_T<uint32_t>(m_dTableLengths), m_dUncompressed32, m_dCompressed, BASE::m_tWriter, m_pCodec.get(), true );
@@ -290,7 +293,9 @@ void Packer_MVA_T<T,HEADER_T>::WritePacked_Table()
 	for ( auto i : m_dCollectedLengths )
 	{
 		m_dKey.resize(i);
-		memcpy ( m_dKey.data(), &m_dCollectedValues[uOffset], i*sizeof(T) );
+		if ( i )
+			memcpy ( m_dKey.data(), &m_dCollectedValues[uOffset], i*sizeof(T) );
+
 		auto tFound = m_hUnique.find(m_dKey);
 		assert ( tFound != m_hUnique.end() );
 		assert ( tFound->second < 256 );
