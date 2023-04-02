@@ -34,22 +34,19 @@ namespace util
 namespace columnar
 {
 
-static const int LIB_VERSION = 20;
+static const int LIB_VERSION = 21;
 
 class Iterator_i
 {
 public:
 	virtual				~Iterator_i() = default;
 
-	virtual	uint32_t	AdvanceTo ( uint32_t tRowID ) = 0;
-
-	virtual	int64_t		Get() = 0;
-
+	virtual	int64_t		Get ( uint32_t tRowID ) = 0;
 	virtual	void		Fetch ( const util::Span_T<uint32_t> & dRowIDs, util::Span_T<int64_t> & dValues ) = 0;
 
-	virtual	int			Get ( const uint8_t * & pData ) = 0;
-	virtual	uint8_t *	GetPacked() = 0;
-	virtual	int			GetLength() = 0;
+	virtual	int			Get ( uint32_t tRowID, const uint8_t * & pData ) = 0;
+	virtual	uint8_t *	GetPacked ( uint32_t tRowID ) = 0;
+	virtual	int			GetLength ( uint32_t tRowID ) = 0;
 
 	virtual void		AddDesc ( std::vector<common::IteratorDesc_t> & dDesc ) const = 0;
 };

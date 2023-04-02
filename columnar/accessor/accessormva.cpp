@@ -587,34 +587,38 @@ class Iterator_MVA_T : public Iterator_i, public Accessor_MVA_T<T>
 	using BASE::Accessor_MVA_T;
 
 public:
-	uint32_t	AdvanceTo ( uint32_t tRowID ) final;
-
-	int64_t		Get() final						{ assert ( 0 && "INTERNAL ERROR: requesting int from MVA iterator" ); return 0; }
+	int64_t		Get ( uint32_t tRowID ) final						{ assert ( 0 && "INTERNAL ERROR: requesting int from MVA iterator" ); return 0; }
 	void		Fetch ( const Span_T<uint32_t> & dRowIDs, Span_T<int64_t> & dValues ) final { assert ( 0 && "INTERNAL ERROR: requesting batch int from MVA iterator" ); }
-	int			Get ( const uint8_t * & pData ) final;
-	uint8_t *	GetPacked() final;
-	int			GetLength() final;
+	int			Get ( uint32_t tRowID, const uint8_t * & pData ) final;
+	uint8_t *	GetPacked ( uint32_t tRowID ) final;
+	int			GetLength ( uint32_t tRowID ) final;
 
 	void		AddDesc ( std::vector<IteratorDesc_t> & dDesc ) const final { dDesc.push_back ( { BASE::m_tHeader.GetName(), "iterator" } ); }
+
+private:
+	FORCE_INLINE void AdvanceTo ( uint32_t tRowID );
 };
 
 template <typename T>
-uint32_t Iterator_MVA_T<T>::AdvanceTo ( uint32_t tRowID )
+void Iterator_MVA_T<T>::AdvanceTo ( uint32_t tRowID )
 {
 	assert ( tRowID < BASE::m_tHeader.GetNumDocs() );
+
+	if ( BASE::m_tRequestedRowID==tRowID ) // might happen on GetLength/Get calls
+		return;
 
 	uint32_t uBlockId = RowId2BlockId(tRowID);
 	if ( uBlockId!=BASE::m_uBlockId )
 		BASE::SetCurBlock(uBlockId);
 
 	BASE::m_tRequestedRowID = tRowID;
-
-	return tRowID;
 }
 
 template <typename T>
-int Iterator_MVA_T<T>::Get ( const uint8_t * & pData )
+int Iterator_MVA_T<T>::Get ( uint32_t tRowID, const uint8_t * & pData )
 {
+	AdvanceTo(tRowID);
+
 	assert(BASE::m_fnReadValue);
 	(*this.*BASE::m_fnReadValue)();
 
@@ -625,8 +629,10 @@ int Iterator_MVA_T<T>::Get ( const uint8_t * & pData )
 }
 
 template <typename T>
-uint8_t * Iterator_MVA_T<T>::GetPacked()
+uint8_t * Iterator_MVA_T<T>::GetPacked ( uint32_t tRowID )
 {
+	AdvanceTo(tRowID);
+
 	assert(BASE::m_fnReadValuePacked);
 	(*this.*BASE::m_fnReadValuePacked)();
 
@@ -638,8 +644,10 @@ uint8_t * Iterator_MVA_T<T>::GetPacked()
 
 
 template <typename T>
-int Iterator_MVA_T<T>::GetLength()
+int Iterator_MVA_T<T>::GetLength ( uint32_t tRowID )
 {
+	AdvanceTo(tRowID);
+
 	assert(BASE::m_fnGetValueLength);
 	return (*this.*BASE::m_fnGetValueLength)();
 }

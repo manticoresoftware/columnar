@@ -510,15 +510,17 @@ class Iterator_String_c : public Iterator_i, public Accessor_String_c
 public:
 				Iterator_String_c ( const AttributeHeader_i & tHeader, FileReader_c * pReader );
 
-	uint32_t	AdvanceTo ( uint32_t tRowID ) final;
-	int64_t		Get() final						{ assert ( 0 && "INTERNAL ERROR: requesting int from string iterator" ); return 0; }
+	int64_t		Get ( uint32_t tRowID ) final						{ assert ( 0 && "INTERNAL ERROR: requesting int from string iterator" ); return 0; }
 	void		Fetch ( const Span_T<uint32_t> & dRowIDs, Span_T<int64_t> & dValues ) final { assert ( 0 && "INTERNAL ERROR: requesting batch int from string iterator" ); }
 
-	int			Get ( const uint8_t * & pData ) final;
-	uint8_t *	GetPacked() final;
-	int			GetLength() final;
+	int			Get ( uint32_t tRowID, const uint8_t * & pData ) final;
+	uint8_t *	GetPacked ( uint32_t tRowID ) final;
+	int			GetLength ( uint32_t tRowID ) final;
 
 	void		AddDesc ( std::vector<IteratorDesc_t> & dDesc ) const final { dDesc.push_back ( { BASE::m_tHeader.GetName(), "iterator" } ); }
+
+private:
+	FORCE_INLINE void AdvanceTo ( uint32_t tRowID );
 };
 
 
@@ -527,25 +529,25 @@ Iterator_String_c::Iterator_String_c ( const AttributeHeader_i & tHeader, FileRe
 {}
 
 
-uint32_t Iterator_String_c::AdvanceTo ( uint32_t tRowID )
+void Iterator_String_c::AdvanceTo ( uint32_t tRowID )
 {
 	assert ( tRowID < BASE::m_tHeader.GetNumDocs() );
 
 	if ( m_tRequestedRowID==tRowID ) // might happen on GetLength/Get calls
-		return tRowID;
+		return;
 
 	uint32_t uBlockId = RowId2BlockId(tRowID);
 	if ( uBlockId!=m_uBlockId )
 		SetCurBlock(uBlockId);
 
 	m_tRequestedRowID = tRowID;
-
-	return tRowID;
 }
 
 
-int Iterator_String_c::Get ( const uint8_t * & pData )
+int Iterator_String_c::Get ( uint32_t tRowID, const uint8_t * & pData )
 {
+	AdvanceTo(tRowID);
+
 	assert(m_fnReadValue);
 	(*this.*m_fnReadValue)();
 
@@ -557,8 +559,10 @@ int Iterator_String_c::Get ( const uint8_t * & pData )
 }
 
 
-uint8_t * Iterator_String_c::GetPacked()
+uint8_t * Iterator_String_c::GetPacked ( uint32_t tRowID )
 {
+	AdvanceTo(tRowID);
+
 	assert(m_fnReadValuePacked);
 	(*this.*m_fnReadValuePacked)();
 
@@ -569,8 +573,10 @@ uint8_t * Iterator_String_c::GetPacked()
 }
 
 
-int Iterator_String_c::GetLength()
+int Iterator_String_c::GetLength ( uint32_t tRowID )
 {
+	AdvanceTo(tRowID);
+
 	assert(m_fnGetValueLength);
 	return (*this.*m_fnGetValueLength)();
 }

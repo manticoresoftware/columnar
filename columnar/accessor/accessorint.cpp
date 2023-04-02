@@ -394,20 +394,17 @@ class Iterator_INT_T : public Iterator_i, public Accessor_INT_T<T>
 	using BASE::Accessor_INT_T;
 
 public:
-	uint32_t	AdvanceTo ( uint32_t tRowID ) final		{ return DoAdvance(tRowID); }
-	int64_t		Get() final								{ return DoGet(); }
-
+	int64_t		Get ( uint32_t tRowID ) final			{ return DoGet(tRowID); }
 	void		Fetch ( const Span_T<uint32_t> & dRowIDs, Span_T<int64_t> & dValues ) final;
 
-	int			Get ( const uint8_t * & pData ) final	{ assert ( 0 && "INTERNAL ERROR: requesting blob from int iterator" ); return 0; }
-	uint8_t *	GetPacked() final						{ assert ( 0 && "INTERNAL ERROR: requesting blob from int iterator" ); return nullptr; }
-	int			GetLength() final						{ assert ( 0 && "INTERNAL ERROR: requesting blob length from int iterator" ); return 0; }
+	int			Get ( uint32_t tRowID, const uint8_t * & pData ) final	{ assert ( 0 && "INTERNAL ERROR: requesting blob from int iterator" ); return 0; }
+	uint8_t *	GetPacked ( uint32_t tRowID ) final						{ assert ( 0 && "INTERNAL ERROR: requesting blob from int iterator" ); return nullptr; }
+	int			GetLength ( uint32_t tRowID ) final						{ assert ( 0 && "INTERNAL ERROR: requesting blob length from int iterator" ); return 0; }
 
 	void		AddDesc ( std::vector<IteratorDesc_t> & dDesc ) const override { dDesc.push_back ( { BASE::m_tHeader.GetName(), "iterator" } ); };
 
 private:
-	FORCE_INLINE uint32_t	DoAdvance ( uint32_t tRowID );
-	FORCE_INLINE int64_t	DoGet();
+	FORCE_INLINE int64_t DoGet ( uint32_t tRowID );
 };
 
 template<typename T>
@@ -417,14 +414,11 @@ void Iterator_INT_T<T>::Fetch ( const Span_T<uint32_t> & dRowIDs, Span_T<int64_t
 	uint32_t * pRowIDEnd = dRowIDs.end();
 	int64_t * pValue = dValues.begin();
 	while ( pRowID<pRowIDEnd )
-	{
-		DoAdvance ( *pRowID++ );
-		*pValue++ = DoGet();
-	}
+		*pValue++ = DoGet ( *pRowID++ );
 }
 
 template<typename T>
-uint32_t Iterator_INT_T<T>::DoAdvance ( uint32_t tRowID )
+int64_t Iterator_INT_T<T>::DoGet ( uint32_t tRowID )
 {
 	assert ( tRowID < BASE::m_tHeader.GetNumDocs() );
 
@@ -434,12 +428,6 @@ uint32_t Iterator_INT_T<T>::DoAdvance ( uint32_t tRowID )
 
 	BASE::m_tRequestedRowID = tRowID;
 
-	return tRowID;
-}
-
-template<typename T>
-int64_t Iterator_INT_T<T>::DoGet()
-{
 	assert ( BASE::m_fnReadValue );
 	return (*this.*BASE::m_fnReadValue)();
 }
