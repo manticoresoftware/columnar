@@ -43,7 +43,6 @@ job_mirror:
   needs: [ ]
   tags:
     - docker
-    - autoscaled
   image: registry.gitlab.com/manticoresearch/dev/external_toolchain:clang15_cmake3243
   variables:
     CACHEB: $CI_PROJECT_DIR/cache
