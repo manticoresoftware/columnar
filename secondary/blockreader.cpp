@@ -237,7 +237,10 @@ void BitmapIterator_T<BITMAP>::Add ( BlockIterator_i * pIterator )
 template <typename BITMAP>
 bool BitmapIterator_T<BITMAP>::HintRowID ( uint32_t tRowID )
 {
-	m_iIndex = tRowID >> 6;
+	int iNewIndex = tRowID >> 6;
+	if ( iNewIndex > m_iIndex )
+		m_iIndex = iNewIndex;
+
 	return m_iIndex < m_tBitmap.GetLength();
 }
 
