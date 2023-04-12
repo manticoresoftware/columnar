@@ -42,8 +42,7 @@ job_mirror:
   interruptible: true
   needs: [ ]
   tags:
-    - docker
-    - dev-host
+    - docker-free
   image: registry.gitlab.com/manticoresearch/dev/external_toolchain:clang15_cmake3243
   variables:
     CACHEB: $CI_PROJECT_DIR/cache
