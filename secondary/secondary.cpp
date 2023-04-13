@@ -69,7 +69,7 @@ public:
 	bool		Setup ( const std::string & sFile, std::string & sError );
 
 	bool		CreateIterators ( std::vector<BlockIterator_i *> & dIterators, const Filter_t & tFilter, const RowidRange_t * pBounds, uint32_t uMaxValues, int64_t iRsetSize, int iCutoff, std::string & sError ) const override;
-	bool		CalcCount ( uint32_t & uCount, const common::Filter_t & tFilter, std::string & sError ) const override;
+	bool		CalcCount ( uint32_t & uCount, const common::Filter_t & tFilter, uint32_t uMaxValues, std::string & sError ) const override;
 	uint32_t	GetNumIterators ( const common::Filter_t & tFilter ) const override;
 	bool		IsEnabled ( const std::string & sName ) const override;
 	int64_t		GetCountDistinct ( const std::string & sName ) const override;
@@ -485,7 +485,7 @@ bool SecondaryIndex_c::CreateIterators ( std::vector<BlockIterator_i *> & dItera
 }
 
 
-bool SecondaryIndex_c::CalcCount ( uint32_t & uCount, const common::Filter_t & tFilter, std::string & sError ) const
+bool SecondaryIndex_c::CalcCount ( uint32_t & uCount, const common::Filter_t & tFilter, uint32_t uMaxValues, std::string & sError ) const
 {
 	uCount = 0;
 
@@ -500,15 +500,22 @@ bool SecondaryIndex_c::CalcCount ( uint32_t & uCount, const common::Filter_t & t
 	if ( !FixupFilter ( tFixedFilter, tFilter, *pCol ) )
 		return false;
 
+	bool bExclude = tFixedFilter.m_bExclude;
+	tFixedFilter.m_bExclude = false;
+
 	switch ( tFixedFilter.m_eType )
 	{
 	case FilterType_e::VALUES:
 		uCount = CalcValsRows ( tFixedFilter );
+		if ( bExclude )
+			uCount = uMaxValues - uCount;
 		return true;
 
 	case FilterType_e::RANGE:
 	case FilterType_e::FLOATRANGE:
 		uCount = CalcRangeRows ( tFixedFilter );
+		if ( bExclude )
+			uCount = uMaxValues - uCount;
 		return true;
 
 	default:
