@@ -669,7 +669,7 @@ int64_t Columnar_c::EstimateMinMax ( const Filter_t & tFilter, const BlockTester
 	int iReducedSubblockSize = tHeader.first->GetSettings().m_iSubblockSize;
 
 	const int MIN_REDUCE_LEVELS = 8;
-	const int REDUCE_STEP = 2;
+	const int REDUCE_STEP = 3;
 	if ( iNumLevels>=MIN_REDUCE_LEVELS )
 	{
 		iStopAtLevel -= REDUCE_STEP;
