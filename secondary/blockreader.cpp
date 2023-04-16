@@ -173,11 +173,11 @@ public:
 	virtual void Add ( BlockIterator_i * pIterator ) = 0;
 };
 
-template <typename BITMAP>
+template <typename BITMAP, bool ROWID_RANGE>
 class BitmapIterator_T : public BitmapIterator_i
 {
 public:
-				BitmapIterator_T ( uint32_t uNumValues );
+				BitmapIterator_T ( uint32_t uNumValues, const RowidRange_t * pBounds=nullptr );
 
 	bool		HintRowID ( uint32_t tRowID ) override;
 	bool		GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBlock ) override;
@@ -196,25 +196,29 @@ private:
 	int64_t						m_iNumProcessed = 0;
 	int							m_iIndex = 0;
 	int							m_iRowsLeft = INT_MAX;
+	RowidRange_t				m_tBounds;
 	SpanResizeable_T<uint32_t>	m_dRows;
 };
 
-template <typename BITMAP>
-BitmapIterator_T<BITMAP>::BitmapIterator_T ( uint32_t uNumValues )
+template <typename BITMAP, bool ROWID_RANGE>
+BitmapIterator_T<BITMAP,ROWID_RANGE>::BitmapIterator_T ( uint32_t uNumValues, const RowidRange_t * pBounds )
 	: m_tBitmap(uNumValues)
 {
+	if ( pBounds )
+		m_tBounds = *pBounds;
+
 	m_dRows.resize(RESULT_BLOCK_SIZE);
 }
 
-template <typename BITMAP>
-void BitmapIterator_T<BITMAP>::AddDesc ( std::vector<IteratorDesc_t> & dDesc ) const
+template <typename BITMAP, bool ROWID_RANGE>
+void BitmapIterator_T<BITMAP,ROWID_RANGE>::AddDesc ( std::vector<IteratorDesc_t> & dDesc ) const
 {
 	for ( const auto & i : m_dDesc )
 		dDesc.push_back(i);
 }
 
-template <typename BITMAP>
-void BitmapIterator_T<BITMAP>::Add ( BlockIterator_i * pIterator )
+template <typename BITMAP, bool ROWID_RANGE>
+void BitmapIterator_T<BITMAP,ROWID_RANGE>::Add ( BlockIterator_i * pIterator )
 {
 	assert(pIterator);
 
@@ -224,8 +228,34 @@ void BitmapIterator_T<BITMAP>::Add ( BlockIterator_i * pIterator )
 	Span_T<uint32_t> dRowIdBlock;
 	while ( pIterator->GetNextRowIdBlock(dRowIdBlock) && m_iRowsLeft>0 )
 	{
-		for ( auto i : dRowIdBlock )
-			m_tBitmap.BitSet(i);
+		if constexpr ( ROWID_RANGE )
+		{
+			// we need additional filtering only on first and last blocks
+			// per-block filtering is performed inside the iterator
+			bool bCutFront = dRowIdBlock.front() < m_tBounds.m_uMin;
+			bool bCutBack = dRowIdBlock.back() > m_tBounds.m_uMax;
+			if ( bCutFront || bCutBack )
+			{
+				uint32_t * pPtr = dRowIdBlock.data();
+				uint32_t * pEnd = dRowIdBlock.end();
+				if ( bCutFront )
+					pPtr = std::lower_bound ( pPtr, pEnd, m_tBounds.m_uMin );
+					
+				if ( bCutBack )
+					pEnd = std::upper_bound ( pPtr, pEnd, m_tBounds.m_uMax );
+
+				while ( pPtr < pEnd )
+					m_tBitmap.BitSet ( *pPtr++ );
+			}
+			else
+				for ( auto i : dRowIdBlock )
+					m_tBitmap.BitSet(i);
+		}
+		else
+		{
+			for ( auto i : dRowIdBlock )
+				m_tBitmap.BitSet(i);
+		}
 
 		m_iNumProcessed += dRowIdBlock.size();
 		m_iRowsLeft -= dRowIdBlock.size();
@@ -234,8 +264,8 @@ void BitmapIterator_T<BITMAP>::Add ( BlockIterator_i * pIterator )
 	m_iRowsLeft = std::max ( m_iRowsLeft, 0 );
 }
 
-template <typename BITMAP>
-bool BitmapIterator_T<BITMAP>::HintRowID ( uint32_t tRowID )
+template <typename BITMAP, bool ROWID_RANGE>
+bool BitmapIterator_T<BITMAP,ROWID_RANGE>::HintRowID ( uint32_t tRowID )
 {
 	int iNewIndex = tRowID >> 6;
 	if ( iNewIndex > m_iIndex )
@@ -244,8 +274,8 @@ bool BitmapIterator_T<BITMAP>::HintRowID ( uint32_t tRowID )
 	return m_iIndex < m_tBitmap.GetLength();
 }
 
-template <typename BITMAP>
-bool BitmapIterator_T<BITMAP>::GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBlock )
+template <typename BITMAP, bool ROWID_RANGE>
+bool BitmapIterator_T<BITMAP,ROWID_RANGE>::GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBlock )
 {
 	uint32_t * pData = m_dRows.data();
 	uint32_t * pPtr = pData;
@@ -338,7 +368,7 @@ protected:
 	int							m_iCutoff = 0;
 
 	bool				NeedBitmapIterator() const;
-	BitmapIterator_i *	SpawnBitmapIterator() const;
+	BitmapIterator_i *	SpawnBitmapIterator ( const RowidRange_t * pBounds = nullptr ) const;
 	void				LoadValueBlockData ( bool bOnlyCount, FileReader_c & tReader );
 };
 
@@ -361,25 +391,29 @@ ReaderTraits_c::ReaderTraits_c ( const std::string & sAttr, uint32_t uVersion, s
 bool ReaderTraits_c::NeedBitmapIterator() const
 {
 	const size_t BITMAP_ITERATOR_THRESH = 8;
-	const int QUEUE_RSET_THRESH = 4096;
-	return m_tRsetInfo.m_iNumIterators>BITMAP_ITERATOR_THRESH && m_tRsetInfo.m_iRsetSize>QUEUE_RSET_THRESH;
+	return m_tRsetInfo.m_iNumIterators>BITMAP_ITERATOR_THRESH ;
 }
 
 
-BitmapIterator_i * ReaderTraits_c::SpawnBitmapIterator() const
+BitmapIterator_i * ReaderTraits_c::SpawnBitmapIterator ( const RowidRange_t * pBounds ) const
 {
 	if ( !NeedBitmapIterator() )
 		return nullptr;
 
 	const uint32_t SMALL_INDEX_THRESH = 262144;
-	if ( m_tRsetInfo.m_uRowsCount<=SMALL_INDEX_THRESH ) 
-		return new BitmapIterator_T<BitVec_T<uint64_t>> ( m_tRsetInfo.m_uRowsCount );
-
 	const float LARGE_BITMAP_RATIO = 0.01f;
-	if ( float(m_tRsetInfo.m_iRsetSize)/m_tRsetInfo.m_uRowsCount<=LARGE_BITMAP_RATIO )
-		return new BitmapIterator_T<SplitBitmap_c> ( m_tRsetInfo.m_uRowsCount );
+	if ( m_tRsetInfo.m_uRowsCount>SMALL_INDEX_THRESH && float(m_tRsetInfo.m_iRsetSize)/m_tRsetInfo.m_uRowsCount<=LARGE_BITMAP_RATIO )
+	{
+		if ( pBounds )
+			return new BitmapIterator_T<SplitBitmap_c, true> ( m_tRsetInfo.m_uRowsCount, pBounds );
+		else
+			return new BitmapIterator_T<SplitBitmap_c, false> ( m_tRsetInfo.m_uRowsCount );
+	}
 
-	return new BitmapIterator_T<BitVec_T<uint64_t>> ( m_tRsetInfo.m_uRowsCount );
+	if ( pBounds )
+		return new BitmapIterator_T<BitVec_T<uint64_t>, true> ( m_tRsetInfo.m_uRowsCount, pBounds );
+	else
+		return new BitmapIterator_T<BitVec_T<uint64_t>, false> ( m_tRsetInfo.m_uRowsCount );
 }
 
 
@@ -913,7 +947,7 @@ void RangeReader_c::CreateBlocksIterator ( const BlockIter_t & tIt, const Filter
 {
 	// add bitmap iterator as 1st element of dRes on exit
 	std::function<void( BitmapIterator_i * pIterator )> fnDeleter = [&]( BitmapIterator_i * pIterator ){ if ( pIterator ) { assert(dRes.empty()); dRes.push_back(pIterator); } };
-	std::unique_ptr<BitmapIterator_i, decltype(fnDeleter)> pBitmapIterator ( SpawnBitmapIterator(), fnDeleter );
+	std::unique_ptr<BitmapIterator_i, decltype(fnDeleter)> pBitmapIterator ( SpawnBitmapIterator ( m_bHaveBounds ? &m_tBounds : nullptr ), fnDeleter );
 	if ( pBitmapIterator && m_iCutoff>=0 )
 		pBitmapIterator->SetCutoff(m_iCutoff);
 

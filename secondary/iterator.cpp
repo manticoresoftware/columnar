@@ -143,6 +143,7 @@ uint32_t RowidIterator_T<false>::MarkMatchingBlocks()
 {
 	m_dMatchingBlocks.Resize ( m_dBlockOffsets.size() );
 	m_dMatchingBlocks.SetAllBits();
+	m_iCurBlock = 0;
 	return m_dBlockOffsets.size();
 }
 
@@ -156,6 +157,9 @@ uint32_t RowidIterator_T<true>::MarkMatchingBlocks()
 		if ( tRowidBounds.Overlaps ( { m_dMinMax[i<<1], m_dMinMax[(i<<1)+1] } ) )
 		{
 			m_dMatchingBlocks.BitSet(i);
+			if ( !uSet )
+				m_iCurBlock = i;
+
 			uSet++;
 		}
 
@@ -196,7 +200,6 @@ bool RowidIterator_T<ROWID_RANGE>::StartBlock ( Span_T<uint32_t> & dRowIdBlock )
 			return false;
 		}
 
-		m_iCurBlock = 0;
 		return ReadNextBlock(dRowIdBlock);
 	}
 
