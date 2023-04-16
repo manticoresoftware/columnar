@@ -5,10 +5,8 @@ workflow:
     - if: $CI_COMMIT_BRANCH == "master" && $CI_COMMIT_TITLE != $DOCS_AUTOCOMMIT_TITLE
     - if: $CI_COMMIT_BRANCH =~ /^columnar-.*$/ && $CI_COMMIT_TITLE != $DOCS_AUTOCOMMIT_TITLE
     - if: $CI_PIPELINE_SOURCE == "schedule"
-    - if: $TEST
 
-# to skip ci add [ci skip] or [skip ci] in commit message in any capitalization,
-# or add param when pushing, as: git push -o ci.skip ...
+# to skip ci: git push -o ci.skip ...
 
 # global settings will be applied to all jobs
 variables:
@@ -27,8 +25,8 @@ stages:
 job_mirror:
   stage: mirroring
   rules:
-    - if: $TEST==null && $CI_COMMIT_BRANCH == "master"
-    - if: $TEST==null && $CI_COMMIT_BRANCH =~ /^columnar-.*$/
+    - if: $CI_COMMIT_BRANCH == "master"
+    - if: $CI_COMMIT_BRANCH =~ /^columnar-.*$/
   tags:
     - dev-host
   dependencies: []
@@ -113,18 +111,12 @@ job_mirror:
 
 simple_build:
   extends: [ .build ]
-  rules:
-    - if: $TEST==null
-    - if: $TEST =~ /simple/
   variables:
     CTEST_CONFIGURATION_TYPE: Debug
 
 simple_tests:
   extends: [ .tests ]
   needs: [ simple_build ]
-  rules:
-    - if: $TEST==null
-    - if: $TEST =~ /simple/
   variables:
     CTEST_CONFIGURATION_TYPE: Debug
 
@@ -132,9 +124,6 @@ simple_tests:
 
 release_build:
   extends: [ .build ]
-  rules:
-    - if: $TEST==null
-    - if: $TEST =~ /release/
   variables:
     CMAKE_INTERPROCEDURAL_OPTIMIZATION: 1
     CTEST_CONFIGURATION_TYPE: RelWithDebInfo
@@ -142,9 +131,6 @@ release_build:
 release_tests:
   extends: [ .tests ]
   needs: [ release_build ]
-  rules:
-    - if: $TEST==null
-    - if: $TEST =~ /release/
   variables:
     CTEST_CONFIGURATION_TYPE: RelWithDebInfo
 
@@ -152,9 +138,6 @@ release_tests:
 
 win_build:
   extends: [ .build ]
-  rules:
-    - if: $TEST==null
-    - if: $TEST =~ /windows/
   variables:
     DISTR: windows
     arch: x64
@@ -176,9 +159,6 @@ win_build:
 win_tests:
   stage: ubertests
   needs: [ win_build ]
-  rules:
-    - if: $TEST==null
-    - if: $TEST =~ /windows/
   tags:
     - windev19
   variables:
@@ -210,9 +190,6 @@ win_tests:
 # build and upload on regular commits
 convert_win_junit:
   stage: publish
-  rules:
-    - if: ( $WHAT=='$WHAT' || $WHAT==null )
-      when: always
   tags:
     - docker
   image: registry.gitlab.com/manticoresearch/dev/ubertests_public:3201
@@ -233,9 +210,6 @@ convert_win_junit:
 
 deploy_hook:
   stage: hooks
-  rules:
-    - if: $CI_COMMIT_TITLE !~ /^noci .*$/i && $TEST==null
-      when: on_success
   trigger:
     include: packaging.yml
   needs:
