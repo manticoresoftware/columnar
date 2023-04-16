@@ -17,6 +17,10 @@ workflow:
 .build:
   stage: build
   interruptible: true
+  rules:
+    - if: $CI_MERGE_REQUEST_ID
+      when: manual
+    - if: $CI_MERGE_REQUEST_ID == null && $CI_PIPELINE_SOURCE != "schedule"
   needs: [ ]
   tags:
     - docker
