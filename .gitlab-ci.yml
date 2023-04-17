@@ -210,6 +210,8 @@ convert_win_junit:
 
 deploy_hook:
   stage: hooks
+  rules:
+    - if: $CI_PIPELINE_SOURCE != "schedule"
   trigger:
     include: packaging.yml
   needs:
