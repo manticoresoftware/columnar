@@ -42,7 +42,7 @@ job_mirror:
   needs: [ ]
   tags:
     - docker-free
-  image: registry.gitlab.com/manticoresearch/dev/external_toolchain:clang15_cmake3243
+  image: manticoresearch/external_toolchain:clang15_cmake3263
   variables:
     CACHEB: $CI_PROJECT_DIR/cache
     NO_TESTS: 1
@@ -80,13 +80,12 @@ job_mirror:
   needs: [ ]
   tags:
     - specdocker
-  image: registry.gitlab.com/manticoresearch/dev/ubertests_public:3201
+  image: manticoresearch/ubertests_ctest:3263
   variables:
     CACHEB: $CI_PROJECT_DIR/cache
     NO_BUILD: 1
   script:
-    - bash /root/aot.sh
-    - ctest -VV -S cmake/citest.cmake --no-compress-output
+    - ctest -V -S cmake/citest.cmake --no-compress-output
   after_script:
     - cd build
     - cp -r Testing/2*/Test.xml .
@@ -192,7 +191,7 @@ convert_win_junit:
   stage: publish
   tags:
     - docker
-  image: registry.gitlab.com/manticoresearch/dev/ubertests_public:3201
+  image: manticoresearch/ubertests_ctest:3263
   needs:
     - win_tests
   variables:

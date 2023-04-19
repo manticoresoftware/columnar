@@ -24,7 +24,7 @@ workflow:
   needs: [ ]
   tags:
     - docker
-  image: registry.gitlab.com/manticoresearch/dev/external_toolchain:clang15_cmake3243
+  image: manticoresearch/external_toolchain:clang15_cmake3263
   variables:
     CACHEB: $CI_PROJECT_DIR/cache
     arch: x86_64
