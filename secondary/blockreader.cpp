@@ -751,7 +751,7 @@ int CmpRange ( T tStart, T tEnd, const Filter_t & tRange )
 		tIntRange = Interval_T<T> ( tRange.m_iMinValue, tRange.m_iMaxValue );
 
 	if ( tRange.m_bLeftUnbounded )
-		tIntRange.m_tStart = std::numeric_limits<T>::min();
+		tIntRange.m_tStart = std::numeric_limits<T>::lowest();
 	if ( tRange.m_bRightUnbounded )
 		tIntRange.m_tEnd = std::numeric_limits<T>::max();
 
@@ -1033,16 +1033,13 @@ BlockReader_i * CreateRangeReader ( int iFD, const ColumnInfo_t & tCol, const Se
 	case AttrType_e::UINT32SET:
 	case AttrType_e::BOOLEAN:
 		return new RangeReader_T<uint32_t, uint32_t> ( iFD, tCol.m_sName, uVersion, pCodec, uBlockBaseOff, pBounds, tInfo, iCutoff );
-		break;
 
 	case AttrType_e::FLOAT:
 		return new RangeReader_T<uint32_t, float> ( iFD, tCol.m_sName, uVersion, pCodec, uBlockBaseOff, pBounds, tInfo, iCutoff );
-		break;
 
 	case AttrType_e::INT64:
 	case AttrType_e::INT64SET:
 		return new RangeReader_T<uint64_t, int64_t> ( iFD, tCol.m_sName, uVersion, pCodec, uBlockBaseOff, pBounds, tInfo, iCutoff );
-		break;
 
 	default: return nullptr;
 	}
