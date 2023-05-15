@@ -1239,7 +1239,7 @@ private:
 bool Checker_Int_c::CheckBlockHeader ( uint32_t uBlockId )
 {
 	uint32_t uPacking = m_pReader->Unpack_uint32();
-	if ( uPacking!=(uint32_t)IntPacking_e::CONST && uPacking!=(uint32_t)IntPacking_e::TABLE && uPacking!=(uint32_t)IntPacking_e::DELTA && uPacking!=(uint32_t)IntPacking_e::GENERIC )
+	if ( uPacking!=(uint32_t)IntPacking_e::CONST && uPacking!=(uint32_t)IntPacking_e::TABLE && uPacking!=(uint32_t)IntPacking_e::DELTA && uPacking!=(uint32_t)IntPacking_e::GENERIC && uPacking!=(uint32_t)IntPacking_e::HASH )
 	{
 		m_fnError ( FormatStr ( "Unknown encoding of block %u: %u", uBlockId, uPacking ).c_str() );
 		return false;

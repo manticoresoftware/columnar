@@ -261,6 +261,12 @@ bool AttributeHeader_c::Check ( FileReader_c & tReader, Reporter_fn & fnError )
 		}
 	}
 
+	int iNumPackings = 0;
+	int iPacking = 0;
+	if ( !CheckInt32Packed ( tReader, 0, 256, "Number of packing stats", iNumPackings, fnError ) ) return false;
+	for ( int i = 0; i < iNumPackings; i++ )
+		if ( !CheckInt32Packed ( tReader, 0, iBlocks, "Packing stats", iPacking, fnError ) ) return false;
+
 	return true;
 }
 
