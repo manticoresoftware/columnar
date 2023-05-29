@@ -29,7 +29,6 @@ jobs:
     with:
       DISTR: windows #
       arch: x64 #
-      sysroot: roots_apr12
       CTEST_CMAKE_GENERATOR: "Ninja Multi-Config" #
       CTEST_CONFIGURATION_TYPE: Debug #
       cache_key: build_windows_x64 #
