@@ -102,6 +102,7 @@ job_mirror:
     paths:
       - build/junit_tests.xml
       - build/_deps/manticore-build/test/test_*/report.txt
+      - build/_deps/manticore-build/test/test_*/report.bin
       - build/_deps/manticore-build/test/error*.txt
       - build/_deps/manticore-build/test/searchd.log
   retry: 1
@@ -179,6 +180,7 @@ win_tests:
     paths:
       - build/xml
       - build/_deps/manticore-build/test/test_*/report.txt
+      - build/_deps/manticore-build/test/test_*/report.bin
       - build/_deps/manticore-build/test/error*.txt
       - build/_deps/manticore-build/test/searchd.log
   cache: { }
