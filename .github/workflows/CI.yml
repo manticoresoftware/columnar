@@ -1,0 +1,36 @@
+name: 🚀 Tests, builds, packs
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+# cancels the previous workflow run when a new one appears in the same branch (e.g. master or a PR's branch)
+concurrency:
+  group: CI_${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  build_linux_release:
+    name: Liniux release build
+    uses: ./.github/workflows/build_template.yml
+
+  build_linux_debug:
+    name: Linux debug build
+    uses: ./.github/workflows/build_template.yml
+    with:
+      CTEST_CONFIGURATION_TYPE: "Debug"
+
+  build_windows:
+    name: Windows x64 build
+    uses: ./.github/workflows/build_template.yml
+    with:
+      DISTR: windows #
+      arch: x64 #
+      sysroot: roots_apr12
+      CTEST_CMAKE_GENERATOR: "Ninja Multi-Config" #
+      CTEST_CONFIGURATION_TYPE: Debug #
+      cache_key: build_windows_x64 #
+      artifact_list: "build/xml build/columnar/Debug/lib_manticore_columnar.dll build/secondary/Debug/lib_manticore_secondary.dll build/_deps/manticore-build/src/Debug/indexer.exe build/_deps/manticore-build/src/Debug/searchd.exe" #

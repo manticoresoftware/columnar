@@ -1,0 +1,79 @@
+name: Build Template
+
+on:
+  workflow_call:
+    inputs:
+      arch: #
+        required: false
+        type: string
+        default: x86_64
+      DISTR: #
+        required: false
+        type: string
+        default: bionic
+      CTEST_CMAKE_GENERATOR: #
+        required: false
+        type: string
+        default: Ninja
+      CTEST_CONFIGURATION_TYPE: #
+        required: false
+        type: string
+        default: RelWithDebInfo
+      cache_key: #
+        required: false
+        type: string
+        default: build_linux_x86_64
+      artifact_list: #
+        required: false
+        type: string
+        default: "build/xml build/columnar/lib_manticore_columnar.so build/secondary/lib_manticore_secondary.so build/_deps/manticore-build/src/searchd build/_deps/manticore-build/src/indexer build/_deps/manticore-build/src/indextool build/_deps/manticore-build/config/*.c build/_deps/manticore-build/config/*.h"
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        shell: bash
+    timeout-minutes: 30
+    container:
+      image: manticoresearch/external_toolchain:clang15_cmake3263
+      env:
+        CACHEB: "../cache" #
+        VERBOSE: 1 #
+        DIAGNOSTIC: 1 #
+        NO_TESTS: 1 #
+        DISTR: ${{ inputs.DISTR }} #
+        boost: boost_nov22 #
+        sysroot: roots_nov22 #
+        arch: ${{ inputs.arch }} #
+        CTEST_CMAKE_GENERATOR: ${{ inputs.CTEST_CMAKE_GENERATOR }} #
+        CTEST_CONFIGURATION_TYPE: ${{ inputs.CTEST_CONFIGURATION_TYPE }} #
+        SYSROOT_URL: https://repo.manticoresearch.com/repository/sysroots #
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          set-safe-directory: true
+
+      - name: Initialization
+        run: | # without adding the safe.directory the cmake fails to do git log -1 --date=short --format=%cd
+          bash /sysroot/root/entry_point.sh
+          git config --global --add safe.directory /__w/manticoresearch/manticoresearch
+
+      - name: Check out cache before building
+        uses: actions/cache@v3.3.1
+        with:
+          path: cache
+          enableCrossOsArchive: true
+          key: ${{ inputs.cache_key }}
+
+      - name: 🚀 Build
+        run: ctest -VV -S cmake/citest.cmake --no-compress-output
+
+      - name: Upload build artifacts
+        if: success()
+        uses: ./.github/workflows/upload_artifact_with_retries/
+        with:
+          name: build_${{ inputs.DISTR }}_${{ inputs.CTEST_CONFIGURATION_TYPE }}_${{ inputs.arch }}
+          path: ${{ inputs.artifact_list }}
