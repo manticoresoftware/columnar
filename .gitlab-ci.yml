@@ -80,13 +80,13 @@ job_mirror:
   needs: [ ]
   tags:
     - specdocker
-  image: manticoresearch/ubertests_ctest:3263
+  image: manticoresearch/ubertests_ctest:3263 #
   variables:
-    CACHEB: $CI_PROJECT_DIR/cache
-    NO_BUILD: 1
-  script:
-    - ctest -V -S cmake/citest.cmake --no-compress-output
-  after_script:
+    CACHEB: $CI_PROJECT_DIR/cache #
+    NO_BUILD: 1 #
+  script: #
+    - ctest -V -S cmake/citest.cmake --no-compress-output #
+  after_script: #
     - cd build
     - cp -r Testing/2*/Test.xml .
     - xsltproc -o junit_tests.xml ../misc/junit/ctest2junit.xsl Test.xml

@@ -26,7 +26,7 @@ jobs:
 #          path: test
 
   build_linux_release:
-    name: Liniux release build
+    name: Linux release build
     uses: ./.github/workflows/build_template.yml
 
   build_linux_debug:
