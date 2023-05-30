@@ -59,7 +59,7 @@ jobs:
       - name: Initialization
         run: | # without adding the safe.directory the cmake fails to do git log -1 --date=short --format=%cd
           bash /sysroot/root/entry_point.sh
-          git config --global --add safe.directory /__w/manticoresearch/manticoresearch
+          git config --global --add safe.directory /__w/columnar/columnar
 
       - name: Check out cache before building
         uses: actions/cache@v3.3.1
