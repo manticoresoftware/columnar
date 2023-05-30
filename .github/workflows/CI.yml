@@ -13,6 +13,18 @@ concurrency:
 
 jobs:
 
+
+  test:
+    name: test
+    runs-on: ubuntu-22.04
+    steps:
+      - run: echo 123 > test
+      - name: Upload build artifacts
+        uses: manticoresoftware/manticoresearch/actions/upload_artifact_with_retries@main
+        with:
+          name: test
+          path: test
+
   build_linux_release:
     name: Liniux release build
     uses: ./.github/workflows/build_template.yml
