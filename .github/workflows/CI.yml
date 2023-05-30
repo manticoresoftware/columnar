@@ -45,3 +45,23 @@ jobs:
       CTEST_CONFIGURATION_TYPE: Debug #
       cache_key: build_windows_x64 #
       artifact_list: "build/xml build/columnar/Debug/lib_manticore_columnar.dll build/secondary/Debug/lib_manticore_secondary.dll build/_deps/manticore-build/src/Debug/indexer.exe build/_deps/manticore-build/src/Debug/searchd.exe" #
+
+  test_linux_debug:
+    name: Linux debug mode tests
+    needs: build_linux_debug
+    uses: ./.github/workflows/test_template.yml
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [1_and_on]
+        include:
+          - name: 1_and_on
+            start: 1
+            end: 99999
+    with:
+      CTEST_CONFIGURATION_TYPE: "Debug"
+      CTEST_START: ${{ matrix.start }}
+      CTEST_END: ${{ matrix.end }}
+      artifact_name: debug_test_${{ matrix.name }}
+      xml_command: "cd build; cp -r Testing/2*/Test.xml .; xsltproc -o junit_tests_${{ matrix.name }}.xml ../misc/junit/ctest2junit.xsl Test.xml"
+      timeout: 10
