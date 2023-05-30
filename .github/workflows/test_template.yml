@@ -60,12 +60,20 @@ jobs:
           name: build_bionic_${{ inputs.CTEST_CONFIGURATION_TYPE }}_x86_64
           path: build
 
-      - name: Check out cache before building
+      - name: Check out main cache before building
+        uses: actions/cache@v3.3.1
+        with:
+          path: build/cache
+          enableCrossOsArchive: true
+          key: build_linux_x86_64
+
+      - name: Check out deps cache before building
         uses: actions/cache@v3.3.1
         with:
           path: build/_deps/manticore-build/cache
           enableCrossOsArchive: true
-          key: build_linux_x86_64
+          key: build_linux_x86_64_deps
+
 
       - name: List files
         run: find .
