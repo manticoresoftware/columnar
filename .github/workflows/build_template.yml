@@ -80,6 +80,8 @@ jobs:
           env
           ctest -VV -S cmake/citest.cmake --no-compress-output
 
+      - run: find
+      
       - name: Upload build artifacts
         if: success()
         uses: manticoresoftware/upload_artifact_with_retries@main
