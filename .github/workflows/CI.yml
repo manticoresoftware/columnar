@@ -254,7 +254,7 @@ jobs:
       xml_command: "cd build; cp -r Testing/2*/Test.xml .; xsltproc -o junit_tests_${{ matrix.name }}.xml ../misc/junit/ctest2junit.xsl Test.xml"
       timeout: 10
 
-  release_tests_report:
+  debug_tests_report:
     name: Release mode tests summary and report
     needs: test_linux_release
     runs-on: ubuntu-22.04
