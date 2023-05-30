@@ -64,14 +64,14 @@ jobs:
       - name: Check out main cache before building
         uses: actions/cache@v3.3.1
         with:
-          path: build/cache
+          path: cache
           enableCrossOsArchive: true
           key: ${{ inputs.cache_key }}
 
       - name: Check out deps cache before building
         uses: actions/cache@v3.3.1
         with:
-          path: build/_deps/manticore-build/cache
+          path: build/_deps/cache
           enableCrossOsArchive: true
           key: ${{ inputs.cache_key }}_deps
 
@@ -81,7 +81,7 @@ jobs:
           ctest -VV -S cmake/citest.cmake --no-compress-output
 
       - run: find
-      
+
       - name: Upload build artifacts
         if: success()
         uses: manticoresoftware/upload_artifact_with_retries@main
