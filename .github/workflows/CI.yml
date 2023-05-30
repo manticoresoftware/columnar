@@ -53,15 +53,83 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        name: [1_and_on]
+        name: [1_50,51_100,101_150,151_200,201_250,251_300,301_350,350_400,401_and_on]
         include:
-          - name: 1_and_on
+          - name: 1_50
             start: 1
-            end: 99999
+            end: 50
+          - name: 51_100
+            start: 51
+            end: 100
+          - name: 101_150
+            start: 101
+            end: 150
+          - name: 151_200
+            start: 151
+            end: 200
+          - name: 201_250
+            start: 201
+            end: 250
+          - name: 251_300
+            start: 251
+            end: 300
+          - name: 301_350
+            start: 301
+            end: 350
+          - name: 351_400
+            start: 351
+            end: 400
+          - name: 401_and_on
+            start: 401
+            end: 999999
     with:
       CTEST_CONFIGURATION_TYPE: "Debug"
       CTEST_START: ${{ matrix.start }}
       CTEST_END: ${{ matrix.end }}
       artifact_name: debug_test_${{ matrix.name }}
+      xml_command: "cd build; cp -r Testing/2*/Test.xml .; xsltproc -o junit_tests_${{ matrix.name }}.xml ../misc/junit/ctest2junit.xsl Test.xml"
+      timeout: 10
+
+  test_linux_release:
+    name: Linux release mode tests
+    needs: build_linux_release
+    uses: ./.github/workflows/test_template.yml
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [1_50,51_100,101_150,151_200,201_250,251_300,301_350,350_400,401_and_on]
+        include:
+          - name: 1_50
+            start: 1
+            end: 50
+          - name: 51_100
+            start: 51
+            end: 100
+          - name: 101_150
+            start: 101
+            end: 150
+          - name: 151_200
+            start: 151
+            end: 200
+          - name: 201_250
+            start: 201
+            end: 250
+          - name: 251_300
+            start: 251
+            end: 300
+          - name: 301_350
+            start: 301
+            end: 350
+          - name: 351_400
+            start: 351
+            end: 400
+          - name: 401_and_on
+            start: 401
+            end: 999999
+    with:
+      CTEST_CONFIGURATION_TYPE: "RelWithDebInfo"
+      CTEST_START: ${{ matrix.start }}
+      CTEST_END: ${{ matrix.end }}
+      artifact_name: release_test_${{ matrix.name }}
       xml_command: "cd build; cp -r Testing/2*/Test.xml .; xsltproc -o junit_tests_${{ matrix.name }}.xml ../misc/junit/ctest2junit.xsl Test.xml"
       timeout: 10
