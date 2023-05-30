@@ -72,7 +72,9 @@ jobs:
 
       - name: 🚀 Test #
         id: test
-        run: ctest -VV -S cmake/citest.cmake --no-compress-output --timeout 60 # --timeout may be not working https://gitlab.kitware.com/cmake/cmake/-/issues/23979
+        run: |
+          env
+          ctest -VV -S cmake/citest.cmake --no-compress-output --timeout 60 # --timeout may be not working https://gitlab.kitware.com/cmake/cmake/-/issues/23979
         continue-on-error: true
 
       - name: Remember status
