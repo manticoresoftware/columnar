@@ -69,7 +69,9 @@ jobs:
           key: ${{ inputs.cache_key }}
 
       - name: 🚀 Build
-        run: ctest -VV -S cmake/citest.cmake --no-compress-output
+        run: |
+          env
+          ctest -VV -S cmake/citest.cmake --no-compress-output
 
       - name: Upload build artifacts
         if: success()
