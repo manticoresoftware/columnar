@@ -64,7 +64,7 @@ jobs:
       - name: Check out cache before building
         uses: actions/cache@v3.3.1
         with:
-          path: cache
+          path: build/_deps/manticore-build/cache
           enableCrossOsArchive: true
           key: ${{ inputs.cache_key }}
 
