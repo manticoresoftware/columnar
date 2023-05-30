@@ -54,18 +54,18 @@ jobs:
       - name: Tests container entrypoint
         run: bash /entry_point.sh &
 
-      - name: Check out cache before building
-        uses: actions/cache@v3.3.1
-        with:
-          path: cache
-          enableCrossOsArchive: true
-          key: build_linux_x86_64
-
       - name: Download build artifacts
         uses: manticoresoftware/download_artifact_with_retries@main
         with:
           name: build_bionic_${{ inputs.CTEST_CONFIGURATION_TYPE }}_x86_64
           path: build
+
+      - name: Check out cache before building
+        uses: actions/cache@v3.3.1
+        with:
+          path: build/_deps/manticore-build/cache
+          enableCrossOsArchive: true
+          key: build_linux_x86_64
 
       - name: List files
         run: find .
