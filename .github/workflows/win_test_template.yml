@@ -50,18 +50,26 @@ jobs:
           key: win_bundle
       - name: Remove ZSTD # since it wasn't used to save the cache and if we don't remove it here the cache won't be found. TODO: install zstd in our images, so we don't have to do these hacks
         run: rm C:\tools\zstd\zstd.exe
-      - name: Check out cache before building
+      - name: Check out main cache
         uses: actions/cache@v3.3.1
         with:
           path: cache
           enableCrossOsArchive: true
           key: build_windows_x64
+      - name: Check out deps cache
+        uses: actions/cache@v3.3.1
+        with:
+          path: build/_deps/cache
+          enableCrossOsArchive: true
+          key: build_windows_x64_deps
       - name: Copy libraries close to the binaries
         run: |
           cp bundle/mysql-x64/lib/debug/libmysql* build/_deps/manticore-build/src/Debug/
           cp bundle/Expat-1.95.8-x64/Libs/libexpat* build/_deps/manticore-build/src/Debug/
           cp bundle/libiconv-1.9.1-x64/lib/iconv* build/_deps/manticore-build/src/Debug/
       - run: ls build/_deps/manticore-build/src/Debug/
+        continue-on-error: true
+      - run: ls build/_deps/cache/
         continue-on-error: true
       - name: Setup Flex and Bison
         run: choco install winflexbison
