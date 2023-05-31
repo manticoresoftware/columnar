@@ -173,17 +173,11 @@ jobs:
         with:
           name: debug_test_351_400
           path: .
-      - name: Download test report artifacts 401_450
+      - name: Download test report artifacts 401_and_on
         uses: manticoresoftware/download_artifact_with_retries@main
         continue-on-error: true
         with:
-          name: debug_test_401_450
-          path: .
-      - name: Download test report artifacts 451_and_on
-        uses: manticoresoftware/download_artifact_with_retries@main
-        continue-on-error: true
-        with:
-          name: debug_test_451_and_on
+          name: debug_test_401_and_on
           path: .
       - name: Publish test results
         uses: EnricoMi/publish-unit-test-result-action@v2
@@ -317,11 +311,11 @@ jobs:
         with:
           name: release_test_401_450
           path: .
-      - name: Download test report artifacts 451_and_on
+      - name: Download test report artifacts 401_and_on
         uses: manticoresoftware/download_artifact_with_retries@main
         continue-on-error: true
         with:
-          name: release_test_451_and_on
+          name: release_test_401_and_on
           path: .
       - name: Publish test results
         uses: EnricoMi/publish-unit-test-result-action@v2
