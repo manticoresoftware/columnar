@@ -394,6 +394,7 @@ jobs:
         with:
           name: windows_test_287_and_on
           path: .
+      - run: find .
       - name: Convert the XML to JUnit format
         run: for dir in build/xml_*; do xsltproc -o $dir/junit_tests.xml misc/junit/ctest2junit.xsl $dir/Test.xml; done;
         shell: bash
