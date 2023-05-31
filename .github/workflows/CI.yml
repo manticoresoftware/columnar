@@ -191,10 +191,10 @@ jobs:
         with:
           files: build/junit*.xml
       - name: Per-test results
-        # IMPORTANT: The value of 10 below should correspond to the test shard count, needs.<job_name>.strategy.job-total doesn't work
+        # IMPORTANT: The value of 9 below should correspond to the test shard count, needs.<job_name>.strategy.job-total doesn't work
         run: |
           for file in build/status*; do echo -n "$file: "; cat "$file"; done
-          grep -o "success" build/status* | wc -l | awk '{exit $1==10?0:1}'
+          grep -o "success" build/status* | wc -l | awk '{exit $1==9?0:1}'
         shell: bash
       - name: Delete unneded per-shard artifacts
         if: always()
@@ -329,10 +329,10 @@ jobs:
         with:
           files: build/junit*.xml
       - name: Per-test results
-        # IMPORTANT: The value of 10 below should correspond to the test shard count, needs.<job_name>.strategy.job-total doesn't work
+        # IMPORTANT: The value of 9 below should correspond to the test shard count, needs.<job_name>.strategy.job-total doesn't work
         run: |
           for file in build/status*; do echo -n "$file: "; cat "$file"; done
-          grep -o "success" build/status* | wc -l | awk '{exit $1==10?0:1}'
+          grep -o "success" build/status* | wc -l | awk '{exit $1==9?0:1}'
         shell: bash
       - name: Delete unneded per-shard artifacts
         if: always()
