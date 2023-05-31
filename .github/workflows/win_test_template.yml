@@ -91,7 +91,7 @@ jobs:
         continue-on-error: true
       - run: ls build/Testing
         continue-on-error: true
-      - run: ls build/Testing/2*/
+      - run: ls build/Testing/2*/*
         continue-on-error: true
       - run: ls build/Testing/Temporary/
         continue-on-error: true
