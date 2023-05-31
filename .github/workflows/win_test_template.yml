@@ -89,6 +89,10 @@ jobs:
         continue-on-error: true
       - run: ls build
         continue-on-error: true
+      - run: ls build/Testing
+        continue-on-error: true
+      - run: ls build/columnar build/secondary
+        continue-on-error: true
       - run: ls build/_deps/manticore-build/
         continue-on-error: true
       - run: ls build/_deps/manticore-build/test
