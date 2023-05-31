@@ -19,6 +19,10 @@ on:
         required: false
         type: string
         default: RelWithDebInfo
+      cmake_command:
+        required: false
+        type: string
+        default: "ctest -VV -S cmake/citest.cmake --no-compress-output"
       cache_key: #
         required: false
         type: string
@@ -76,9 +80,7 @@ jobs:
           key: ${{ inputs.cache_key }}_deps
 
       - name: 🚀 Build
-        run: |
-          env
-          ctest -VV -S cmake/citest.cmake --no-compress-output
+        run: ${{ inputs.cmake_command }}
 
       - run: find
 
