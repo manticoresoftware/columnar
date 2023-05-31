@@ -84,6 +84,11 @@ jobs:
       - name: Remember status
         run: echo "${{ steps.test.outcome }}" > build/status_${{ inputs.CTEST_START }}_${{ inputs.CTEST_END }}
         continue-on-error: true
+      - run: pwd
+      - run: ls -la
+      - run: ls -la build
+      - run: ls -la build/_deps/manticore-build/
+      - run: ls -la build/_deps/manticore-build/test
       - name: Prepare test results
         if: always()
         run: |
