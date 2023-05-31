@@ -64,9 +64,9 @@ jobs:
           key: build_windows_x64_deps
       - name: Copy libraries close to the binaries
         run: |
-          cp bundle/mysql-x64/lib/debug/libmysql* build/_deps/manticore-build/src/Debug/
-          cp bundle/Expat-1.95.8-x64/Libs/libexpat* build/_deps/manticore-build/src/Debug/
-          cp bundle/libiconv-1.9.1-x64/lib/iconv* build/_deps/manticore-build/src/Debug/
+          cp bundle/mysql-x64/lib/debug/libmysql* build/_deps/manticore-subbuild/src/Debug/
+          cp bundle/Expat-1.95.8-x64/Libs/libexpat* build/_deps/manticore-subbuild/src/Debug/
+          cp bundle/libiconv-1.9.1-x64/lib/iconv* build/_deps/manticore-subbuild/src/Debug/
       - run: ls build/_deps/manticore-build/src/Debug/
         continue-on-error: true
       - run: ls build/_deps/cache/
@@ -112,6 +112,8 @@ jobs:
       - run: ls build/_deps/manticore-src/
         continue-on-error: true
       - run: ls build/_deps/manticore-build/
+        continue-on-error: true
+      - run: ls build/_deps/manticore-subbuild/
         continue-on-error: true
       - run: ls build/_deps/manticore-build/test
         continue-on-error: true
