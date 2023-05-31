@@ -61,6 +61,8 @@ jobs:
           cp bundle/mysql-x64/lib/debug/libmysql* build/_deps/manticore-build/src/Debug/
           cp bundle/Expat-1.95.8-x64/Libs/libexpat* build/_deps/manticore-build/src/Debug/
           cp bundle/libiconv-1.9.1-x64/lib/iconv* build/_deps/manticore-build/src/Debug/
+      - run: ls build/_deps/manticore-build/src/Debug/
+        continue-on-error: true
       - name: Setup Flex and Bison
         run: choco install winflexbison
       - name: Run mysql
@@ -105,7 +107,7 @@ jobs:
         if: always()
         run: |
           mkdir build/xml_${{ inputs.CTEST_START }}_${{ inputs.CTEST_END }}
-          cp build/xml/Test.xml build/xml_${{ inputs.CTEST_START }}_${{ inputs.CTEST_END }}/Test.xml
+          cp build/Testing/2*/Test.xml build/xml_${{ inputs.CTEST_START }}_${{ inputs.CTEST_END }}/
           mv build/_deps/manticore-build/test build/test_${{ inputs.CTEST_START }}_${{ inputs.CTEST_END }}
         continue-on-error: true
       - name: Upload test artifacts
