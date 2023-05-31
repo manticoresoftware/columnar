@@ -35,6 +35,10 @@ on:
         required: false
         type: string
         default: "build/xml build/columnar/lib_manticore_columnar.so build/secondary/lib_manticore_secondary.so build/_deps/manticore-build/src/searchd build/_deps/manticore-build/src/indexer build/_deps/manticore-build/src/indextool build/_deps/manticore-build/config/*.c build/_deps/manticore-build/config/*.h"
+      HOMEBREW_PREFIX:
+        required: false
+        type: string
+        default:
 
 jobs:
   build:
@@ -57,6 +61,7 @@ jobs:
         CTEST_CMAKE_GENERATOR: ${{ inputs.CTEST_CMAKE_GENERATOR }} #
         CTEST_CONFIGURATION_TYPE: ${{ inputs.CTEST_CONFIGURATION_TYPE }} #
         SYSROOT_URL: https://repo.manticoresearch.com/repository/sysroots #
+        HOMEBREW_PREFIX: ${{ inputs.HOMEBREW_PREFIX }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
