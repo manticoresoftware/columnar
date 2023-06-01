@@ -20,9 +20,9 @@ jobs:
     name: ${{ inputs.CTEST_START }}_${{ inputs.CTEST_END }}
     runs-on: windows-2019
     env:
-      CACHEB: "D:/a/columnar/columnar/cache"
-      LIBS_BUNDLE: "D:/a/columnar/columnar/bundle"
-      BOOST_ROOT: "D:/a/columnar/columnar/boost_1_75_0"
+      CACHEB: "D:\\a\\columnar\\columnar\\cache"
+      LIBS_BUNDLE: "D:\\a\\columnar\\columnar\\bundle"
+      BOOST_ROOT: "D:\\a\\columnar\\columnar\\boost_1_75_0"
       CTEST_CMAKE_GENERATOR: "Visual Studio 16 2019"
       CTEST_CONFIGURATION_TYPE: Debug
       CTEST_START: ${{ inputs.CTEST_START }}
