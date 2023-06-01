@@ -20,9 +20,9 @@ jobs:
     name: ${{ inputs.CTEST_START }}_${{ inputs.CTEST_END }}
     runs-on: windows-2019
     env:
-      CACHEB: "../cache"
-      LIBS_BUNDLE: "../bundle"
-      BOOST_ROOT: "../boost_1_75_0"
+      CACHEB: "D:\a\columnar\columnar\cache"
+      LIBS_BUNDLE: "D:\a\columnar\columnar\bundle"
+      BOOST_ROOT: "D:\a\columnar\columnar\boost_1_75_0"
       CTEST_CMAKE_GENERATOR: "Visual Studio 16 2019"
       CTEST_CONFIGURATION_TYPE: Debug
       CTEST_START: ${{ inputs.CTEST_START }}
@@ -56,23 +56,23 @@ jobs:
           path: cache
           enableCrossOsArchive: true
           key: build_windows_x64
-      - name: Check out deps cache
-        uses: actions/cache@v3.3.1
-        with:
-          path: build/_deps/cache
-          enableCrossOsArchive: true
-          key: build_windows_x64_deps
+#      - name: Check out deps cache
+#        uses: actions/cache@v3.3.1
+#        with:
+#          path: build/_deps/cache
+#          enableCrossOsArchive: true
+#          key: build_windows_x64_deps
       - run: ls build/_deps/
         continue-on-error: true
-      - name: Copy libraries close to the binaries
-        run: |
-          cp bundle/mysql-x64/lib/debug/libmysql* build/_deps/manticore-build/src/Debug/
-          cp bundle/Expat-1.95.8-x64/Libs/libexpat* build/_deps/manticore-build/src/Debug/
-          cp bundle/libiconv-1.9.1-x64/lib/iconv* build/_deps/manticore-build/src/Debug/
-          cp bundle/mysql-x64/lib/debug/libmysql* build/_deps/manticore-subbuild/src/Debug/
-          cp bundle/Expat-1.95.8-x64/Libs/libexpat* build/_deps/manticore-subbuild/src/Debug/
-          cp bundle/libiconv-1.9.1-x64/lib/iconv* build/_deps/manticore-subbuild/src/Debug/
-        continue-on-error: true # TODO: remove
+#      - name: Copy libraries close to the binaries
+#        run: |
+#          cp bundle/mysql-x64/lib/debug/libmysql* build/_deps/manticore-build/src/Debug/
+#          cp bundle/Expat-1.95.8-x64/Libs/libexpat* build/_deps/manticore-build/src/Debug/
+#          cp bundle/libiconv-1.9.1-x64/lib/iconv* build/_deps/manticore-build/src/Debug/
+#          cp bundle/mysql-x64/lib/debug/libmysql* build/_deps/manticore-subbuild/src/Debug/
+#          cp bundle/Expat-1.95.8-x64/Libs/libexpat* build/_deps/manticore-subbuild/src/Debug/
+#          cp bundle/libiconv-1.9.1-x64/lib/iconv* build/_deps/manticore-subbuild/src/Debug/
+#        continue-on-error: true # TODO: remove
       - run: ls build/_deps/
         continue-on-error: true
       - run: ls build/_deps/manticore-build/src/Debug/
