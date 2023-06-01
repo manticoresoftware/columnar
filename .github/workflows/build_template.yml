@@ -105,6 +105,11 @@ jobs:
         uses: manticoresoftware/upload_artifact_with_retries@main
         with:
           name: win_tmp_cache
-          path: |
-            cache
-            build/_deps/cache
+          path: cache
+
+      - name: Upload cache artifacts 2
+        if: success()
+        uses: manticoresoftware/upload_artifact_with_retries@main
+        with:
+          name: win_tmp_cache
+          path: build/_deps/cache
