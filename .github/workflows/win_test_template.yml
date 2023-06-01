@@ -62,11 +62,19 @@ jobs:
           path: build/_deps/cache
           enableCrossOsArchive: true
           key: build_windows_x64_deps
+      - run: ls build/_deps/
+        continue-on-error: true
       - name: Copy libraries close to the binaries
         run: |
+          cp bundle/mysql-x64/lib/debug/libmysql* build/_deps/manticore-build/src/Debug/
+          cp bundle/Expat-1.95.8-x64/Libs/libexpat* build/_deps/manticore-build/src/Debug/
+          cp bundle/libiconv-1.9.1-x64/lib/iconv* build/_deps/manticore-build/src/Debug/
           cp bundle/mysql-x64/lib/debug/libmysql* build/_deps/manticore-subbuild/src/Debug/
           cp bundle/Expat-1.95.8-x64/Libs/libexpat* build/_deps/manticore-subbuild/src/Debug/
           cp bundle/libiconv-1.9.1-x64/lib/iconv* build/_deps/manticore-subbuild/src/Debug/
+        continue-on-error: true # TODO: remove
+      - run: ls build/_deps/
+        continue-on-error: true
       - run: ls build/_deps/manticore-build/src/Debug/
         continue-on-error: true
       - run: ls build/_deps/cache/
