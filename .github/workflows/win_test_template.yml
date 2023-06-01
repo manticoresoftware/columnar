@@ -20,9 +20,9 @@ jobs:
     name: ${{ inputs.CTEST_START }}_${{ inputs.CTEST_END }}
     runs-on: windows-2019
     env:
-      CACHEB: "D:\\a\\columnar\\columnar\\cache"
-      LIBS_BUNDLE: "D:\\a\\columnar\\columnar\\bundle"
-      BOOST_ROOT: "D:\\a\\columnar\\columnar\\boost_1_75_0"
+      CACHEB: "D:/a/columnar/columnar/cache"
+      LIBS_BUNDLE: "D:/a/columnar/columnar/bundle"
+      BOOST_ROOT: "D:/a/columnar/columnar/boost_1_75_0"
       CTEST_CMAKE_GENERATOR: "Visual Studio 16 2019"
       CTEST_CONFIGURATION_TYPE: Debug
       CTEST_START: ${{ inputs.CTEST_START }}
@@ -48,6 +48,10 @@ jobs:
             boost_1_75_0
           enableCrossOsArchive: true
           key: win_bundle
+      - run: ls bundle
+        continue-on-error: true
+      - run: ls boost_1_75_0
+        continue-on-error: true
       - name: Remove ZSTD # since it wasn't used to save the cache and if we don't remove it here the cache won't be found. TODO: install zstd in our images, so we don't have to do these hacks
         run: rm C:\tools\zstd\zstd.exe
       - name: Check out main cache
@@ -56,6 +60,8 @@ jobs:
           path: cache
           enableCrossOsArchive: true
           key: build_windows_x64
+      - run: ls cache
+        continue-on-error: true
 #      - name: Check out deps cache
 #        uses: actions/cache@v3.3.1
 #        with:
