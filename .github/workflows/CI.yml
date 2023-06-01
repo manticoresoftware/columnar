@@ -48,7 +48,7 @@ jobs:
       - name: Extract Boost to put it to the cache
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
-          wget https://repo.manticoresearch.com/repository/tmp/boost_1_75_0.tgz
+          wget https://repo.manticoresearch.com/repository/tmp/boost_1_75_0.tgz # TODO: move away from tmp
           tar -xf boost_1_75_0.tgz
 
   build_linux_release:
