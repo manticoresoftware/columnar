@@ -74,6 +74,8 @@ jobs:
         continue-on-error: true
       - run: ls build/_deps/cache
         continue-on-error: true
+      - run: ls build/_deps/cache/windows-amd64
+        continue-on-error: true
 #      - name: Copy libraries close to the binaries
 #        run: |
 #          cp bundle/mysql-x64/lib/debug/libmysql* build/_deps/manticore-build/src/Debug/
