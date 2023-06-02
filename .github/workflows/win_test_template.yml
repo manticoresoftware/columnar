@@ -62,13 +62,17 @@ jobs:
           key: build_windows_x64
       - run: ls cache
         continue-on-error: true
-#      - name: Check out deps cache
-#        uses: actions/cache@v3.3.1
-#        with:
-#          path: build/_deps/cache
-#          enableCrossOsArchive: true
-#          key: build_windows_x64_deps
+      - name: Check out deps cache
+        uses: actions/cache@v3.3.1
+        with:
+          path: build/_deps/cache
+          enableCrossOsArchive: true
+          key: build_windows_x64_deps
+      - run: ls cache
+        continue-on-error: true
       - run: ls build/_deps/
+        continue-on-error: true
+      - run: ls build/_deps/cache
         continue-on-error: true
 #      - name: Copy libraries close to the binaries
 #        run: |
