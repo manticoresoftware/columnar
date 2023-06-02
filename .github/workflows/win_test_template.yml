@@ -105,6 +105,8 @@ jobs:
         continue-on-error: true
       - run: ls D:/a/columnar/columnar/boost_1_75_0
         continue-on-error: true
+      - run: ctest --version
+        continue-on-error: true
       - name: 🚀 Test
         id: test
         run: |
