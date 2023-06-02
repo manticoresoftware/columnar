@@ -66,7 +66,7 @@ jobs:
         uses: actions/cache@v3.3.1
         with:
 #          path: build/_deps/cache
-          path: cache
+          path: build/_deps/cache
           enableCrossOsArchive: true
           key: build_windows_x64_deps
       - run: ls cache
@@ -77,6 +77,8 @@ jobs:
         continue-on-error: true
       - run: ls build/_deps/cache/windows-amd64
         continue-on-error: true
+      - run: mv build/_deps/cache/windows-amd64/* cache/windows-amd64/
+        continue-on-error: true # TODO: REMOVE
 #      - name: Copy libraries close to the binaries
 #        run: |
 #          cp bundle/mysql-x64/lib/debug/libmysql* build/_deps/manticore-build/src/Debug/
