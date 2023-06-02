@@ -101,6 +101,8 @@ jobs:
           extensions: mysqli
       - run: ls D:/a/columnar/columnar/cache
         continue-on-error: true
+      - run: ls D:/a/columnar/columnar/cache/windows-amd64
+        continue-on-error: true
       - run: ls D:/a/columnar/columnar/bundle
         continue-on-error: true
       - run: ls D:/a/columnar/columnar/boost_1_75_0
