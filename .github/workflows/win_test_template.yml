@@ -111,7 +111,7 @@ jobs:
         id: test
         run: |
           env
-          ctest -VV -S cmake/citest.cmake -C $CTEST_CONFIGURATION_TYPE --no-compress-output # --timeout may be not working https://gitlab.kitware.com/cmake/cmake/-/issues/23979
+          ctest -VV -S cmake/citest.cmake -C $CTEST_CONFIGURATION_TYPE --no-compress-output --debug # --timeout may be not working https://gitlab.kitware.com/cmake/cmake/-/issues/23979
         continue-on-error: true
       - name: Remember status
         run: echo "${{ steps.test.outcome }}" > build/status_${{ inputs.CTEST_START }}_${{ inputs.CTEST_END }}
