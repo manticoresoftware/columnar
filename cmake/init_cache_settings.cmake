@@ -9,6 +9,8 @@ if (DEFINED ENV{LIBS_BUNDLE})
 	set ( LIBS_BUNDLE "$ENV{LIBS_BUNDLE}" )
 endif ()
 
+message(STATUS "columnar_BINARY_DIR is: ${columnar_BINARY_DIR}")
+
 if (NOT LIBS_BUNDLE)
 	get_filename_component ( LIBS_BUNDLE "${columnar_SOURCE_DIR}/../bundle" ABSOLUTE )
 endif ()
@@ -16,6 +18,8 @@ endif ()
 if (NOT IS_ABSOLUTE ${LIBS_BUNDLE})
 	set ( LIBS_BUNDLE "${columnar_BINARY_DIR}/${LIBS_BUNDLE}" )
 endif ()
+
+message(STATUS "columnar_BINARY_DIR is: ${columnar_BINARY_DIR}")
 
 set ( LIBS_BUNDLE "${LIBS_BUNDLE}" CACHE PATH "Choose the path to the dir which contains downloaded sources for libs like re2, icu, stemmer, etc." FORCE )
 
@@ -32,6 +36,9 @@ endif ()
 if (NOT IS_ABSOLUTE ${CACHEB})
 	set ( CACHEB "${columnar_BINARY_DIR}/${CACHEB}" )
 endif ()
+
+message(STATUS "LIBS_BUNDLE is: ${LIBS_BUNDLE}")
+message(STATUS "CACHEB is: ${CACHEB}")
 
 if (DEFINED CACHEB)
 	set ( CACHEB "${CACHEB}" CACHE PATH "Cache dir where unpacked sources and builds found." )
