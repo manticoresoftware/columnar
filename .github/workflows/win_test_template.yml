@@ -77,7 +77,6 @@ jobs:
 #      - run: ls build/_deps/cache/windows-amd64
 #        continue-on-error: true
       - run: mv build/_deps/cache/windows-amd64/* cache/windows-amd64/
-        continue-on-error: true # TODO: REMOVE
       - name: Copy libraries close to the binaries
         run: |
           cp bundle/mysql-x64/lib/debug/libmysql* build/_deps/manticore-build/src/Debug/
@@ -119,9 +118,8 @@ jobs:
 #        continue-on-error: true
       - name: 🚀 Test
         id: test
-        run: |
-          env
-          ctest -V -S cmake/citest.cmake -C $CTEST_CONFIGURATION_TYPE --no-compress-output # --timeout may be not working https://gitlab.kitware.com/cmake/cmake/-/issues/23979
+        # --timeout may be not working https://gitlab.kitware.com/cmake/cmake/-/issues/23979
+        run: ctest -V -S cmake/citest.cmake -C $CTEST_CONFIGURATION_TYPE --no-compress-output
         continue-on-error: true
       - name: Remember status
         run: echo "${{ steps.test.outcome }}" > build/status_${{ inputs.CTEST_START }}_${{ inputs.CTEST_END }}
