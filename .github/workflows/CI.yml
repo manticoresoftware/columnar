@@ -49,7 +49,6 @@ jobs:
     with:
       CTEST_CONFIGURATION_TYPE: "Debug"
 
-
   build_windows:
     name: Windows x64 build
     uses: ./.github/workflows/build_template.yml
