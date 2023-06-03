@@ -65,7 +65,6 @@ jobs:
       - name: Check out deps cache
         uses: actions/cache@v3.3.1
         with:
-#          path: build/_deps/cache
           path: build/_deps/cache
           enableCrossOsArchive: true
           key: build_windows_x64_deps
@@ -79,11 +78,11 @@ jobs:
         continue-on-error: true
       - run: mv build/_deps/cache/windows-amd64/* cache/windows-amd64/
         continue-on-error: true # TODO: REMOVE
-#      - name: Copy libraries close to the binaries
-#        run: |
-#          cp bundle/mysql-x64/lib/debug/libmysql* build/_deps/manticore-build/src/Debug/
-#          cp bundle/Expat-1.95.8-x64/Libs/libexpat* build/_deps/manticore-build/src/Debug/
-#          cp bundle/libiconv-1.9.1-x64/lib/iconv* build/_deps/manticore-build/src/Debug/
+      - name: Copy libraries close to the binaries
+        run: |
+          cp bundle/mysql-x64/lib/debug/libmysql* build/_deps/manticore-build/src/Debug/
+          cp bundle/Expat-1.95.8-x64/Libs/libexpat* build/_deps/manticore-build/src/Debug/
+          cp bundle/libiconv-1.9.1-x64/lib/iconv* build/_deps/manticore-build/src/Debug/
 #          cp bundle/mysql-x64/lib/debug/libmysql* build/_deps/manticore-subbuild/src/Debug/
 #          cp bundle/Expat-1.95.8-x64/Libs/libexpat* build/_deps/manticore-subbuild/src/Debug/
 #          cp bundle/libiconv-1.9.1-x64/lib/iconv* build/_deps/manticore-subbuild/src/Debug/
