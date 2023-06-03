@@ -3,19 +3,19 @@ name: Build Template
 on:
   workflow_call:
     inputs:
-      arch: #
+      arch:
         required: false
         type: string
         default: x86_64
-      DISTR: #
+      DISTR:
         required: false
         type: string
         default: bionic
-      CTEST_CMAKE_GENERATOR: #
+      CTEST_CMAKE_GENERATOR:
         required: false
         type: string
         default: Ninja
-      CTEST_CONFIGURATION_TYPE: #
+      CTEST_CONFIGURATION_TYPE:
         required: false
         type: string
         default: RelWithDebInfo
@@ -23,7 +23,7 @@ on:
         required: false
         type: string
         default: "ctest -VV -S cmake/citest.cmake --no-compress-output"
-      cache_key: #
+      cache_key:
         required: false
         type: string
         default: build_linux_x86_64
@@ -31,7 +31,7 @@ on:
         required: false
         type: string
         default: boost_nov22
-      artifact_list: #
+      artifact_list:
         required: false
         type: string
         default: "build/xml build/columnar/lib_manticore_columnar.so build/secondary/lib_manticore_secondary.so build/_deps/manticore-build/src/searchd build/_deps/manticore-build/src/indexer build/_deps/manticore-build/src/indextool build/_deps/manticore-build/config/*.c build/_deps/manticore-build/config/*.h"
@@ -50,17 +50,17 @@ jobs:
     container:
       image: manticoresearch/external_toolchain:clang15_cmake3263
       env:
-        CACHEB: "../cache" #
-        VERBOSE: 1 #
-        DIAGNOSTIC: 1 #
-        NO_TESTS: 1 #
-        DISTR: ${{ inputs.DISTR }} #
+        CACHEB: "../cache"
+        VERBOSE: 1
+        DIAGNOSTIC: 1
+        NO_TESTS: 1
+        DISTR: ${{ inputs.DISTR }}
         boost: ${{ inputs.boost }}
-        sysroot: roots_nov22 #
-        arch: ${{ inputs.arch }} #
-        CTEST_CMAKE_GENERATOR: ${{ inputs.CTEST_CMAKE_GENERATOR }} #
-        CTEST_CONFIGURATION_TYPE: ${{ inputs.CTEST_CONFIGURATION_TYPE }} #
-        SYSROOT_URL: https://repo.manticoresearch.com/repository/sysroots #
+        sysroot: roots_nov22
+        arch: ${{ inputs.arch }}
+        CTEST_CMAKE_GENERATOR: ${{ inputs.CTEST_CMAKE_GENERATOR }}
+        CTEST_CONFIGURATION_TYPE: ${{ inputs.CTEST_CONFIGURATION_TYPE }}
+        SYSROOT_URL: https://repo.manticoresearch.com/repository/sysroots
         HOMEBREW_PREFIX: ${{ inputs.HOMEBREW_PREFIX }}
     steps:
       - name: Checkout repository

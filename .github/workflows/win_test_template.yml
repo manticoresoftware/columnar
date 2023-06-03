@@ -119,7 +119,7 @@ jobs:
       - name: 🚀 Test
         id: test
         # --timeout may be not working https://gitlab.kitware.com/cmake/cmake/-/issues/23979
-        run: ctest -V -S cmake/citest.cmake -C $CTEST_CONFIGURATION_TYPE --no-compress-output
+        run: ctest -V -S cmake/citest.cmake -C $CTEST_CONFIGURATION_TYPE --no-compress-output --timeout 60
         continue-on-error: true
       - name: Remember status
         run: echo "${{ steps.test.outcome }}" > build/status_${{ inputs.CTEST_START }}_${{ inputs.CTEST_END }}

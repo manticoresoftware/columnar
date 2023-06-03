@@ -13,18 +13,6 @@ concurrency:
 
 jobs:
 
-
-#  test:
-#    name: test
-#    runs-on: ubuntu-22.04
-#    steps:
-#      - run: echo 123 > test
-#      - name: Upload build artifacts
-#        uses: manticoresoftware/upload_artifact_with_retries@main
-#        with:
-#          name: test
-#          path: test
-
   win_bundle:
     name: Windows supplementary files preparation
     runs-on: ubuntu-22.04
@@ -65,11 +53,11 @@ jobs:
     name: Windows x64 build
     uses: ./.github/workflows/build_template.yml
     with:
-      DISTR: windows #
-      arch: x64 #
-      CTEST_CMAKE_GENERATOR: "Ninja Multi-Config" #
-      CTEST_CONFIGURATION_TYPE: Debug #
-      cache_key: build_windows_x64 #
+      DISTR: windows
+      arch: x64
+      CTEST_CMAKE_GENERATOR: "Ninja Multi-Config"
+      CTEST_CONFIGURATION_TYPE: Debug
+      cache_key: build_windows_x64
       artifact_list: "build/xml build/columnar/Debug/lib_manticore_columnar.dll build/secondary/Debug/lib_manticore_secondary.dll build/_deps/manticore-build/src/Debug/indexer.exe build/_deps/manticore-build/src/Debug/searchd.exe" #
 
   test_linux_debug:

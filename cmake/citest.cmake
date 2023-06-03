@@ -18,8 +18,6 @@ set_property ( GLOBAL PROPERTY Label P$ENV{CI_PIPELINE_ID} J$ENV{CI_JOB_ID} )
 # how may times try the test before it is considered failed
 set ( RETRIES 5 )
 
-message(STATUS "columnar_BINARY_DIR is: ${columnar_BINARY_DIR}")
-
 if (NOT CTEST_CMAKE_GENERATOR)
 	set ( CTEST_CMAKE_GENERATOR "Unix Makefiles" )
 endif ()
@@ -35,8 +33,6 @@ endif ()
 # common test options
 set ( CONFIG_OPTIONS "WITH_ODBC=0;WITH_POSTGRESQL=0;WITH_SSL=0;WITH_RE2=1;WITH_STEMMER=1;WITH_EXPAT=1" )
 set ( CTEST_BINARY_DIRECTORY "build" )
-
-message(STATUS "columnar_BINARY_DIR is: ${columnar_BINARY_DIR}")
 
 if (WITH_COVERAGE)
 	find_program ( CTEST_COVERAGE_COMMAND NAMES gcov )
@@ -62,8 +58,6 @@ set ( CTEST_NIGHTLY_START_TIME \"01:00:00 UTC\" )
 set ( CTEST_DROP_SITE_CDASH TRUE )
 " )
 
-message(STATUS "columnar_BINARY_DIR is: ${columnar_BINARY_DIR}")
-
 # configure memcheck
 set ( WITH_MEMCHECK FALSE )
 #find_program(CTEST_MEMORYCHECK_COMMAND NAMES valgrind)
@@ -83,8 +77,6 @@ set ( CTEST_CONFIGURE_COMMAND "${CMAKE_CALL} \"${CTEST_SOURCE_DIRECTORY}\"" )
 # will not write and count warnings in auto-generated files of lexer
 set ( CTEST_CUSTOM_WARNING_EXCEPTION ".*flexsphinx.*" )
 message ( STATUS "CTEST_CONFIGURE_COMMAND is ${CTEST_CONFIGURE_COMMAND}" )
-
-message(STATUS "columnar_BINARY_DIR is: ${columnar_BINARY_DIR}")
 
 # Do the test suite
 ctest_start ( "Continuous" )
@@ -107,8 +99,6 @@ endif ()
 if (NO_TESTS)
 	return ()
 endif ()
-
-message(STATUS "columnar_BINARY_DIR is: ${columnar_BINARY_DIR}")
 
 if ( CTEST_REGEX )
 	ctest_test ( RETURN_VALUE retcode INCLUDE "${CTEST_REGEX}" REPEAT UNTIL_PASS:${RETRIES})
