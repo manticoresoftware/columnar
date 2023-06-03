@@ -60,6 +60,7 @@ jobs:
       cache_key: build_windows_x64
       artifact_list: "build/xml build/columnar/Debug/lib_manticore_columnar.dll build/secondary/Debug/lib_manticore_secondary.dll build/_deps/manticore-build/src/Debug/indexer.exe build/_deps/manticore-build/src/Debug/searchd.exe" #
 
+
   test_linux_debug:
     name: Linux debug mode tests
     needs: build_linux_debug
