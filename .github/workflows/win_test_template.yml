@@ -48,10 +48,6 @@ jobs:
             boost_1_75_0
           enableCrossOsArchive: true
           key: win_bundle
-#      - run: ls bundle
-#        continue-on-error: true
-#      - run: ls boost_1_75_0
-#        continue-on-error: true
       - name: Remove ZSTD # since it wasn't used to save the cache and if we don't remove it here the cache won't be found. TODO: install zstd in our images, so we don't have to do these hacks
         run: rm C:\tools\zstd\zstd.exe
       - name: Check out main cache
@@ -60,38 +56,18 @@ jobs:
           path: cache
           enableCrossOsArchive: true
           key: build_windows_x64
-#      - run: ls cache
-#        continue-on-error: true
       - name: Check out deps cache
         uses: actions/cache@v3.3.1
         with:
           path: build/_deps/cache
           enableCrossOsArchive: true
           key: build_windows_x64_deps
-#      - run: ls cache
-#        continue-on-error: true
-#      - run: ls build/_deps/
-#        continue-on-error: true
-#      - run: ls build/_deps/cache
-#        continue-on-error: true
-#      - run: ls build/_deps/cache/windows-amd64
-#        continue-on-error: true
       - run: mv build/_deps/cache/windows-amd64/* cache/windows-amd64/
       - name: Copy libraries close to the binaries
         run: |
           cp bundle/mysql-x64/lib/debug/libmysql* build/_deps/manticore-build/src/Debug/
           cp bundle/Expat-1.95.8-x64/Libs/libexpat* build/_deps/manticore-build/src/Debug/
           cp bundle/libiconv-1.9.1-x64/lib/iconv* build/_deps/manticore-build/src/Debug/
-#          cp bundle/mysql-x64/lib/debug/libmysql* build/_deps/manticore-subbuild/src/Debug/
-#          cp bundle/Expat-1.95.8-x64/Libs/libexpat* build/_deps/manticore-subbuild/src/Debug/
-#          cp bundle/libiconv-1.9.1-x64/lib/iconv* build/_deps/manticore-subbuild/src/Debug/
-#        continue-on-error: true # TODO: remove
-#      - run: ls build/_deps/
-#        continue-on-error: true
-#      - run: ls build/_deps/manticore-build/src/Debug/
-#        continue-on-error: true
-#      - run: ls build/_deps/cache/
-#        continue-on-error: true
       - name: Setup Flex and Bison
         run: choco install winflexbison
       - name: Run mysql
@@ -106,47 +82,14 @@ jobs:
         with:
           php-version: '8.2'
           extensions: mysqli
-#      - run: ls D:/a/columnar/columnar/cache
-#        continue-on-error: true
-#      - run: ls D:/a/columnar/columnar/cache/windows-amd64
-#        continue-on-error: true
-#      - run: ls D:/a/columnar/columnar/bundle
-#        continue-on-error: true
-#      - run: ls D:/a/columnar/columnar/boost_1_75_0
-#        continue-on-error: true
-#      - run: ctest --version
-#        continue-on-error: true
       - name: 🚀 Test
         id: test
         # --timeout may be not working https://gitlab.kitware.com/cmake/cmake/-/issues/23979
-        run: ctest -VV -S cmake/citest.cmake -C $CTEST_CONFIGURATION_TYPE --no-compress-output
+        run: ctest -V -S cmake/citest.cmake -C $CTEST_CONFIGURATION_TYPE --no-compress-output --timeout 60
         continue-on-error: true
       - name: Remember status
         run: echo "${{ steps.test.outcome }}" > build/status_${{ inputs.CTEST_START }}_${{ inputs.CTEST_END }}
         continue-on-error: true
-#      - run: pwd
-#      - run: ls
-#        continue-on-error: true
-#      - run: ls build
-#        continue-on-error: true
-#      - run: ls build/Testing
-#        continue-on-error: true
-#      - run: ls build/Testing/2*/*
-#        continue-on-error: true
-#      - run: ls build/Testing/Temporary/
-#        continue-on-error: true
-#      - run: ls build/columnar build/secondary
-#        continue-on-error: true
-#      - run: ls build/_deps/
-#        continue-on-error: true
-#      - run: ls build/_deps/manticore-src/
-#        continue-on-error: true
-#      - run: ls build/_deps/manticore-build/
-#        continue-on-error: true
-#      - run: ls build/_deps/manticore-subbuild/
-#        continue-on-error: true
-#      - run: ls build/_deps/manticore-build/test
-#        continue-on-error: true
       - name: Prepare test results
         if: always()
         run: |
