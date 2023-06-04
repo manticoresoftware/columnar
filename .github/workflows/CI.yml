@@ -430,31 +430,30 @@ jobs:
       cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
       artifact_list: "build/manticore*deb"
 
-  # pack_rhel:
-  #   name: RHEL packages
-  #   uses: ./.github/workflows/build_template.yml
-  #   needs: pack
-  #   strategy:
-  #     fail-fast: false
-  #     matrix:
-  #       DISTR: [rhel7, rhel8, rhel9]
-  #       arch: [x86_64, aarch64]
-  #   with:
-  #     DISTR: ${{ matrix.DISTR }}
-  #     arch: ${{ matrix.arch }}
-  #     boost: boost_rhel_feb17
-  #     cmake_command: |
-  #       ln -s $(pwd) /builds_manticoresearch_dev_usr_src_debug_manticore_component_src_0
-  #       cd /builds_manticoresearch_dev_usr_src_debug_manticore_component_src_0
-  #       mkdir build
-  #       cd build
-  #       cmake -DPACK=1 ..
-  #       cmake --build . --target package
-  #     cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
-  #     artifact_list: "build/manticore*rpm"
+  pack_rhel:
+    uses: ./.github/workflows/build_template.yml
+    needs: pack
+    strategy:
+      fail-fast: false
+      matrix:
+        DISTR: [rhel7, rhel8, rhel9]
+        arch: [x86_64, aarch64]
+    name: ${{ matrix.DISTR }} ${{ matrix.arch }} packing
+    with:
+      DISTR: ${{ matrix.DISTR }}
+      arch: ${{ matrix.arch }}
+      boost: boost_rhel_feb17
+      cmake_command: |
+        ln -s $(pwd) /builds_manticoresearch_dev_usr_src_debug_manticore_component_src_0
+        cd /builds_manticoresearch_dev_usr_src_debug_manticore_component_src_0
+        mkdir build
+        cd build
+        cmake -DPACK=1 ..
+        cmake --build . --target package
+      cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
+      artifact_list: "build/manticore*rpm"
 
   # pack_macos:
-  #   name: MacOS packages
   #   uses: ./.github/workflows/build_template.yml
   #   needs: pack
   #   strategy:
@@ -462,6 +461,7 @@ jobs:
   #     matrix:
   #       DISTR: [macos]
   #       arch: [x86_64, arm64]
+  #   name: ${{ matrix.DISTR }} ${{ matrix.arch }} packing
   #   with:
   #     DISTR: ${{ matrix.DISTR }}
   #     arch: ${{ matrix.arch }}
@@ -493,7 +493,7 @@ jobs:
     name: Publishing Debian/Ubuntu packages to repo.manticoresearch.com
 #    needs: [pack_windows, pack_macos, pack_rhel, pack_debian_ubuntu]
     runs-on: [self-hosted, Linux, X64]
-    needs: [pack_debian_ubuntu]
+    needs: [pack_debian_ubuntu,pack_rhel]
     strategy:
       fail-fast: true
       matrix:
@@ -509,4 +509,26 @@ jobs:
           curl -sSL https://raw.githubusercontent.com/manticoresoftware/repo_scripts/main/upload_repo_deb > script
           chmod +x script
           DISTRO=${{ matrix.DISTR }} DIGIT_DELIMITER2="-" ./script
+        shell: bash
+
+  publish_rhel:
+    name: Publishing RHEL packages to repo.manticoresearch.com
+#    needs: [pack_windows, pack_macos, pack_rhel, pack_debian_ubuntu]
+    runs-on: [self-hosted, Linux, X64]
+    needs: [pack_debian_ubuntu,pack_rhel]
+    strategy:
+      fail-fast: true
+      matrix:
+        DISTR: [rhel7, rhel8, rhel9]
+        arch: [x86_64, aarch64]
+    steps:
+      - uses: manticoresoftware/download_artifact_with_retries@main
+        with:
+          name: build_${{ matrix.DISTR }}_RelWithDebInfo_${{ matrix.arch }}
+          path: .
+      - name: Deploy package
+        run: |
+          curl -sSL https://raw.githubusercontent.com/manticoresoftware/repo_scripts/main/upload_repo_rpm > script
+          chmod +x script
+          DISTRO=${{ matrix.DISTR }} DIGIT_DELIMITER2="_" ./script
         shell: bash
