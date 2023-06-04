@@ -411,7 +411,6 @@ jobs:
   #     - run: echo "Ready to pack"
 
   pack_debian_ubuntu:
-    name: Debian/Ubuntu packages
     uses: ./.github/workflows/build_template.yml
 #    needs: pack
     strategy:
@@ -419,6 +418,7 @@ jobs:
       matrix:
         DISTR: [bionic, focal, jammy, buster, bullseye, bookworm]
         arch: [x86_64, aarch64]
+    name: ${{ matrix.DISTR }} ${{ matrix.arch }} packing
     with:
       DISTR: ${{ matrix.DISTR }}
       arch: ${{ matrix.arch }}
@@ -502,7 +502,7 @@ jobs:
     steps:
       - uses: manticoresoftware/download_artifact_with_retries@main
         with:
-          name: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
+          name: build_${{ matrix.DISTR }}_RelWithDebInfo_${{ matrix.arch }}
           path: .
       - name: Deploy package
         run: |
