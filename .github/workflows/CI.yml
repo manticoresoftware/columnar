@@ -503,7 +503,6 @@ jobs:
     name: Publishing Debian/Ubuntu packages to repo.manticoresearch.com
     needs: publish
     runs-on: [self-hosted, Linux, X64]
-    needs: [pack_debian_ubuntu,pack_rhel,pack_macos,pack_windows]
     strategy:
       fail-fast: true
       matrix:
@@ -525,7 +524,6 @@ jobs:
     name: Publishing RHEL packages to repo.manticoresearch.com
     needs: publish
     runs-on: [self-hosted, Linux, X64]
-    needs: [pack_debian_ubuntu,pack_rhel,pack_macos,pack_windows]
     strategy:
       fail-fast: true
       matrix:
@@ -547,7 +545,6 @@ jobs:
     name: Publishing Macos packages to repo.manticoresearch.com
     needs: publish
     runs-on: [self-hosted, Linux, X64]
-    needs: [pack_debian_ubuntu,pack_rhel,pack_macos,pack_windows]
     strategy:
       fail-fast: true
       matrix:
@@ -568,7 +565,6 @@ jobs:
     name: Publishing Windows packages to repo.manticoresearch.com
     needs: publish
     runs-on: [self-hosted, Linux, X64]
-    needs: [pack_debian_ubuntu,pack_rhel,pack_macos,pack_windows]
     steps:
       - uses: manticoresoftware/download_artifact_with_retries@main
         with:
