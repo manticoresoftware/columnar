@@ -500,7 +500,6 @@ jobs:
       - run: echo "Ready to publish"
 
   publish_debian_ubuntu:
-    name: Publishing Debian/Ubuntu packages to repo.manticoresearch.com
     needs: publish
     runs-on: [self-hosted, Linux, X64]
     strategy:
@@ -508,6 +507,7 @@ jobs:
       matrix:
         DISTR: [bionic, focal, jammy, buster, bullseye, bookworm]
         arch: [x86_64, aarch64]
+    name: ${{ matrix.DISTR }} ${{ matrix.arch }} publishing
     steps:
       - uses: manticoresoftware/download_artifact_with_retries@main
         with:
@@ -521,7 +521,6 @@ jobs:
         shell: bash
 
   publish_rhel:
-    name: Publishing RHEL packages to repo.manticoresearch.com
     needs: publish
     runs-on: [self-hosted, Linux, X64]
     strategy:
@@ -529,6 +528,7 @@ jobs:
       matrix:
         DISTR: [7, 8, 9]
         arch: [x86_64, aarch64]
+    name: RHEL ${{ matrix.DISTR }} ${{ matrix.arch }} publishing
     steps:
       - uses: manticoresoftware/download_artifact_with_retries@main
         with:
@@ -542,13 +542,13 @@ jobs:
         shell: bash
 
   publish_macos:
-    name: Publishing Macos packages to repo.manticoresearch.com
     needs: publish
     runs-on: [self-hosted, Linux, X64]
     strategy:
       fail-fast: true
       matrix:
         arch: [x86_64, arm64]
+    name: macos ${{ matrix.arch }} publishing
     steps:
       - uses: manticoresoftware/download_artifact_with_retries@main
         with:
