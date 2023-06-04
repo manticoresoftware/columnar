@@ -105,19 +105,58 @@ jobs:
     name: Debug mode tests summary and report
     needs: test_linux_debug
     runs-on: ubuntu-22.04
-    strategy:
-      matrix:
-        artifact: [1_54, 55_108, 109_162, 163_216, 217_270, 271_324, 325_378, 379_and_on]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Download test report artifacts ${{ matrix.artifact }}
+      - name: Download test report artifact 1_54
         uses: manticoresoftware/download_artifact_with_retries@main
         continue-on-error: true
         with:
-          name: debug_test_${{ matrix.artifact }}
+          name: debug_test_1_54
+          path: .
+      - name: Download test report artifact 55_108
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: debug_test_55_108
+          path: .
+      - name: Download test report artifact 109_162
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: debug_test_109_162
+          path: .
+      - name: Download test report artifact 163_216
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: debug_test_163_216
+          path: .
+      - name: Download test report artifact 217_270
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: debug_test_217_270
+          path: .
+      - name: Download test report artifact 271_324
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: debug_test_271_324
+          path: .
+      - name: Download test report artifact 325_378
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: debug_test_325_378
+          path: .
+      - name: Download test report artifact 379_and_on
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: debug_test_379_and_on
           path: .
       - name: Publish test results
         uses: EnricoMi/publish-unit-test-result-action@v2
@@ -188,19 +227,58 @@ jobs:
     name: release mode tests summary and report
     needs: test_linux_release
     runs-on: ubuntu-22.04
-    strategy:
-      matrix:
-        artifact: [1_54, 55_108, 109_162, 163_216, 217_270, 271_324, 325_378, 379_and_on]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Download test report artifacts ${{ matrix.artifact }}
+      - name: Download test report artifact 1_54
         uses: manticoresoftware/download_artifact_with_retries@main
         continue-on-error: true
         with:
-          name: release_test_${{ matrix.artifact }}
+          name: release_test_1_54
+          path: .
+      - name: Download test report artifact 55_108
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: release_test_55_108
+          path: .
+      - name: Download test report artifact 109_162
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: release_test_109_162
+          path: .
+      - name: Download test report artifact 163_216
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: release_test_163_216
+          path: .
+      - name: Download test report artifact 217_270
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: release_test_217_270
+          path: .
+      - name: Download test report artifact 271_324
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: release_test_271_324
+          path: .
+      - name: Download test report artifact 325_378
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: release_test_325_378
+          path: .
+      - name: Download test report artifact 379_and_on
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: release_test_379_and_on
           path: .
       - name: Publish test results
         uses: EnricoMi/publish-unit-test-result-action@v2
@@ -264,21 +342,47 @@ jobs:
     runs-on: ubuntu-22.04
     container:
       image: manticoresearch/ubertests_ctest:3263
-    strategy:
-      matrix:
-        artifact: [1_86,87_172,173_258,259_344,345_and_on]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Download test report artifacts ${{ matrix.artifact }}
+      - name: Download test report artifacts 1_86
         uses: manticoresoftware/download_artifact_with_retries@main
         continue-on-error: true
         with:
-          name: windows_test_${{ matrix.artifact }}
+          name: windows_test_1_86
           path: .
-      - run: find .
+      - name: Download test report artifacts 87_172
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: windows_test_1_86
+          path: .
+      - name: Download test report artifacts 87_172
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: windows_test_1_86
+          path: .
+      - name: Download test report artifacts 173_258
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: windows_test_259_344
+          path: .
+      - name: Download test report artifacts 259_344
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: windows_test_1_86
+          path: .
+      - name: Download test report artifacts 345_and_on
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: windows_test_345_and_on
+          path: .
       - name: Convert the XML to JUnit format
         run: for dir in build/xml_*; do xsltproc -o $dir/junit_tests.xml misc/junit/ctest2junit.xsl $dir/Test.xml; done;
         shell: bash
