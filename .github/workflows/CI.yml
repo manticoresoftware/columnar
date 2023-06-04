@@ -491,11 +491,10 @@ jobs:
     with:
       DISTR: windows
       arch: x64
-#      sysroot: roots_apr12
       cmake_command: |
         mkdir build
         cd build
         cmake -DPACK=1 ..
         cmake --build . --target package
       cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
-      artifact_list: "build/manticore*exe"
+      artifact_list: "build/manticore*exe build/manticore*zip"
