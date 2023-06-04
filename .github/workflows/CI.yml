@@ -60,355 +60,208 @@ jobs:
       cache_key: build_windows_x64
       artifact_list: "build/xml build/columnar/Debug/lib_manticore_columnar.dll build/secondary/Debug/lib_manticore_secondary.dll build/_deps/manticore-build/src/Debug/indexer.exe build/_deps/manticore-build/src/Debug/searchd.exe" #
 
-  test_linux_debug:
-    name: Linux debug mode tests
-    needs: build_linux_debug
-    uses: ./.github/workflows/test_template.yml
-    strategy:
-      fail-fast: false
-      matrix:
-        name: [1_50,51_100,101_150,151_200,201_250,251_300,301_350,351_400,401_and_on]
-        include:
-          - name: 1_50
-            start: 1
-            end: 50
-          - name: 51_100
-            start: 51
-            end: 100
-          - name: 101_150
-            start: 101
-            end: 150
-          - name: 151_200
-            start: 151
-            end: 200
-          - name: 201_250
-            start: 201
-            end: 250
-          - name: 251_300
-            start: 251
-            end: 300
-          - name: 301_350
-            start: 301
-            end: 350
-          - name: 351_400
-            start: 351
-            end: 400
-          - name: 401_and_on
-            start: 401
-            end: 999999
-    with:
-      CTEST_CONFIGURATION_TYPE: "Debug"
-      CTEST_START: ${{ matrix.start }}
-      CTEST_END: ${{ matrix.end }}
-      artifact_name: debug_test_${{ matrix.name }}
-      xml_command: "cd build; cp -r Testing/2*/Test.xml .; xsltproc -o junit_tests_${{ matrix.name }}.xml ../misc/junit/ctest2junit.xsl Test.xml"
-      timeout: 10
+test_linux_debug:
+  name: Linux debug mode tests
+  needs: build_linux_debug
+  uses: ./.github/workflows/test_template.yml
+  strategy:
+    fail-fast: false
+    matrix:
+      name: [1_54,55_108,109_162,163_216,217_270,271_324,325_378,379_and_on]
+      include:
+        - name: 1_54; start: 1; end: 54
+        - name: 55_108; start: 55; end: 108
+        - name: 109_162; start: 109; end: 162
+        - name: 163_216; start: 163; end: 216
+        - name: 217_270; start: 217; end: 270
+        - name: 271_324; start: 271; end: 324
+        - name: 325_378; start: 325; end: 378
+        - name: 379_and_on; start: 379; end: 999999
+  with:
+    CTEST_CONFIGURATION_TYPE: "Debug"
+    CTEST_START: ${{ matrix.start }}
+    CTEST_END: ${{ matrix.end }}
+    artifact_name: debug_test_${{ matrix.name }}
+    xml_command: "cd build; cp -r Testing/2*/Test.xml .; xsltproc -o junit_tests_${{ matrix.name }}.xml ../misc/junit/ctest2junit.xsl Test.xml"
+    timeout: 10
 
-  release_tests_report:
-    name: Debug mode tests summary and report
-    needs: test_linux_debug
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Checkout repository # We have to checkout to access .github/workflows/ in further steps
-        uses: actions/checkout@v3
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Download test report artifacts 1_50
-        uses: manticoresoftware/download_artifact_with_retries@main
-        continue-on-error: true
-        with:
-          name: debug_test_1_50
-          path: .
-      - name: Download test report artifacts 51_100
-        uses: manticoresoftware/download_artifact_with_retries@main
-        continue-on-error: true
-        with:
-          name: debug_test_51_100
-          path: .
-      - name: Download test report artifacts 101_150
-        uses: manticoresoftware/download_artifact_with_retries@main
-        continue-on-error: true
-        with:
-          name: debug_test_101_150
-          path: .
-      - name: Download test report artifacts 151_200
-        uses: manticoresoftware/download_artifact_with_retries@main
-        continue-on-error: true
-        with:
-          name: debug_test_151_200
-          path: .
-      - name: Download test report artifacts 201_250
-        uses: manticoresoftware/download_artifact_with_retries@main
-        continue-on-error: true
-        with:
-          name: debug_test_201_250
-          path: .
-      - name: Download test report artifacts 251_300
-        uses: manticoresoftware/download_artifact_with_retries@main
-        continue-on-error: true
-        with:
-          name: debug_test_251_300
-          path: .
-      - name: Download test report artifacts 301_350
-        uses: manticoresoftware/download_artifact_with_retries@main
-        continue-on-error: true
-        with:
-          name: debug_test_301_350
-          path: .
-      - name: Download test report artifacts 351_400
-        uses: manticoresoftware/download_artifact_with_retries@main
-        continue-on-error: true
-        with:
-          name: debug_test_351_400
-          path: .
-      - name: Download test report artifacts 401_and_on
-        uses: manticoresoftware/download_artifact_with_retries@main
-        continue-on-error: true
-        with:
-          name: debug_test_401_and_on
-          path: .
-      - name: Publish test results
-        uses: EnricoMi/publish-unit-test-result-action@v2
-        continue-on-error: true
-        with:
-          files: build/junit*.xml
-      - name: Per-test results
-        # IMPORTANT: The value of 9 below should correspond to the test shard count, needs.<job_name>.strategy.job-total doesn't work
-        run: |
-          for file in build/status*; do echo -n "$file: "; cat "$file"; done
-          grep -o "success" build/status* | wc -l | awk '{exit $1==9?0:1}'
-        shell: bash
-      - name: Delete unneded per-shard artifacts
-        if: always()
-        uses: geekyeggo/delete-artifact@v2
-        with:
-          name: debug_test_*
-          failOnError: false
-      - name: Upload combined artifacts
-        if: always()
-        continue-on-error: true
-        uses: manticoresoftware/upload_artifact_with_retries@main
-        with:
-          name: debug_test_resuls
-          path: build
+debug_tests_report:
+  name: Debug mode tests summary and report
+  needs: test_linux_debug
+  runs-on: ubuntu-22.04
+  strategy:
+    matrix:
+      artifact: [1_54, 55_108, 109_162, 163_216, 217_270, 271_324, 325_378, 379_and_on]
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Download test report artifacts ${{ matrix.artifact }}
+      uses: manticoresoftware/download_artifact_with_retries@main
+      continue-on-error: true
+      with:
+        name: debug_test_${{ matrix.artifact }}
+        path: .
+    - name: Publish test results
+      uses: EnricoMi/publish-unit-test-result-action@v2
+      continue-on-error: true
+      with:
+        files: build/junit*.xml
+    - name: Per-test results
+      run: |
+        for file in build/status*; do echo -n "$file: "; cat "$file"; done
+        grep -o "success" build/status* | wc -l | awk '{exit $1==8?0:1}'
+      shell: bash
+    - name: Delete unneded per-shard artifacts
+      if: always()
+      uses: geekyeggo/delete-artifact@v2
+      with:
+        name: debug_test_*
+        failOnError: false
+    - name: Upload combined artifacts
+      if: always()
+      continue-on-error: true
+      uses: manticoresoftware/upload_artifact_with_retries@main
+      with:
+        name: debug_test_resuls
+        path: build
 
-  test_linux_release:
-    name: Linux release mode tests
-    needs: build_linux_release
-    uses: ./.github/workflows/test_template.yml
-    strategy:
-      fail-fast: false
-      matrix:
-        name: [1_50,51_100,101_150,151_200,201_250,251_300,301_350,351_400,401_and_on]
-        include:
-          - name: 1_50
-            start: 1
-            end: 50
-          - name: 51_100
-            start: 51
-            end: 100
-          - name: 101_150
-            start: 101
-            end: 150
-          - name: 151_200
-            start: 151
-            end: 200
-          - name: 201_250
-            start: 201
-            end: 250
-          - name: 251_300
-            start: 251
-            end: 300
-          - name: 301_350
-            start: 301
-            end: 350
-          - name: 351_400
-            start: 351
-            end: 400
-          - name: 401_and_on
-            start: 401
-            end: 999999
-    with:
-      CTEST_CONFIGURATION_TYPE: "RelWithDebInfo"
-      CTEST_START: ${{ matrix.start }}
-      CTEST_END: ${{ matrix.end }}
-      artifact_name: release_test_${{ matrix.name }}
-      xml_command: "cd build; cp -r Testing/2*/Test.xml .; xsltproc -o junit_tests_${{ matrix.name }}.xml ../misc/junit/ctest2junit.xsl Test.xml"
-      timeout: 10
+test_linux_release:
+  name: Linux release mode tests
+  needs: build_linux_release
+  uses: ./.github/workflows/test_template.yml
+  strategy:
+    fail-fast: false
+    matrix:
+      name: [1_54,55_108,109_162,163_216,217_270,271_324,325_378,379_and_on]
+      include:
+        - name: 1_54; start: 1; end: 54
+        - name: 55_108; start: 55; end: 108
+        - name: 109_162; start: 109; end: 162
+        - name: 163_216; start: 163; end: 216
+        - name: 217_270; start: 217; end: 270
+        - name: 271_324; start: 271; end: 324
+        - name: 325_378; start: 325; end: 378
+        - name: 379_and_on; start: 379; end: 999999
+  with:
+    CTEST_CONFIGURATION_TYPE: "RelWithDebInfo"
+    CTEST_START: ${{ matrix.start }}
+    CTEST_END: ${{ matrix.end }}
+    artifact_name: release_test_${{ matrix.name }}
+    xml_command: "cd build; cp -r Testing/2*/Test.xml .; xsltproc -o junit_tests_${{ matrix.name }}.xml ../misc/junit/ctest2junit.xsl Test.xml"
+    timeout: 10
 
-  debug_tests_report:
-    name: Release mode tests summary and report
-    needs: test_linux_release
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Checkout repository # We have to checkout to access .github/workflows/ in further steps
-        uses: actions/checkout@v3
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Download test report artifacts 1_50
-        uses: manticoresoftware/download_artifact_with_retries@main
-        continue-on-error: true
-        with:
-          name: release_test_1_50
-          path: .
-      - name: Download test report artifacts 51_100
-        uses: manticoresoftware/download_artifact_with_retries@main
-        continue-on-error: true
-        with:
-          name: release_test_51_100
-          path: .
-      - name: Download test report artifacts 101_150
-        uses: manticoresoftware/download_artifact_with_retries@main
-        continue-on-error: true
-        with:
-          name: release_test_101_150
-          path: .
-      - name: Download test report artifacts 151_200
-        uses: manticoresoftware/download_artifact_with_retries@main
-        continue-on-error: true
-        with:
-          name: release_test_151_200
-          path: .
-      - name: Download test report artifacts 201_250
-        uses: manticoresoftware/download_artifact_with_retries@main
-        continue-on-error: true
-        with:
-          name: release_test_201_250
-          path: .
-      - name: Download test report artifacts 251_300
-        uses: manticoresoftware/download_artifact_with_retries@main
-        continue-on-error: true
-        with:
-          name: release_test_251_300
-          path: .
-      - name: Download test report artifacts 301_350
-        uses: manticoresoftware/download_artifact_with_retries@main
-        continue-on-error: true
-        with:
-          name: release_test_301_350
-          path: .
-      - name: Download test report artifacts 351_400
-        uses: manticoresoftware/download_artifact_with_retries@main
-        continue-on-error: true
-        with:
-          name: release_test_351_400
-          path: .
-      - name: Download test report artifacts 401_450
-        uses: manticoresoftware/download_artifact_with_retries@main
-        continue-on-error: true
-        with:
-          name: release_test_401_450
-          path: .
-      - name: Download test report artifacts 401_and_on
-        uses: manticoresoftware/download_artifact_with_retries@main
-        continue-on-error: true
-        with:
-          name: release_test_401_and_on
-          path: .
-      - name: Publish test results
-        uses: EnricoMi/publish-unit-test-result-action@v2
-        continue-on-error: true
-        with:
-          files: build/junit*.xml
-      - name: Per-test results
-        # IMPORTANT: The value of 9 below should correspond to the test shard count, needs.<job_name>.strategy.job-total doesn't work
-        run: |
-          for file in build/status*; do echo -n "$file: "; cat "$file"; done
-          grep -o "success" build/status* | wc -l | awk '{exit $1==9?0:1}'
-        shell: bash
-      - name: Delete unneded per-shard artifacts
-        if: always()
-        uses: geekyeggo/delete-artifact@v2
-        with:
-          name: release_test_*
-          failOnError: false
-      - name: Upload combined artifacts
-        if: always()
-        continue-on-error: true
-        uses: manticoresoftware/upload_artifact_with_retries@main
-        with:
-          name: release_test_resuls
-          path: build
+release_tests_report:
+  name: release mode tests summary and report
+  needs: test_linux_release
+  runs-on: ubuntu-22.04
+  strategy:
+    matrix:
+      artifact: [1_54, 55_108, 109_162, 163_216, 217_270, 271_324, 325_378, 379_and_on]
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Download test report artifacts ${{ matrix.artifact }}
+      uses: manticoresoftware/download_artifact_with_retries@main
+      continue-on-error: true
+      with:
+        name: release_test_${{ matrix.artifact }}
+        path: .
+    - name: Publish test results
+      uses: EnricoMi/publish-unit-test-result-action@v2
+      continue-on-error: true
+      with:
+        files: build/junit*.xml
+    - name: Per-test results
+      run: |
+        for file in build/status*; do echo -n "$file: "; cat "$file"; done
+        grep -o "success" build/status* | wc -l | awk '{exit $1==8?0:1}'
+      shell: bash
+    - name: Delete unneded per-shard artifacts
+      if: always()
+      uses: geekyeggo/delete-artifact@v2
+      with:
+        name: release_test_*
+        failOnError: false
+    - name: Upload combined artifacts
+      if: always()
+      continue-on-error: true
+      uses: manticoresoftware/upload_artifact_with_retries@main
+      with:
+        name: release_test_resuls
+        path: build
 
-  test_windows:
-    name: Windows tests
-    needs: [build_windows, win_bundle]
-    uses: ./.github/workflows/win_test_template.yml
-    strategy:
-      fail-fast: false
-      matrix:
-        name: [1_143, 144_286, 287_and_on]
-        include:
-          - name: 1_143
-            start: 1
-            end: 143
-          - name: 144_286
-            start: 144
-            end: 286
-          - name: 287_and_on
-            start: 287
-            end: 999999
-    with:
-      CTEST_START: ${{ matrix.start }}
-      CTEST_END: ${{ matrix.end }}
-      artifact_name: windows_test_${{ matrix.name }}
+test_windows:
+  name: Windows tests
+  needs: build_windows
+  uses: ./.github/workflows/test_template.yml
+  strategy:
+    fail-fast: false
+    matrix:
+      name: [1_86,87_172,173_258,259_344,345_and_on]
+      include:
+        - name: 1_86; start: 1; end: 86
+        - name: 87_172; start: 87; end: 172
+        - name: 173_258; start: 173; end: 258
+        - name: 259_344; start: 259; end: 344
+        - name: 345_and_on; start: 345; end: 999999
+  with:
+    CTEST_CONFIGURATION_TYPE: "Debug"
+    CTEST_START: ${{ matrix.start }}
+    CTEST_END: ${{ matrix.end }}
+    artifact_name: windows_test_${{ matrix.name }}
+    xml_command: "cd build; cp -r Testing/2*/Test.xml .; xsltproc -o junit_tests_${{ matrix.name }}.xml ../misc/junit/ctest2junit.xsl Test.xml"
+    timeout: 10
 
-  windows_tests_report:
-    name: Windows tests summary and report
-    needs: test_windows
-    runs-on: ubuntu-22.04
-    container:
-      image: manticoresearch/ubertests_ctest:3263
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Download test report artifacts 1_143
-        uses: manticoresoftware/download_artifact_with_retries@main
-        continue-on-error: true
-        with:
-          name: windows_test_1_143
-          path: .
-      - name: Download test report artifacts 144_286
-        uses: manticoresoftware/download_artifact_with_retries@main
-        continue-on-error: true
-        with:
-          name: windows_test_144_286
-          path: .
-      - name: Download test report artifacts 287_and_on
-        uses: manticoresoftware/download_artifact_with_retries@main
-        continue-on-error: true
-        with:
-          name: windows_test_287_and_on
-          path: .
-      - run: find .
-      - name: Convert the XML to JUnit format
-        run: for dir in build/xml_*; do xsltproc -o $dir/junit_tests.xml misc/junit/ctest2junit.xsl $dir/Test.xml; done;
-        shell: bash
-      - name: Publish test results
-        uses: EnricoMi/publish-unit-test-result-action@v2
-        with:
-          files: build/xml_*/junit_tests.xml
-      - name: Per-test results
-        # IMPORTANT: The value of 3 below should correspond to the test shard count, needs.<job_name>.strategy.job-total doesn't work
-        run: |
-          for file in build/status*; do echo -n "$file: "; cat "$file"; done
-          grep -o "success" build/status* | wc -l | awk '{exit $1==3?0:1}'
-        shell: bash
-      - name: Delete unneded per-shard artifacts
-        if: always()
-        uses: geekyeggo/delete-artifact@v2
-        with:
-          name: windows_test_*
-          failOnError: false
-      - name: Upload combined artifacts
-        if: always()
-        continue-on-error: true
-        uses: manticoresoftware/upload_artifact_with_retries@main
-        with:
-          name: windows_test_resuls
-          path: build
+windows_tests_report:
+  name: Windows tests summary and report
+  needs: test_windows
+  runs-on: ubuntu-22.04
+  container:
+    image: manticoresearch/ubertests_ctest:3263
+  strategy:
+    matrix:
+      artifact: [1_86,87_172,173_258,259_344,345_and_on]
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Download test report artifacts ${{ matrix.artifact }}
+      uses: manticoresoftware/download_artifact_with_retries@main
+      continue-on-error: true
+      with:
+        name: windows_test_${{ matrix.artifact }}
+        path: .
+    - run: find .
+    - name: Convert the XML to JUnit format
+      run: for dir in build/xml_*; do xsltproc -o $dir/junit_tests.xml misc/junit/ctest2junit.xsl $dir/Test.xml; done;
+      shell: bash
+    - name: Publish test results
+      uses: EnricoMi/publish-unit-test-result-action@v2
+      with:
+        files: build/xml_*/junit_tests.xml
+    - name: Per-test results
+      run: |
+        for file in build/status*; do echo -n "$file: "; cat "$file"; done
+        grep -o "success" build/status* | wc -l | awk '{exit $1==5?0:1}'
+      shell: bash
+    - name: Delete unneded per-shard artifacts
+      if: always()
+      uses: geekyeggo/delete-artifact@v2
+      with:
+        name: windows_test_*
+        failOnError: false
+    - name: Upload combined artifacts
+      if: always()
+      continue-on-error: true
+      uses: manticoresoftware/upload_artifact_with_retries@main
+      with:
+        name: windows_test_resuls
+        path: build
 
   # virtual job to simplify the CI
   # This job depends on all the tests that have to pass before we can start building packages
