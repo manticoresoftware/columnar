@@ -152,11 +152,11 @@ jobs:
         with:
           name: debug_test_325_378
           path: .
-      - name: Download test report artifact 379_and_on
+      - name: Download test report artifact 379_999999
         uses: manticoresoftware/download_artifact_with_retries@main
         continue-on-error: true
         with:
-          name: debug_test_379_and_on
+          name: debug_test_379_999999
           path: .
       - name: Publish test results
         uses: EnricoMi/publish-unit-test-result-action@v2
@@ -274,11 +274,11 @@ jobs:
         with:
           name: release_test_325_378
           path: .
-      - name: Download test report artifact 379_and_on
+      - name: Download test report artifact 379_999999
         uses: manticoresoftware/download_artifact_with_retries@main
         continue-on-error: true
         with:
-          name: release_test_379_and_on
+          name: release_test_379_999999
           path: .
       - name: Publish test results
         uses: EnricoMi/publish-unit-test-result-action@v2
@@ -374,11 +374,11 @@ jobs:
         with:
           name: windows_test_1_86
           path: .
-      - name: Download test report artifacts 345_and_on
+      - name: Download test report artifacts 345_999999
         uses: manticoresoftware/download_artifact_with_retries@main
         continue-on-error: true
         with:
-          name: windows_test_345_and_on
+          name: windows_test_345_999999
           path: .
       - name: Convert the XML to JUnit format
         run: for dir in build/xml_*; do xsltproc -o $dir/junit_tests.xml misc/junit/ctest2junit.xsl $dir/Test.xml; done;
