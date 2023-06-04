@@ -152,11 +152,11 @@ jobs:
         with:
           name: debug_test_325_378
           path: .
-      - name: Download test report artifact 379_999999
+      - name: Download test report artifact 379_and_on
         uses: manticoresoftware/download_artifact_with_retries@main
         continue-on-error: true
         with:
-          name: debug_test_379_999999
+          name: debug_test_379_and_on
           path: .
       - name: Publish test results
         uses: EnricoMi/publish-unit-test-result-action@v2
@@ -274,11 +274,11 @@ jobs:
         with:
           name: release_test_325_378
           path: .
-      - name: Download test report artifact 379_999999
+      - name: Download test report artifact 379_and_on
         uses: manticoresoftware/download_artifact_with_retries@main
         continue-on-error: true
         with:
-          name: release_test_379_999999
+          name: release_test_379_and_on
           path: .
       - name: Publish test results
         uses: EnricoMi/publish-unit-test-result-action@v2
@@ -344,41 +344,41 @@ jobs:
         uses: actions/checkout@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Download test report artifacts 1_86
+      - name: Download test report artifact 1_86
         uses: manticoresoftware/download_artifact_with_retries@main
         continue-on-error: true
         with:
           name: windows_test_1_86
           path: .
-      - name: Download test report artifacts 87_172
+      - name: Download test report artifact 87_172
         uses: manticoresoftware/download_artifact_with_retries@main
         continue-on-error: true
         with:
           name: windows_test_1_86
           path: .
-      - name: Download test report artifacts 87_172
+      - name: Download test report artifact 87_172
         uses: manticoresoftware/download_artifact_with_retries@main
         continue-on-error: true
         with:
           name: windows_test_1_86
           path: .
-      - name: Download test report artifacts 173_258
+      - name: Download test report artifact 173_258
         uses: manticoresoftware/download_artifact_with_retries@main
         continue-on-error: true
         with:
           name: windows_test_259_344
           path: .
-      - name: Download test report artifacts 259_344
+      - name: Download test report artifact 259_344
         uses: manticoresoftware/download_artifact_with_retries@main
         continue-on-error: true
         with:
           name: windows_test_1_86
           path: .
-      - name: Download test report artifacts 345_999999
+      - name: Download test report artifact 345_and_on
         uses: manticoresoftware/download_artifact_with_retries@main
         continue-on-error: true
         with:
-          name: windows_test_345_999999
+          name: windows_test_345_and_on
           path: .
       - name: Convert the XML to JUnit format
         run: for dir in build/xml_*; do xsltproc -o $dir/junit_tests.xml misc/junit/ctest2junit.xsl $dir/Test.xml; done;
