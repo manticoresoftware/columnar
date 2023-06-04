@@ -432,7 +432,7 @@ jobs:
 
   pack_rhel:
     uses: ./.github/workflows/build_template.yml
-    needs: pack
+#    needs: pack
     strategy:
       fail-fast: false
       matrix:
