@@ -354,25 +354,19 @@ jobs:
         uses: manticoresoftware/download_artifact_with_retries@main
         continue-on-error: true
         with:
-          name: windows_test_1_86
-          path: .
-      - name: Download test report artifact 87_172
-        uses: manticoresoftware/download_artifact_with_retries@main
-        continue-on-error: true
-        with:
-          name: windows_test_1_86
+          name: windows_test_87_172
           path: .
       - name: Download test report artifact 173_258
         uses: manticoresoftware/download_artifact_with_retries@main
         continue-on-error: true
         with:
-          name: windows_test_259_344
+          name: windows_test_173_258
           path: .
       - name: Download test report artifact 259_344
         uses: manticoresoftware/download_artifact_with_retries@main
         continue-on-error: true
         with:
-          name: windows_test_1_86
+          name: windows_test_259_344
           path: .
       - name: Download test report artifact 345_and_on
         uses: manticoresoftware/download_artifact_with_retries@main

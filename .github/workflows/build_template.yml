@@ -91,25 +91,9 @@ jobs:
       - name: 🚀 Build
         run: ${{ inputs.cmake_command }}
 
-      - run: find
-
       - name: Upload build artifacts
         if: success()
         uses: manticoresoftware/upload_artifact_with_retries@main
         with:
           name: build_${{ inputs.DISTR }}_${{ inputs.CTEST_CONFIGURATION_TYPE }}_${{ inputs.arch }}
           path: ${{ inputs.artifact_list }}
-
-#      - name: Upload cache artifacts
-#        if: success()
-#        uses: manticoresoftware/upload_artifact_with_retries@main
-#        with:
-#          name: win_tmp_cache
-#          path: cache
-#
-#      - name: Upload cache artifacts 2
-#        if: success()
-#        uses: manticoresoftware/upload_artifact_with_retries@main
-#        with:
-#          name: win_tmp_cache2
-#          path: build/_deps/cache
