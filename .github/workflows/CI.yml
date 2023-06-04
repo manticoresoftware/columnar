@@ -477,7 +477,7 @@ jobs:
   pack_windows:
     name: Windows x64 package
     uses: ./.github/workflows/build_template.yml
-    needs: pack
+#    needs: pack
     with:
       DISTR: windows
       arch: x64
