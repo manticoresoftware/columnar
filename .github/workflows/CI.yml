@@ -453,47 +453,57 @@ jobs:
       cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
       artifact_list: "build/manticore*rpm"
 
-  # pack_macos:
-  #   uses: ./.github/workflows/build_template.yml
-  #   needs: pack
-  #   strategy:
-  #     fail-fast: false
-  #     matrix:
-  #       DISTR: [macos]
-  #       arch: [x86_64, arm64]
-  #   name: ${{ matrix.DISTR }} ${{ matrix.arch }} packing
-  #   with:
-  #     DISTR: ${{ matrix.DISTR }}
-  #     arch: ${{ matrix.arch }}
-  #     HOMEBREW_PREFIX: /opt/homebrew
-  #     cmake_command: |
-  #       mkdir build
-  #       cd build
-  #       cmake -DPACK=1 ..
-  #       cmake --build . --target package
-  #     cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
-  #     artifact_list: "build/manticore*tar.gz"
-  #
-  # pack_windows:
-  #   name: Windows x64 package
-  #   uses: ./.github/workflows/build_template.yml
-  #   needs: pack
-  #   with:
-  #     DISTR: windows
-  #     arch: x64
-  #     cmake_command: |
-  #       mkdir build
-  #       cd build
-  #       cmake -DPACK=1 ..
-  #       cmake --build . --target package
-  #     cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
-  #     artifact_list: "build/manticore*exe build/manticore*zip"
+  pack_macos:
+    uses: ./.github/workflows/build_template.yml
+#    needs: pack
+    strategy:
+      fail-fast: false
+      matrix:
+        DISTR: [macos]
+        arch: [x86_64, arm64]
+    name: ${{ matrix.DISTR }} ${{ matrix.arch }} packing
+    with:
+      DISTR: ${{ matrix.DISTR }}
+      arch: ${{ matrix.arch }}
+      HOMEBREW_PREFIX: /opt/homebrew
+      cmake_command: |
+        mkdir build
+        cd build
+        cmake -DPACK=1 ..
+        cmake --build . --target package
+      cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
+      artifact_list: "build/manticore*tar.gz"
+
+  pack_windows:
+    name: Windows x64 package
+    uses: ./.github/workflows/build_template.yml
+    needs: pack
+    with:
+      DISTR: windows
+      arch: x64
+      cmake_command: |
+        mkdir build
+        cd build
+        cmake -DPACK=1 ..
+        cmake --build . --target package
+      cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
+      artifact_list: "build/manticore*exe build/manticore*zip"
+
+  # virtual job to simplify the CI
+  # This job depends on all the package preparation jobs that have to pass before we can start publishing packages
+  publish:
+    name: Ready for publishing?
+    runs-on: ubuntu-22.04
+    needs: [pack_debian_ubuntu, pack_rhel, pack_macos, pack_windows]
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && github.event.label.name == 'publish')
+    steps:
+      - run: echo "Ready to publish"
 
   publish_debian_ubuntu:
     name: Publishing Debian/Ubuntu packages to repo.manticoresearch.com
-#    needs: [pack_windows, pack_macos, pack_rhel, pack_debian_ubuntu]
+    needs: publish
     runs-on: [self-hosted, Linux, X64]
-    needs: [pack_debian_ubuntu,pack_rhel]
+    needs: [pack_debian_ubuntu,pack_rhel,pack_macos,pack_windows]
     strategy:
       fail-fast: true
       matrix:
@@ -513,9 +523,9 @@ jobs:
 
   publish_rhel:
     name: Publishing RHEL packages to repo.manticoresearch.com
-#    needs: [pack_windows, pack_macos, pack_rhel, pack_debian_ubuntu]
+    needs: publish
     runs-on: [self-hosted, Linux, X64]
-    needs: [pack_debian_ubuntu,pack_rhel]
+    needs: [pack_debian_ubuntu,pack_rhel,pack_macos,pack_windows]
     strategy:
       fail-fast: true
       matrix:
@@ -531,4 +541,42 @@ jobs:
           curl -sSL https://raw.githubusercontent.com/manticoresoftware/repo_scripts/main/upload_repo_rpm > script
           chmod +x script
           DISTRO=${{ matrix.DISTR }} DIGIT_DELIMITER2="_" ./script
+        shell: bash
+
+  publish_macos:
+    name: Publishing Macos packages to repo.manticoresearch.com
+    needs: publish
+    runs-on: [self-hosted, Linux, X64]
+    needs: [pack_debian_ubuntu,pack_rhel,pack_macos,pack_windows]
+    strategy:
+      fail-fast: true
+      matrix:
+        arch: [x86_64, arm64]
+    steps:
+      - uses: manticoresoftware/download_artifact_with_retries@main
+        with:
+          name: build_macos_RelWithDebInfo_${{ matrix.arch }}
+          path: .
+      - name: Deploy package
+        run: |
+          curl -sSL https://raw.githubusercontent.com/manticoresoftware/repo_scripts/main/upload_repo_arc > script
+          chmod +x script
+          DIGIT_DELIMITER2="-" ./script
+        shell: bash
+
+  publish_windows:
+    name: Publishing Windows packages to repo.manticoresearch.com
+    needs: publish
+    runs-on: [self-hosted, Linux, X64]
+    needs: [pack_debian_ubuntu,pack_rhel,pack_macos,pack_windows]
+    steps:
+      - uses: manticoresoftware/download_artifact_with_retries@main
+        with:
+          name: build_windows_RelWithDebInfo_x64
+          path: .
+      - name: Deploy package
+        run: |
+          curl -sSL https://raw.githubusercontent.com/manticoresoftware/repo_scripts/main/upload_repo_arc > script
+          chmod +x script
+          DIGIT_DELIMITER2="-" ./script
         shell: bash
