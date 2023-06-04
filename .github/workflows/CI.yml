@@ -492,6 +492,7 @@ jobs:
   publish_debian_ubuntu:
     name: Publishing Debian/Ubuntu packages to repo.manticoresearch.com
 #    needs: [pack_windows, pack_macos, pack_rhel, pack_debian_ubuntu]
+    runs-on: [self-hosted, Linux, X64]
     needs: [pack_debian_ubuntu]
     strategy:
       fail-fast: true
