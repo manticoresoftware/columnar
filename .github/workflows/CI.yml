@@ -17,6 +17,10 @@ jobs:
     name: Windows supplementary files preparation
     runs-on: ubuntu-22.04
     steps:
+      - uses: gitboard-io/gitboard-action@main
+         with:
+             username: sanikolaev
+             key: ${{ secrets.GITBOARD_TOKEN }}
       - name: Check out cache
         id: cache
         uses: actions/cache@v3.3.1
@@ -106,6 +110,10 @@ jobs:
     needs: test_linux_debug
     runs-on: ubuntu-22.04
     steps:
+      - uses: gitboard-io/gitboard-action@main
+         with:
+             username: sanikolaev
+             key: ${{ secrets.GITBOARD_TOKEN }}
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
@@ -228,6 +236,10 @@ jobs:
     needs: test_linux_release
     runs-on: ubuntu-22.04
     steps:
+      - uses: gitboard-io/gitboard-action@main
+         with:
+             username: sanikolaev
+             key: ${{ secrets.GITBOARD_TOKEN }}
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
@@ -340,6 +352,10 @@ jobs:
     container:
       image: manticoresearch/ubertests_ctest:3263
     steps:
+      - uses: gitboard-io/gitboard-action@main
+         with:
+             username: sanikolaev
+             key: ${{ secrets.GITBOARD_TOKEN }}
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
@@ -408,6 +424,10 @@ jobs:
     needs: [debug_tests_report, release_tests_report, windows_tests_report]
     if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && github.event.label.name == 'pack')
     steps:
+      - uses: gitboard-io/gitboard-action@main
+         with:
+             username: sanikolaev
+             key: ${{ secrets.GITBOARD_TOKEN }}
       - run: echo "Ready to pack"
 
   pack_debian_ubuntu:
@@ -497,6 +517,10 @@ jobs:
     needs: [pack_debian_ubuntu, pack_rhel, pack_macos, pack_windows]
     if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && github.event.label.name == 'publish')
     steps:
+      - uses: gitboard-io/gitboard-action@main
+         with:
+             username: sanikolaev
+             key: ${{ secrets.GITBOARD_TOKEN }}
       - run: echo "Ready to publish"
 
   publish_debian_ubuntu:
@@ -509,6 +533,10 @@ jobs:
         arch: [x86_64, aarch64]
     name: ${{ matrix.DISTR }} ${{ matrix.arch }} publishing
     steps:
+      - uses: gitboard-io/gitboard-action@main
+         with:
+             username: sanikolaev
+             key: ${{ secrets.GITBOARD_TOKEN }}
       - uses: manticoresoftware/download_artifact_with_retries@main
         with:
           name: build_${{ matrix.DISTR }}_RelWithDebInfo_${{ matrix.arch }}
@@ -530,6 +558,10 @@ jobs:
         arch: [x86_64, aarch64]
     name: RHEL ${{ matrix.DISTR }} ${{ matrix.arch }} publishing
     steps:
+      - uses: gitboard-io/gitboard-action@main
+         with:
+             username: sanikolaev
+             key: ${{ secrets.GITBOARD_TOKEN }}
       - uses: manticoresoftware/download_artifact_with_retries@main
         with:
           name: build_rhel${{ matrix.DISTR }}_RelWithDebInfo_${{ matrix.arch }}
@@ -550,6 +582,10 @@ jobs:
         arch: [x86_64, arm64]
     name: macos ${{ matrix.arch }} publishing
     steps:
+      - uses: gitboard-io/gitboard-action@main
+         with:
+             username: sanikolaev
+             key: ${{ secrets.GITBOARD_TOKEN }}
       - uses: manticoresoftware/download_artifact_with_retries@main
         with:
           name: build_macos_RelWithDebInfo_${{ matrix.arch }}

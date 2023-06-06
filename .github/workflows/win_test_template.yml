@@ -31,6 +31,10 @@ jobs:
       # CTEST_REGEX: test_234
       NO_BUILD: 1
     steps:
+      - uses: gitboard-io/gitboard-action@main
+         with:
+             username: sanikolaev
+             key: ${{ secrets.GITBOARD_TOKEN }}
       - name: Checkout repository # We have to checkout to access .github/workflows/ in further steps
         uses: actions/checkout@v3
         with:

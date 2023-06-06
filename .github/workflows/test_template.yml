@@ -46,6 +46,10 @@ jobs:
         # The following is useful to test a specific test, just uncomment it, no need to disable CTEST_START/END
         # CTEST_REGEX: test_234
     steps:
+      - uses: gitboard-io/gitboard-action@main
+         with:
+             username: sanikolaev
+             key: ${{ secrets.GITBOARD_TOKEN }}
       - name: Checkout repository
         uses: actions/checkout@v3
         with:

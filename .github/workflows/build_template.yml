@@ -63,6 +63,10 @@ jobs:
         SYSROOT_URL: https://repo.manticoresearch.com/repository/sysroots
         HOMEBREW_PREFIX: ${{ inputs.HOMEBREW_PREFIX }}
     steps:
+      - uses: gitboard-io/gitboard-action@main
+         with:
+             username: sanikolaev
+             key: ${{ secrets.GITBOARD_TOKEN }}
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
