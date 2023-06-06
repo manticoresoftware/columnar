@@ -39,6 +39,10 @@ on:
         required: false
         type: string
         default:
+      MANTICORE_LOCATOR:
+        required: false
+        type: string
+        default: ""
 
 jobs:
   build:
@@ -62,6 +66,7 @@ jobs:
         CTEST_CONFIGURATION_TYPE: ${{ inputs.CTEST_CONFIGURATION_TYPE }}
         SYSROOT_URL: https://repo.manticoresearch.com/repository/sysroots
         HOMEBREW_PREFIX: ${{ inputs.HOMEBREW_PREFIX }}
+        MANTICORE_LOCATOR: ${{ inputs.MANTICORE_LOCATOR }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
