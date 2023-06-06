@@ -7,12 +7,6 @@ on:
     branches: [ master ]
   schedule:
     - cron:  '39 17 * * *'
-    inputs:
-      MANTICORE_LOCATOR:
-        description: "MANTICORE_LOCATOR"
-        required: false
-        type: string
-        default: "GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG master"
 
 # cancels the previous workflow run when a new one appears in the same branch (e.g. master or a PR's branch)
 concurrency:
