@@ -18,9 +18,9 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: gitboard-io/gitboard-action@main
-         with:
-             username: sanikolaev
-             key: ${{ secrets.GITBOARD_TOKEN }}
+        with:
+          username: sanikolaev
+          key: ${{ secrets.GITBOARD_TOKEN }}
       - name: Check out cache
         id: cache
         uses: actions/cache@v3.3.1
@@ -111,9 +111,9 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: gitboard-io/gitboard-action@main
-         with:
-             username: sanikolaev
-             key: ${{ secrets.GITBOARD_TOKEN }}
+        with:
+          username: sanikolaev
+          key: ${{ secrets.GITBOARD_TOKEN }}
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
@@ -237,9 +237,9 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: gitboard-io/gitboard-action@main
-         with:
-             username: sanikolaev
-             key: ${{ secrets.GITBOARD_TOKEN }}
+        with:
+          username: sanikolaev
+          key: ${{ secrets.GITBOARD_TOKEN }}
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
@@ -353,9 +353,9 @@ jobs:
       image: manticoresearch/ubertests_ctest:3263
     steps:
       - uses: gitboard-io/gitboard-action@main
-         with:
-             username: sanikolaev
-             key: ${{ secrets.GITBOARD_TOKEN }}
+        with:
+          username: sanikolaev
+          key: ${{ secrets.GITBOARD_TOKEN }}
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
@@ -425,9 +425,9 @@ jobs:
     if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && github.event.label.name == 'pack')
     steps:
       - uses: gitboard-io/gitboard-action@main
-         with:
-             username: sanikolaev
-             key: ${{ secrets.GITBOARD_TOKEN }}
+        with:
+          username: sanikolaev
+          key: ${{ secrets.GITBOARD_TOKEN }}
       - run: echo "Ready to pack"
 
   pack_debian_ubuntu:
@@ -518,9 +518,9 @@ jobs:
     if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && github.event.label.name == 'publish')
     steps:
       - uses: gitboard-io/gitboard-action@main
-         with:
-             username: sanikolaev
-             key: ${{ secrets.GITBOARD_TOKEN }}
+        with:
+          username: sanikolaev
+          key: ${{ secrets.GITBOARD_TOKEN }}
       - run: echo "Ready to publish"
 
   publish_debian_ubuntu:
@@ -534,9 +534,9 @@ jobs:
     name: ${{ matrix.DISTR }} ${{ matrix.arch }} publishing
     steps:
       - uses: gitboard-io/gitboard-action@main
-         with:
-             username: sanikolaev
-             key: ${{ secrets.GITBOARD_TOKEN }}
+        with:
+          username: sanikolaev
+          key: ${{ secrets.GITBOARD_TOKEN }}
       - uses: manticoresoftware/download_artifact_with_retries@main
         with:
           name: build_${{ matrix.DISTR }}_RelWithDebInfo_${{ matrix.arch }}
@@ -559,9 +559,9 @@ jobs:
     name: RHEL ${{ matrix.DISTR }} ${{ matrix.arch }} publishing
     steps:
       - uses: gitboard-io/gitboard-action@main
-         with:
-             username: sanikolaev
-             key: ${{ secrets.GITBOARD_TOKEN }}
+        with:
+          username: sanikolaev
+          key: ${{ secrets.GITBOARD_TOKEN }}
       - uses: manticoresoftware/download_artifact_with_retries@main
         with:
           name: build_rhel${{ matrix.DISTR }}_RelWithDebInfo_${{ matrix.arch }}
@@ -583,9 +583,9 @@ jobs:
     name: macos ${{ matrix.arch }} publishing
     steps:
       - uses: gitboard-io/gitboard-action@main
-         with:
-             username: sanikolaev
-             key: ${{ secrets.GITBOARD_TOKEN }}
+        with:
+          username: sanikolaev
+          key: ${{ secrets.GITBOARD_TOKEN }}
       - uses: manticoresoftware/download_artifact_with_retries@main
         with:
           name: build_macos_RelWithDebInfo_${{ matrix.arch }}
