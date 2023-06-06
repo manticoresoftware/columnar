@@ -39,7 +39,7 @@ endfunction ()
 # this will switch off pure manticore-specific tests: google, api, keyword consistency and benches (we don't need them here)
 set ( TEST_SPECIAL_EXTERNAL ON )
 
-if (DEFINED ENV{MANTICORE_LOCATOR})
+if (DEFINED ENV{MANTICORE_LOCATOR} AND NOT "$ENV{MANTICORE_LOCATOR}" STREQUAL "")
 	set ( MANTICORE_LOCATOR $ENV{MANTICORE_LOCATOR} )
 elseif (EXISTS "${columnar_SOURCE_DIR}/local_manticore_src.txt")
 	file ( READ "${columnar_SOURCE_DIR}/local_manticore_src.txt" MANTICORE_LOCATOR )
