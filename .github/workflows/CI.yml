@@ -6,6 +6,16 @@ on:
   pull_request:
     branches: [ master ]
 
+on:
+  schedule:
+    - cron:  '39 17 * * *'
+    inputs:
+      MANTICORE_LOCATOR:
+        description: "MANTICORE_LOCATOR"
+        required: false
+        type: string
+        default: "GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG master"
+
 # cancels the previous workflow run when a new one appears in the same branch (e.g. master or a PR's branch)
 concurrency:
   group: CI_${{ github.ref }}
@@ -97,6 +107,7 @@ jobs:
       CTEST_CONFIGURATION_TYPE: "Debug"
       CTEST_START: ${{ matrix.start }}
       CTEST_END: ${{ matrix.end }}
+      MANTICORE_LOCATOR: ${{ inputs.MANTICORE_LOCATOR }}
       artifact_name: debug_test_${{ matrix.name }}
       xml_command: "cd build; cp -r Testing/2*/Test.xml .; xsltproc -o junit_tests_${{ matrix.name }}.xml ../misc/junit/ctest2junit.xsl Test.xml"
       timeout: 10
@@ -219,6 +230,7 @@ jobs:
       CTEST_CONFIGURATION_TYPE: "RelWithDebInfo"
       CTEST_START: ${{ matrix.start }}
       CTEST_END: ${{ matrix.end }}
+      MANTICORE_LOCATOR: ${{ inputs.MANTICORE_LOCATOR }}
       artifact_name: release_test_${{ matrix.name }}
       xml_command: "cd build; cp -r Testing/2*/Test.xml .; xsltproc -o junit_tests_${{ matrix.name }}.xml ../misc/junit/ctest2junit.xsl Test.xml"
       timeout: 10
@@ -331,6 +343,7 @@ jobs:
     with:
       CTEST_START: ${{ matrix.start }}
       CTEST_END: ${{ matrix.end }}
+      MANTICORE_LOCATOR: ${{ inputs.MANTICORE_LOCATOR }}
       artifact_name: windows_test_${{ matrix.name }}
 
   windows_tests_report:

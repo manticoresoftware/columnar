@@ -25,6 +25,10 @@ on:
         required: false
         type: string
         default: "cd build; cp -r Testing/2*/Test.xml .; xsltproc -o junit_tests.xml ../misc/junit/ctest2junit.xsl Test.xml"
+      MANTICORE_LOCATOR:
+        required: false
+        type: string
+        default: ""
 
 jobs:
   test:
@@ -43,6 +47,7 @@ jobs:
         NO_BUILD: 1
         CTEST_START: ${{ inputs.CTEST_START }}
         CTEST_END: ${{ inputs.CTEST_END }}
+        MANTICORE_LOCATOR: ${{ inputs.MANTICORE_LOCATOR }}
         # The following is useful to test a specific test, just uncomment it, no need to disable CTEST_START/END
         # CTEST_REGEX: test_234
     steps:

@@ -14,6 +14,10 @@ on:
       artifact_name:
         required: true
         type: string
+      MANTICORE_LOCATOR:
+        required: false
+        type: string
+        default: ""
 
 jobs:
   test_windows:
@@ -27,6 +31,7 @@ jobs:
       CTEST_CONFIGURATION_TYPE: Debug
       CTEST_START: ${{ inputs.CTEST_START }}
       CTEST_END: ${{ inputs.CTEST_END }}
+      MANTICORE_LOCATOR: ${{ inputs.MANTICORE_LOCATOR }}
       # The following is useful to test a specific test, just uncomment it, no need to disable CTEST_START/END
       # CTEST_REGEX: test_234
       NO_BUILD: 1
