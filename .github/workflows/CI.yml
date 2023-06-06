@@ -44,6 +44,7 @@ jobs:
   build_linux_release:
     name: Linux release build
     uses: ./.github/workflows/build_template.yml
+    with:
       MANTICORE_LOCATOR: ${{ github.event.schedule == '05 18 * * *' && 'GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG master' || '' }}
 
   build_linux_debug:
