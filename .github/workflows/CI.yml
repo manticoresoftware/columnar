@@ -1,0 +1,588 @@
+name: 🚀 Tests, builds, packs
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  schedule:
+    - cron: '00 20 * * *'
+
+# cancels the previous workflow run when a new one appears in the same branch (e.g. master or a PR's branch)
+concurrency:
+  group: CI_${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  win_bundle:
+    name: Windows supplementary files preparation
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out cache
+        id: cache
+        uses: actions/cache@v3.3.1
+        with:
+          path: |
+            bundle
+            boost_1_75_0
+          enableCrossOsArchive: true
+          key: win_bundle
+          lookup-only: true
+      - name: Extract Windows bundle from Windows sysroot
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          wget https://repo.manticoresearch.com/repository/sysroots/roots_nov22/sysroot_windows_x64.tar.xz
+          tar -xvf sysroot_windows_x64.tar.xz
+          mv diskc/winbundle bundle
+      - name: Extract Boost to put it to the cache
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          wget https://repo.manticoresearch.com/repository/ci/boost_1_75_0.tgz
+          tar -xf boost_1_75_0.tgz
+
+  build_linux_release:
+    name: Linux release build
+    uses: ./.github/workflows/build_template.yml
+    with:
+      MANTICORE_LOCATOR: ${{ github.event.schedule == '00 20 * * *' && 'GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG master' || '' }}
+
+  build_linux_debug:
+    name: Linux debug build
+    uses: ./.github/workflows/build_template.yml
+    with:
+      CTEST_CONFIGURATION_TYPE: "Debug"
+      MANTICORE_LOCATOR: ${{ github.event.schedule == '00 20 * * *' && 'GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG master' || '' }}
+
+  build_windows:
+    name: Windows x64 build
+    uses: ./.github/workflows/build_template.yml
+    with:
+      DISTR: windows
+      arch: x64
+      CTEST_CMAKE_GENERATOR: "Ninja Multi-Config"
+      CTEST_CONFIGURATION_TYPE: Debug
+      cache_key: build_windows_x64
+      artifact_list: "build/xml build/columnar/Debug/lib_manticore_columnar.dll build/secondary/Debug/lib_manticore_secondary.dll build/_deps/manticore-build/src/Debug/indexer.exe build/_deps/manticore-build/src/Debug/searchd.exe" #
+      MANTICORE_LOCATOR: ${{ github.event.schedule == '00 20 * * *' && 'GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG master' || '' }}
+
+  test_linux_debug:
+    name: Linux debug mode tests
+    needs: build_linux_debug
+    uses: ./.github/workflows/test_template.yml
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [1_54,55_108,109_162,163_216,217_270,271_324,325_378,379_and_on]
+        include:
+          - name: 1_54
+            start: 1
+            end: 54
+          - name: 55_108
+            start: 55
+            end: 108
+          - name: 109_162
+            start: 109
+            end: 162
+          - name: 163_216
+            start: 163
+            end: 216
+          - name: 217_270
+            start: 217
+            end: 270
+          - name: 271_324
+            start: 271
+            end: 324
+          - name: 325_378
+            start: 325
+            end: 378
+          - name: 379_and_on
+            start: 379
+            end: 999999
+    with:
+      CTEST_CONFIGURATION_TYPE: "Debug"
+      CTEST_START: ${{ matrix.start }}
+      CTEST_END: ${{ matrix.end }}
+      MANTICORE_LOCATOR: ${{ github.event.schedule == '00 20 * * *' && 'GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG master' || '' }}
+      artifact_name: debug_test_${{ matrix.name }}
+      xml_command: "cd build; cp -r Testing/2*/Test.xml .; xsltproc -o junit_tests_${{ matrix.name }}.xml ../misc/junit/ctest2junit.xsl Test.xml"
+      timeout: 10
+
+  debug_tests_report:
+    name: Debug mode tests summary and report
+    needs: test_linux_debug
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download test report artifact 1_54
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: debug_test_1_54
+          path: .
+      - name: Download test report artifact 55_108
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: debug_test_55_108
+          path: .
+      - name: Download test report artifact 109_162
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: debug_test_109_162
+          path: .
+      - name: Download test report artifact 163_216
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: debug_test_163_216
+          path: .
+      - name: Download test report artifact 217_270
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: debug_test_217_270
+          path: .
+      - name: Download test report artifact 271_324
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: debug_test_271_324
+          path: .
+      - name: Download test report artifact 325_378
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: debug_test_325_378
+          path: .
+      - name: Download test report artifact 379_and_on
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: debug_test_379_and_on
+          path: .
+      - name: Publish test results
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        continue-on-error: true
+        with:
+          files: build/junit*.xml
+      - name: Per-test results
+        run: |
+          for file in build/status*; do echo -n "$file: "; cat "$file"; done
+          grep -o "success" build/status* | wc -l | awk '{if ($1==8) exit 0; else {print "Found only "$1" successful runs out of 8"; exit 1}}'
+        shell: bash
+      - name: Delete unneded per-shard artifacts
+        if: always()
+        uses: geekyeggo/delete-artifact@v2
+        with:
+          name: debug_test_*
+          failOnError: false
+      - name: Upload combined artifacts
+        if: always()
+        continue-on-error: true
+        uses: manticoresoftware/upload_artifact_with_retries@main
+        with:
+          name: debug_test_resuls
+          path: build
+
+  test_linux_release:
+    name: Linux release mode tests
+    needs: build_linux_release
+    uses: ./.github/workflows/test_template.yml
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [1_54,55_108,109_162,163_216,217_270,271_324,325_378,379_and_on]
+        include:
+          - name: 1_54
+            start: 1
+            end: 54
+          - name: 55_108
+            start: 55
+            end: 108
+          - name: 109_162
+            start: 109
+            end: 162
+          - name: 163_216
+            start: 163
+            end: 216
+          - name: 217_270
+            start: 217
+            end: 270
+          - name: 271_324
+            start: 271
+            end: 324
+          - name: 325_378
+            start: 325
+            end: 378
+          - name: 379_and_on
+            start: 379
+            end: 999999
+    with:
+      CTEST_CONFIGURATION_TYPE: "RelWithDebInfo"
+      CTEST_START: ${{ matrix.start }}
+      CTEST_END: ${{ matrix.end }}
+      MANTICORE_LOCATOR: ${{ github.event.schedule == '00 20 * * *' && 'GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG master' || '' }}
+      artifact_name: release_test_${{ matrix.name }}
+      xml_command: "cd build; cp -r Testing/2*/Test.xml .; xsltproc -o junit_tests_${{ matrix.name }}.xml ../misc/junit/ctest2junit.xsl Test.xml"
+      timeout: 10
+
+  release_tests_report:
+    name: release mode tests summary and report
+    needs: test_linux_release
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download test report artifact 1_54
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: release_test_1_54
+          path: .
+      - name: Download test report artifact 55_108
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: release_test_55_108
+          path: .
+      - name: Download test report artifact 109_162
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: release_test_109_162
+          path: .
+      - name: Download test report artifact 163_216
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: release_test_163_216
+          path: .
+      - name: Download test report artifact 217_270
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: release_test_217_270
+          path: .
+      - name: Download test report artifact 271_324
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: release_test_271_324
+          path: .
+      - name: Download test report artifact 325_378
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: release_test_325_378
+          path: .
+      - name: Download test report artifact 379_and_on
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: release_test_379_and_on
+          path: .
+      - name: Publish test results
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        continue-on-error: true
+        with:
+          files: build/junit*.xml
+      - name: Per-test results
+        run: |
+          for file in build/status*; do echo -n "$file: "; cat "$file"; done
+          grep -o "success" build/status* | wc -l | awk '{if ($1==8) exit 0; else {print "Found only "$1" successful runs out of 8"; exit 1}}'
+        shell: bash
+      - name: Delete unneded per-shard artifacts
+        if: always()
+        uses: geekyeggo/delete-artifact@v2
+        with:
+          name: release_test_*
+          failOnError: false
+      - name: Upload combined artifacts
+        if: always()
+        continue-on-error: true
+        uses: manticoresoftware/upload_artifact_with_retries@main
+        with:
+          name: release_test_resuls
+          path: build
+
+  test_windows:
+    name: Windows tests
+    needs: [build_windows, win_bundle]
+    uses: ./.github/workflows/win_test_template.yml
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [1_86,87_172,173_258,259_344,345_and_on]
+        include:
+          - name: 1_86
+            start: 1
+            end: 86
+          - name: 87_172
+            start: 87
+            end: 172
+          - name: 173_258
+            start: 173
+            end: 258
+          - name: 259_344
+            start: 259
+            end: 344
+          - name: 345_and_on
+            start: 345
+            end: 999999
+    with:
+      CTEST_START: ${{ matrix.start }}
+      CTEST_END: ${{ matrix.end }}
+      MANTICORE_LOCATOR: ${{ github.event.schedule == '00 20 * * *' && 'GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG master' || '' }}
+      artifact_name: windows_test_${{ matrix.name }}
+
+  windows_tests_report:
+    name: Windows tests summary and report
+    needs: test_windows
+    runs-on: ubuntu-22.04
+    container:
+      image: manticoresearch/ubertests_ctest:3263
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download test report artifact 1_86
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: windows_test_1_86
+          path: .
+      - name: Download test report artifact 87_172
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: windows_test_87_172
+          path: .
+      - name: Download test report artifact 173_258
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: windows_test_173_258
+          path: .
+      - name: Download test report artifact 259_344
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: windows_test_259_344
+          path: .
+      - name: Download test report artifact 345_and_on
+        uses: manticoresoftware/download_artifact_with_retries@main
+        continue-on-error: true
+        with:
+          name: windows_test_345_and_on
+          path: .
+      - name: Convert the XML to JUnit format
+        run: for dir in build/xml_*; do xsltproc -o $dir/junit_tests.xml misc/junit/ctest2junit.xsl $dir/Test.xml; done;
+        shell: bash
+      - name: Publish test results
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        with:
+          files: build/xml_*/junit_tests.xml
+      - name: Per-test results
+        run: |
+          for file in build/status*; do echo -n "$file: "; cat "$file"; done
+          grep -o "success" build/status* | wc -l | awk '{if ($1==5) exit 0; else {print "Found only "$1" successful runs out of 5"; exit 1}}'
+        shell: bash
+      - name: Delete unneded per-shard artifacts
+        if: always()
+        uses: geekyeggo/delete-artifact@v2
+        with:
+          name: windows_test_*
+          failOnError: false
+      - name: Upload combined artifacts
+        if: always()
+        continue-on-error: true
+        uses: manticoresoftware/upload_artifact_with_retries@main
+        with:
+          name: windows_test_resuls
+          path: build
+
+  # virtual job to simplify the CI
+  # This job depends on all the tests that have to pass before we can start building packages
+  pack:
+    name: Ready for packages?
+    runs-on: ubuntu-22.04
+    needs: [debug_tests_report, release_tests_report, windows_tests_report]
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && github.event.label.name == 'pack')
+    steps:
+      - run: echo "Ready to pack"
+
+  pack_debian_ubuntu:
+    uses: ./.github/workflows/build_template.yml
+    needs: pack
+    strategy:
+      fail-fast: false
+      matrix:
+        DISTR: [bionic, focal, jammy, buster, bullseye, bookworm]
+        arch: [x86_64, aarch64]
+    name: ${{ matrix.DISTR }} ${{ matrix.arch }} packing
+    with:
+      DISTR: ${{ matrix.DISTR }}
+      arch: ${{ matrix.arch }}
+      cmake_command: |
+        mkdir build
+        cd build
+        cmake -DPACK=1 ..
+        cmake --build . --target package
+      cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
+      artifact_list: "build/manticore*deb"
+
+  pack_rhel:
+    uses: ./.github/workflows/build_template.yml
+    needs: pack
+    strategy:
+      fail-fast: false
+      matrix:
+        DISTR: [rhel7, rhel8, rhel9]
+        arch: [x86_64, aarch64]
+    name: ${{ matrix.DISTR }} ${{ matrix.arch }} packing
+    with:
+      DISTR: ${{ matrix.DISTR }}
+      arch: ${{ matrix.arch }}
+      boost: boost_rhel_feb17
+      cmake_command: |
+        ln -s $(pwd) /builds_manticoresearch_dev_usr_src_debug_manticore_component_src_0
+        cd /builds_manticoresearch_dev_usr_src_debug_manticore_component_src_0
+        mkdir build
+        cd build
+        cmake -DPACK=1 ..
+        cmake --build . --target package
+      cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
+      artifact_list: "build/manticore*rpm"
+
+  pack_macos:
+    uses: ./.github/workflows/build_template.yml
+    needs: pack
+    strategy:
+      fail-fast: false
+      matrix:
+        DISTR: [macos]
+        arch: [x86_64, arm64]
+    name: ${{ matrix.DISTR }} ${{ matrix.arch }} packing
+    with:
+      DISTR: ${{ matrix.DISTR }}
+      arch: ${{ matrix.arch }}
+      HOMEBREW_PREFIX: /opt/homebrew
+      cmake_command: |
+        mkdir build
+        cd build
+        cmake -DPACK=1 ..
+        cmake --build . --target package
+      cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
+      artifact_list: "build/manticore*tar.gz"
+
+  pack_windows:
+    name: Windows x64 package
+    uses: ./.github/workflows/build_template.yml
+    needs: pack
+    with:
+      DISTR: windows
+      arch: x64
+      cmake_command: |
+        mkdir build
+        cd build
+        cmake -DPACK=1 ..
+        cmake --build . --target package
+      cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
+      artifact_list: "build/manticore*exe build/manticore*zip"
+
+  # virtual job to simplify the CI
+  # This job depends on all the package preparation jobs that have to pass before we can start publishing packages
+  publish:
+    name: Ready for publishing?
+    runs-on: ubuntu-22.04
+    needs: [pack_debian_ubuntu, pack_rhel, pack_macos, pack_windows]
+#    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && github.event.label.name == 'publish')
+    if: false
+    steps:
+      - run: echo "Ready to publish"
+
+  publish_debian_ubuntu:
+    needs: publish
+    runs-on: [self-hosted, Linux, X64]
+    strategy:
+      fail-fast: true
+      matrix:
+        DISTR: [bionic, focal, jammy, buster, bullseye, bookworm]
+        arch: [x86_64, aarch64]
+    name: ${{ matrix.DISTR }} ${{ matrix.arch }} publishing
+    steps:
+      - uses: manticoresoftware/download_artifact_with_retries@main
+        with:
+          name: build_${{ matrix.DISTR }}_RelWithDebInfo_${{ matrix.arch }}
+          path: .
+      - name: Deploy package
+        run: |
+          curl -sSL https://raw.githubusercontent.com/manticoresoftware/repo_scripts/main/upload_repo_deb > script
+          chmod +x script
+          DISTRO=${{ matrix.DISTR }} DIGIT_DELIMITER2="-" ./script
+        shell: bash
+
+  publish_rhel:
+    needs: publish
+    runs-on: [self-hosted, Linux, X64]
+    strategy:
+      fail-fast: true
+      matrix:
+        DISTR: [7, 8, 9]
+        arch: [x86_64, aarch64]
+    name: RHEL ${{ matrix.DISTR }} ${{ matrix.arch }} publishing
+    steps:
+      - uses: manticoresoftware/download_artifact_with_retries@main
+        with:
+          name: build_rhel${{ matrix.DISTR }}_RelWithDebInfo_${{ matrix.arch }}
+          path: .
+      - name: Deploy package
+        run: |
+          curl -sSL https://raw.githubusercontent.com/manticoresoftware/repo_scripts/main/upload_repo_rpm > script
+          chmod +x script
+          DISTRO=${{ matrix.DISTR }} DIGIT_DELIMITER2="_" ./script
+        shell: bash
+
+  publish_macos:
+    needs: publish
+    runs-on: [self-hosted, Linux, X64]
+    strategy:
+      fail-fast: true
+      matrix:
+        arch: [x86_64, arm64]
+    name: macos ${{ matrix.arch }} publishing
+    steps:
+      - uses: manticoresoftware/download_artifact_with_retries@main
+        with:
+          name: build_macos_RelWithDebInfo_${{ matrix.arch }}
+          path: .
+      - name: Deploy package
+        run: |
+          curl -sSL https://raw.githubusercontent.com/manticoresoftware/repo_scripts/main/upload_repo_arc > script
+          chmod +x script
+          DIGIT_DELIMITER2="-" ./script
+        shell: bash
+
+  publish_windows:
+    name: Publishing Windows packages to repo.manticoresearch.com
+    needs: publish
+    runs-on: [self-hosted, Linux, X64]
+    steps:
+      - uses: manticoresoftware/download_artifact_with_retries@main
+        with:
+          name: build_windows_RelWithDebInfo_x64
+          path: .
+      - name: Deploy package
+        run: |
+          curl -sSL https://raw.githubusercontent.com/manticoresoftware/repo_scripts/main/upload_repo_arc > script
+          chmod +x script
+          DIGIT_DELIMITER2="-" ./script
+        shell: bash
