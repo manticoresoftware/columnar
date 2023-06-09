@@ -504,85 +504,84 @@ jobs:
     name: Ready for publishing?
     runs-on: ubuntu-22.04
     needs: [pack_debian_ubuntu, pack_rhel, pack_macos, pack_windows]
-#    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && github.event.label.name == 'publish')
-    if: false
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && github.event.label.name == 'publish')
     steps:
       - run: echo "Ready to publish"
 
-  publish_debian_ubuntu:
-    needs: publish
-    runs-on: [self-hosted, Linux, X64]
-    strategy:
-      fail-fast: true
-      matrix:
-        DISTR: [bionic, focal, jammy, buster, bullseye, bookworm]
-        arch: [x86_64, aarch64]
-    name: ${{ matrix.DISTR }} ${{ matrix.arch }} publishing
-    steps:
-      - uses: manticoresoftware/download_artifact_with_retries@main
-        with:
-          name: build_${{ matrix.DISTR }}_RelWithDebInfo_${{ matrix.arch }}
-          path: .
-      - name: Deploy package
-        run: |
-          curl -sSL https://raw.githubusercontent.com/manticoresoftware/repo_scripts/main/upload_repo_deb > script
-          chmod +x script
-          DISTRO=${{ matrix.DISTR }} DIGIT_DELIMITER2="-" ./script
-        shell: bash
-
-  publish_rhel:
-    needs: publish
-    runs-on: [self-hosted, Linux, X64]
-    strategy:
-      fail-fast: true
-      matrix:
-        DISTR: [7, 8, 9]
-        arch: [x86_64, aarch64]
-    name: RHEL ${{ matrix.DISTR }} ${{ matrix.arch }} publishing
-    steps:
-      - uses: manticoresoftware/download_artifact_with_retries@main
-        with:
-          name: build_rhel${{ matrix.DISTR }}_RelWithDebInfo_${{ matrix.arch }}
-          path: .
-      - name: Deploy package
-        run: |
-          curl -sSL https://raw.githubusercontent.com/manticoresoftware/repo_scripts/main/upload_repo_rpm > script
-          chmod +x script
-          DISTRO=${{ matrix.DISTR }} DIGIT_DELIMITER2="_" ./script
-        shell: bash
-
-  publish_macos:
-    needs: publish
-    runs-on: [self-hosted, Linux, X64]
-    strategy:
-      fail-fast: true
-      matrix:
-        arch: [x86_64, arm64]
-    name: macos ${{ matrix.arch }} publishing
-    steps:
-      - uses: manticoresoftware/download_artifact_with_retries@main
-        with:
-          name: build_macos_RelWithDebInfo_${{ matrix.arch }}
-          path: .
-      - name: Deploy package
-        run: |
-          curl -sSL https://raw.githubusercontent.com/manticoresoftware/repo_scripts/main/upload_repo_arc > script
-          chmod +x script
-          DIGIT_DELIMITER2="-" ./script
-        shell: bash
-
-  publish_windows:
-    name: Publishing Windows packages to repo.manticoresearch.com
-    needs: publish
-    runs-on: [self-hosted, Linux, X64]
-    steps:
-      - uses: manticoresoftware/download_artifact_with_retries@main
-        with:
-          name: build_windows_RelWithDebInfo_x64
-          path: .
-      - name: Deploy package
-        run: |
-          curl -sSL https://raw.githubusercontent.com/manticoresoftware/repo_scripts/main/upload_repo_arc > script
-          chmod +x script
-          DIGIT_DELIMITER2="-" ./script
-        shell: bash
+  # publish_debian_ubuntu:
+  #   needs: publish
+  #   runs-on: [self-hosted, Linux, X64]
+  #   strategy:
+  #     fail-fast: true
+  #     matrix:
+  #       DISTR: [bionic, focal, jammy, buster, bullseye, bookworm]
+  #       arch: [x86_64, aarch64]
+  #   name: ${{ matrix.DISTR }} ${{ matrix.arch }} publishing
+  #   steps:
+  #     - uses: manticoresoftware/download_artifact_with_retries@main
+  #       with:
+  #         name: build_${{ matrix.DISTR }}_RelWithDebInfo_${{ matrix.arch }}
+  #         path: .
+  #     - name: Deploy package
+  #       run: |
+  #         curl -sSL https://raw.githubusercontent.com/manticoresoftware/repo_scripts/main/upload_repo_deb > script
+  #         chmod +x script
+  #         DISTRO=${{ matrix.DISTR }} DIGIT_DELIMITER2="-" ./script
+  #       shell: bash
+  #
+  # publish_rhel:
+  #   needs: publish
+  #   runs-on: [self-hosted, Linux, X64]
+  #   strategy:
+  #     fail-fast: true
+  #     matrix:
+  #       DISTR: [7, 8, 9]
+  #       arch: [x86_64, aarch64]
+  #   name: RHEL ${{ matrix.DISTR }} ${{ matrix.arch }} publishing
+  #   steps:
+  #     - uses: manticoresoftware/download_artifact_with_retries@main
+  #       with:
+  #         name: build_rhel${{ matrix.DISTR }}_RelWithDebInfo_${{ matrix.arch }}
+  #         path: .
+  #     - name: Deploy package
+  #       run: |
+  #         curl -sSL https://raw.githubusercontent.com/manticoresoftware/repo_scripts/main/upload_repo_rpm > script
+  #         chmod +x script
+  #         DISTRO=${{ matrix.DISTR }} DIGIT_DELIMITER2="_" ./script
+  #       shell: bash
+  #
+  # publish_macos:
+  #   needs: publish
+  #   runs-on: [self-hosted, Linux, X64]
+  #   strategy:
+  #     fail-fast: true
+  #     matrix:
+  #       arch: [x86_64, arm64]
+  #   name: macos ${{ matrix.arch }} publishing
+  #   steps:
+  #     - uses: manticoresoftware/download_artifact_with_retries@main
+  #       with:
+  #         name: build_macos_RelWithDebInfo_${{ matrix.arch }}
+  #         path: .
+  #     - name: Deploy package
+  #       run: |
+  #         curl -sSL https://raw.githubusercontent.com/manticoresoftware/repo_scripts/main/upload_repo_arc > script
+  #         chmod +x script
+  #         DIGIT_DELIMITER2="-" ./script
+  #       shell: bash
+  #
+  # publish_windows:
+  #   name: Publishing Windows packages to repo.manticoresearch.com
+  #   needs: publish
+  #   runs-on: [self-hosted, Linux, X64]
+  #   steps:
+  #     - uses: manticoresoftware/download_artifact_with_retries@main
+  #       with:
+  #         name: build_windows_RelWithDebInfo_x64
+  #         path: .
+  #     - name: Deploy package
+  #       run: |
+  #         curl -sSL https://raw.githubusercontent.com/manticoresoftware/repo_scripts/main/upload_repo_arc > script
+  #         chmod +x script
+  #         DIGIT_DELIMITER2="-" ./script
+  #       shell: bash
