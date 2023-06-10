@@ -90,6 +90,7 @@ jobs:
         continue-on-error: true
 
       - name: Remember status
+        if: always()
         run: echo "${{ steps.test.outcome }}" > build/status_${{ inputs.artifact_name }}
 
       - name: Prepare test report xmls
