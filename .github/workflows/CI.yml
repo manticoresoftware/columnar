@@ -442,6 +442,7 @@ jobs:
   pack_debian_ubuntu:
     uses: ./.github/workflows/build_template.yml
     needs: pack
+    if: ${{ always() && needs.pack.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
@@ -462,6 +463,7 @@ jobs:
   pack_rhel:
     uses: ./.github/workflows/build_template.yml
     needs: pack
+    if: ${{ always() && needs.pack.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
@@ -485,6 +487,7 @@ jobs:
   pack_macos:
     uses: ./.github/workflows/build_template.yml
     needs: pack
+    if: ${{ always() && needs.pack.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
@@ -507,6 +510,7 @@ jobs:
     name: Windows x64 package
     uses: ./.github/workflows/build_template.yml
     needs: pack
+    if: ${{ always() && needs.pack.result == 'success' }}
     with:
       DISTR: windows
       arch: x64
