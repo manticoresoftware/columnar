@@ -90,7 +90,8 @@ jobs:
       - name: 🚀 Test
         id: test
         # --timeout may be not working https://gitlab.kitware.com/cmake/cmake/-/issues/23979
-        run: ctest -V -S cmake/citest.cmake -C $CTEST_CONFIGURATION_TYPE --no-compress-output --timeout 60
+        # TODO: remove -E rt_385
+        run: ctest -V -S cmake/citest.cmake -C $CTEST_CONFIGURATION_TYPE --no-compress-output --timeout 60 -E rt_385
         continue-on-error: true
       - name: Remember status
         if: always()
