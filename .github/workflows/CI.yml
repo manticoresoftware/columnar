@@ -415,7 +415,6 @@ jobs:
     name: Ready for packages?
     runs-on: ubuntu-22.04
     needs: [debug_tests_report, release_tests_report, windows_tests_report]
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && github.event.label.name == 'pack')
     steps:
       - run: echo "Ready to pack"
 
