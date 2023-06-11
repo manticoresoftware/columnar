@@ -2,7 +2,7 @@ name: Pack
 
 on:
   workflow_run:
-    workflows: ["Test"]
+    workflows: [ Test ]
     types: [ completed ]
   pull_request:
     branches: [ master ]
