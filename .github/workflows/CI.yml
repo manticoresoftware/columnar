@@ -16,9 +16,27 @@ concurrency:
 
 jobs:
 
+  setup:
+    name: Get PR labels
+    runs-on: ubuntu-latest
+    outputs:
+      labels: ${{ steps.get-labels.outputs.labels }}
+    steps:
+      - name: Get labels
+        id: get-labels
+        run: |
+          labels=$(curl -s \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/labels | \
+            jq -r .[].name)
+          echo "::set-output name=labels::$labels"
+
   win_bundle:
     name: Windows supplementary files preparation
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && github.event.label.name != 'pack' && github.event.label.name != 'publish' )
+    needs: setup
+    if: >
+      (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
+      (github.event_name == 'pull_request' && !contains(needs.setup.outputs.labels, 'pack') && !contains(needs.setup.outputs.labels, 'publish'))
     runs-on: ubuntu-22.04
     steps:
       - name: Check out cache
