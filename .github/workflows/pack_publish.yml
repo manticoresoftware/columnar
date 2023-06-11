@@ -110,7 +110,7 @@ jobs:
     if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && github.event.label.name == 'publish')
     steps:
       - run: echo "Ready to publish"
-#      - run: exit 1
+      - run: exit 1
 
 
   publish_debian_ubuntu:
