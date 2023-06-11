@@ -18,17 +18,8 @@ jobs:
   pack:
     name: Ready for packages?
     runs-on: ubuntu-22.04
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && (contains(github.event.pull_request.labels.*.name, 'pack') || contains(github.event.pull_request.labels.*.name, 'publish')))
     steps:
-      - name: Check conditions
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            LABEL_NAMES=$(jq -r '.pull_request.labels[].name' <<< "${{ toJson(github.event) }}")
-            echo "Labels: $LABEL_NAMES"
-            if [[ ! "$LABEL_NAMES" =~ "pack" ]] && [[ ! "$LABEL_NAMES" =~ "publish" ]]; then
-              echo "The pull request must be labeled with 'pack' or 'publish' to run this job"
-              exit 1
-            fi
-          fi
       - run: echo "Ready to pack"
 
   pack_debian_ubuntu:
