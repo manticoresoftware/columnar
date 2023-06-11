@@ -528,14 +528,17 @@ jobs:
     name: Ready for publishing?
     runs-on: ubuntu-22.04
     needs: [pack_debian_ubuntu, pack_rhel, pack_macos, pack_windows]
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && github.event.label.name == 'publish')
+    if: ${{ always() && ((github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && github.event.label.name == 'publish')) }}
     steps:
+      - name: Fail if any conditional job failed
+        if: ${{ contains(needs.*.result, 'failure') }}
+        run: exit 1
       - run: echo "Ready to publish"
 #      - run: exit 1
 
-
   publish_debian_ubuntu:
     needs: publish
+    if: ${{ always() && needs.publish.result == 'success' }}
     runs-on: [self-hosted, Linux, X64]
     strategy:
       fail-fast: true
@@ -557,6 +560,7 @@ jobs:
 
   publish_rhel:
     needs: publish
+    if: ${{ always() && needs.publish.result == 'success' }}
     runs-on: [self-hosted, Linux, X64]
     strategy:
       fail-fast: true
@@ -578,6 +582,7 @@ jobs:
 
   publish_macos:
     needs: publish
+    if: ${{ always() && needs.publish.result == 'success' }}
     runs-on: [self-hosted, Linux, X64]
     strategy:
       fail-fast: true
@@ -599,6 +604,7 @@ jobs:
   publish_windows:
     name: Publishing Windows packages to repo.manticoresearch.com
     needs: publish
+    if: ${{ always() && needs.publish.result == 'success' }}
     runs-on: [self-hosted, Linux, X64]
     steps:
       - uses: manticoresoftware/download_artifact_with_retries@main
