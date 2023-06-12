@@ -1,10 +1,11 @@
-name: 🚀 Tests, builds, packs
+name: 🔬 Test
 
 on:
   push:
     branches: [ master ]
   pull_request:
     branches: [ master ]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   schedule:
     - cron: '00 20 * * *'
 
@@ -17,6 +18,7 @@ jobs:
 
   win_bundle:
     name: Windows supplementary files preparation
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'pack') && !contains(github.event.pull_request.labels.*.name, 'publish'))
     runs-on: ubuntu-22.04
     steps:
       - name: Check out cache
@@ -43,12 +45,14 @@ jobs:
 
   build_linux_release:
     name: Linux release build
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'pack') && !contains(github.event.pull_request.labels.*.name, 'publish'))
     uses: ./.github/workflows/build_template.yml
     with:
       MANTICORE_LOCATOR: ${{ github.event.schedule == '00 20 * * *' && 'GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG master' || '' }}
 
   build_linux_debug:
     name: Linux debug build
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'pack') && !contains(github.event.pull_request.labels.*.name, 'publish'))
     uses: ./.github/workflows/build_template.yml
     with:
       CTEST_CONFIGURATION_TYPE: "Debug"
@@ -56,6 +60,7 @@ jobs:
 
   build_windows:
     name: Windows x64 build
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'pack') && !contains(github.event.pull_request.labels.*.name, 'publish'))
     uses: ./.github/workflows/build_template.yml
     with:
       DISTR: windows
@@ -68,6 +73,7 @@ jobs:
 
   test_linux_debug:
     name: Linux debug mode tests
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'pack') && !contains(github.event.pull_request.labels.*.name, 'publish'))
     needs: build_linux_debug
     uses: ./.github/workflows/test_template.yml
     strategy:
@@ -110,6 +116,7 @@ jobs:
 
   debug_tests_report:
     name: Debug mode tests summary and report
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'pack') && !contains(github.event.pull_request.labels.*.name, 'publish'))
     needs: test_linux_debug
     runs-on: ubuntu-22.04
     steps:
@@ -169,7 +176,9 @@ jobs:
         uses: EnricoMi/publish-unit-test-result-action@v2
         continue-on-error: true
         with:
+          check_name: Linux debug test results
           files: build/junit*.xml
+          compare_to_earlier_commit: false
       - name: Per-test results
         run: |
           for file in build/status*; do echo -n "$file: "; cat "$file"; done
@@ -191,6 +200,7 @@ jobs:
 
   test_linux_release:
     name: Linux release mode tests
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'pack') && !contains(github.event.pull_request.labels.*.name, 'publish'))
     needs: build_linux_release
     uses: ./.github/workflows/test_template.yml
     strategy:
@@ -233,6 +243,7 @@ jobs:
 
   release_tests_report:
     name: release mode tests summary and report
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'pack') && !contains(github.event.pull_request.labels.*.name, 'publish'))
     needs: test_linux_release
     runs-on: ubuntu-22.04
     steps:
@@ -292,7 +303,9 @@ jobs:
         uses: EnricoMi/publish-unit-test-result-action@v2
         continue-on-error: true
         with:
+          check_name: Linux release test results
           files: build/junit*.xml
+          compare_to_earlier_commit: false
       - name: Per-test results
         run: |
           for file in build/status*; do echo -n "$file: "; cat "$file"; done
@@ -314,6 +327,7 @@ jobs:
 
   test_windows:
     name: Windows tests
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'pack') && !contains(github.event.pull_request.labels.*.name, 'publish'))
     needs: [build_windows, win_bundle]
     uses: ./.github/workflows/win_test_template.yml
     strategy:
@@ -344,6 +358,7 @@ jobs:
 
   windows_tests_report:
     name: Windows tests summary and report
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'pack') && !contains(github.event.pull_request.labels.*.name, 'publish'))
     needs: test_windows
     runs-on: ubuntu-22.04
     container:
@@ -389,6 +404,8 @@ jobs:
       - name: Publish test results
         uses: EnricoMi/publish-unit-test-result-action@v2
         with:
+          check_name: Windows test results
+          compare_to_earlier_commit: false
           files: build/xml_*/junit_tests.xml
       - name: Per-test results
         run: |
@@ -408,180 +425,3 @@ jobs:
         with:
           name: windows_test_resuls
           path: build
-
-  # virtual job to simplify the CI
-  # This job depends on all the tests that have to pass before we can start building packages
-  pack:
-    name: Ready for packages?
-    runs-on: ubuntu-22.04
-    needs: [debug_tests_report, release_tests_report, windows_tests_report]
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && github.event.label.name == 'pack')
-    steps:
-      - run: echo "Ready to pack"
-
-  pack_debian_ubuntu:
-    uses: ./.github/workflows/build_template.yml
-    needs: pack
-    strategy:
-      fail-fast: false
-      matrix:
-        DISTR: [bionic, focal, jammy, buster, bullseye, bookworm]
-        arch: [x86_64, aarch64]
-    name: ${{ matrix.DISTR }} ${{ matrix.arch }} packing
-    with:
-      DISTR: ${{ matrix.DISTR }}
-      arch: ${{ matrix.arch }}
-      cmake_command: |
-        mkdir build
-        cd build
-        cmake -DPACK=1 ..
-        cmake --build . --target package
-      cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
-      artifact_list: "build/manticore*deb"
-
-  pack_rhel:
-    uses: ./.github/workflows/build_template.yml
-    needs: pack
-    strategy:
-      fail-fast: false
-      matrix:
-        DISTR: [rhel7, rhel8, rhel9]
-        arch: [x86_64, aarch64]
-    name: ${{ matrix.DISTR }} ${{ matrix.arch }} packing
-    with:
-      DISTR: ${{ matrix.DISTR }}
-      arch: ${{ matrix.arch }}
-      boost: boost_rhel_feb17
-      cmake_command: |
-        ln -s $(pwd) /builds_manticoresearch_dev_usr_src_debug_manticore_component_src_0
-        cd /builds_manticoresearch_dev_usr_src_debug_manticore_component_src_0
-        mkdir build
-        cd build
-        cmake -DPACK=1 ..
-        cmake --build . --target package
-      cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
-      artifact_list: "build/manticore*rpm"
-
-  pack_macos:
-    uses: ./.github/workflows/build_template.yml
-    needs: pack
-    strategy:
-      fail-fast: false
-      matrix:
-        DISTR: [macos]
-        arch: [x86_64, arm64]
-    name: ${{ matrix.DISTR }} ${{ matrix.arch }} packing
-    with:
-      DISTR: ${{ matrix.DISTR }}
-      arch: ${{ matrix.arch }}
-      HOMEBREW_PREFIX: /opt/homebrew
-      cmake_command: |
-        mkdir build
-        cd build
-        cmake -DPACK=1 ..
-        cmake --build . --target package
-      cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
-      artifact_list: "build/manticore*tar.gz"
-
-  pack_windows:
-    name: Windows x64 package
-    uses: ./.github/workflows/build_template.yml
-    needs: pack
-    with:
-      DISTR: windows
-      arch: x64
-      cmake_command: |
-        mkdir build
-        cd build
-        cmake -DPACK=1 ..
-        cmake --build . --target package
-      cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
-      artifact_list: "build/manticore*exe build/manticore*zip"
-
-  # virtual job to simplify the CI
-  # This job depends on all the package preparation jobs that have to pass before we can start publishing packages
-  publish:
-    name: Ready for publishing?
-    runs-on: ubuntu-22.04
-    needs: [pack_debian_ubuntu, pack_rhel, pack_macos, pack_windows]
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || (github.event_name == 'pull_request' && github.event.label.name == 'publish')
-    steps:
-      - run: echo "Ready to publish"
-
-  # publish_debian_ubuntu:
-  #   needs: publish
-  #   runs-on: [self-hosted, Linux, X64]
-  #   strategy:
-  #     fail-fast: true
-  #     matrix:
-  #       DISTR: [bionic, focal, jammy, buster, bullseye, bookworm]
-  #       arch: [x86_64, aarch64]
-  #   name: ${{ matrix.DISTR }} ${{ matrix.arch }} publishing
-  #   steps:
-  #     - uses: manticoresoftware/download_artifact_with_retries@main
-  #       with:
-  #         name: build_${{ matrix.DISTR }}_RelWithDebInfo_${{ matrix.arch }}
-  #         path: .
-  #     - name: Deploy package
-  #       run: |
-  #         curl -sSL https://raw.githubusercontent.com/manticoresoftware/repo_scripts/main/upload_repo_deb > script
-  #         chmod +x script
-  #         DISTRO=${{ matrix.DISTR }} DIGIT_DELIMITER2="-" ./script
-  #       shell: bash
-  #
-  # publish_rhel:
-  #   needs: publish
-  #   runs-on: [self-hosted, Linux, X64]
-  #   strategy:
-  #     fail-fast: true
-  #     matrix:
-  #       DISTR: [7, 8, 9]
-  #       arch: [x86_64, aarch64]
-  #   name: RHEL ${{ matrix.DISTR }} ${{ matrix.arch }} publishing
-  #   steps:
-  #     - uses: manticoresoftware/download_artifact_with_retries@main
-  #       with:
-  #         name: build_rhel${{ matrix.DISTR }}_RelWithDebInfo_${{ matrix.arch }}
-  #         path: .
-  #     - name: Deploy package
-  #       run: |
-  #         curl -sSL https://raw.githubusercontent.com/manticoresoftware/repo_scripts/main/upload_repo_rpm > script
-  #         chmod +x script
-  #         DISTRO=${{ matrix.DISTR }} DIGIT_DELIMITER2="_" ./script
-  #       shell: bash
-  #
-  # publish_macos:
-  #   needs: publish
-  #   runs-on: [self-hosted, Linux, X64]
-  #   strategy:
-  #     fail-fast: true
-  #     matrix:
-  #       arch: [x86_64, arm64]
-  #   name: macos ${{ matrix.arch }} publishing
-  #   steps:
-  #     - uses: manticoresoftware/download_artifact_with_retries@main
-  #       with:
-  #         name: build_macos_RelWithDebInfo_${{ matrix.arch }}
-  #         path: .
-  #     - name: Deploy package
-  #       run: |
-  #         curl -sSL https://raw.githubusercontent.com/manticoresoftware/repo_scripts/main/upload_repo_arc > script
-  #         chmod +x script
-  #         DIGIT_DELIMITER2="-" ./script
-  #       shell: bash
-  #
-  # publish_windows:
-  #   name: Publishing Windows packages to repo.manticoresearch.com
-  #   needs: publish
-  #   runs-on: [self-hosted, Linux, X64]
-  #   steps:
-  #     - uses: manticoresoftware/download_artifact_with_retries@main
-  #       with:
-  #         name: build_windows_RelWithDebInfo_x64
-  #         path: .
-  #     - name: Deploy package
-  #       run: |
-  #         curl -sSL https://raw.githubusercontent.com/manticoresoftware/repo_scripts/main/upload_repo_arc > script
-  #         chmod +x script
-  #         DIGIT_DELIMITER2="-" ./script
-  #       shell: bash
