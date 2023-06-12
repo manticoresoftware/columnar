@@ -41,9 +41,9 @@ namespace SI
 	};
 
 	template <typename VALUE>
-	class PGM_T : public pgm::PGMIndex<VALUE,16>, public PGM_i 
+	class PGM_T : public pgm::PGMIndex<VALUE,8>, public PGM_i 
 	{
-		using BASE = pgm::PGMIndex<VALUE,16>;
+		using BASE = pgm::PGMIndex<VALUE,8>;
 		using BASE::BASE;
 
 	public:
