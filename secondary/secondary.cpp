@@ -539,7 +539,10 @@ uint32_t SecondaryIndex_c::GetNumIterators ( const common::Filter_t & tFilter ) 
 	switch ( tFixedFilter.m_eType )
 	{
 	case FilterType_e::VALUES:
-		return GetValsRows ( nullptr, tFixedFilter, nullptr, 0, 0, INT_MAX );
+	{
+		uint32_t uNumIterators = GetValsRows ( nullptr, tFixedFilter, nullptr, 0, 0, INT_MAX );
+		return std::min ( (uint32_t)tFilter.m_dValues.size(), uNumIterators );
+	}
 
 	case FilterType_e::RANGE:
 	case FilterType_e::FLOATRANGE:

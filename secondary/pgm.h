@@ -41,17 +41,16 @@ namespace SI
 	};
 
 	template <typename VALUE>
-	struct PGM_T : public pgm::PGMIndex<VALUE>, public PGM_i 
+	class PGM_T : public pgm::PGMIndex<VALUE,16>, public PGM_i 
 	{
-		PGM_T ()
-		{
-		}
+		using BASE = pgm::PGMIndex<VALUE,16>;
+		using BASE::BASE;
 
+	public:
 		template<typename RandomIt>
 		PGM_T ( RandomIt tBegin, RandomIt tEnd )
-			: pgm::PGMIndex<VALUE> ( tBegin, tEnd )
-		{
-		}
+			: BASE ( tBegin, tEnd )
+		{}
 
 		size_t Save ( std::vector<uint8_t> & dData ) const final
 		{
@@ -104,21 +103,9 @@ namespace SI
 		}
 
 		ApproxPos_t Search ( uint64_t uVal ) const final;
-
-		void WriteTypedKey ( util::MemWriter_c & tWr, VALUE tVal ) const
-		{
-			tWr.Pack_uint64 ( (uint64_t)tVal );
-		}
-
-		void LoadTypedKey ( util::FileReader_c & tRd, VALUE  & tVal ) const
-		{
-			tVal = tRd.Unpack_uint64();
-		}
-
-		bool IsEmpty () const final
-		{
-			return ( this->n==0 );
-		}
+		void		WriteTypedKey ( util::MemWriter_c & tWr, VALUE tVal ) const		{ tWr.Pack_uint64 ( (uint64_t)tVal ); }
+		void		LoadTypedKey ( util::FileReader_c & tRd, VALUE  & tVal ) const	{ tVal = tRd.Unpack_uint64(); }
+		bool		IsEmpty () const final											{ return this->n==0; }
 	};
 
 	template<>
