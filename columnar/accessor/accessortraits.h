@@ -111,8 +111,8 @@ public:
 	void		Setup ( SharedBlocks_c & pBlocks, uint32_t uTotalDocs ) final;
 	bool		HintRowID ( uint32_t tRowID ) final;
 
-	void		SetCutoff ( int iCutoff ) final	{}
-	bool		WasCutoffHit() const final		{ return false; }
+	void		SetCutoff ( int iCutoff ) final	{ m_iRowsLeft = iCutoff; }
+	bool		WasCutoffHit() const final		{ return !m_iRowsLeft; }
 
 protected:
 	int			m_iNumProcessed = 0;
@@ -120,6 +120,7 @@ protected:
 	int			m_iCurSubblock = 0;
 	int			m_iCurBlockId = -1;
 	int			m_iTotalSubblocks = 0;
+	int			m_iRowsLeft = INT_MAX;
 
 	std::vector<uint32_t> m_dCollected {0};
 	SharedBlocks_c		m_pMatchingSubblocks;
@@ -234,7 +235,7 @@ bool Analyzer_T<HAVE_MATCHING_BLOCKS>::GetNextRowIdBlock ( ACCESSOR & tAccessor,
 
 	uint32_t * pRowIdStart = m_dCollected.data();
 	uint32_t * pRowID = pRowIdStart;
-	uint32_t * pRowIdMax = pRowIdStart + tAccessor.m_iSubblockSize;
+	uint32_t * pRowIdMax = pRowIdStart + std::min ( m_iRowsLeft, tAccessor.m_iSubblockSize );
 
 	// we scan until we find at least 128 (subblock size) matches.
 	// this might lead to this analyzer scanning the whole index
@@ -254,6 +255,7 @@ bool Analyzer_T<HAVE_MATCHING_BLOCKS>::GetNextRowIdBlock ( ACCESSOR & tAccessor,
 			break;
 	}
 
+	m_iRowsLeft = std::max ( m_iRowsLeft - int(pRowID-pRowIdStart), 0 );
 	return CheckEmptySpan ( pRowID, pRowIdStart, dRowIdBlock );
 }
 
