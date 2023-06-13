@@ -14,6 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+
   pack:
     name: OK to pack?
     runs-on: ubuntu-22.04
@@ -116,7 +117,7 @@ jobs:
 
   publish_debian_ubuntu:
     needs: publish
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: true
       matrix:
@@ -124,20 +125,18 @@ jobs:
         arch: [x86_64, aarch64]
     name: ${{ matrix.DISTR }} ${{ matrix.arch }} publishing
     steps:
-      - uses: manticoresoftware/download_artifact_with_retries@main
+      - uses: manticoresoftware/publish_to_repo@main
         with:
-          name: build_${{ matrix.DISTR }}_RelWithDebInfo_${{ matrix.arch }}
-          path: .
-      - name: Deploy package
-        run: |
-          curl -sSL https://raw.githubusercontent.com/manticoresoftware/repo_scripts/main/upload_repo_deb > script
-          chmod +x script
-          DISTRO=${{ matrix.DISTR }} DIGIT_DELIMITER2="-" ./script
-        shell: bash
+          ssh_key: ${{ secrets.REPO_SSH_KEY }}
+          distr: ${{ matrix.DISTR }}
+          arch: ${{ matrix.arch }}
+          artifact: build_${{ matrix.DISTR }}_RelWithDebInfo_${{ matrix.arch }}
+          type: deb
+          delimiter: "-"
 
   publish_rhel:
     needs: publish
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: true
       matrix:
@@ -145,49 +144,43 @@ jobs:
         arch: [x86_64, aarch64]
     name: RHEL ${{ matrix.DISTR }} ${{ matrix.arch }} publishing
     steps:
-      - uses: manticoresoftware/download_artifact_with_retries@main
+      - uses: manticoresoftware/publish_to_repo@main
         with:
-          name: build_rhel${{ matrix.DISTR }}_RelWithDebInfo_${{ matrix.arch }}
-          path: .
-      - name: Deploy package
-        run: |
-          curl -sSL https://raw.githubusercontent.com/manticoresoftware/repo_scripts/main/upload_repo_rpm > script
-          chmod +x script
-          DISTRO=${{ matrix.DISTR }} DIGIT_DELIMITER2="_" ./script
-        shell: bash
+          ssh_key: ${{ secrets.REPO_SSH_KEY }}
+          distr: ${{ matrix.DISTR }}
+          arch: ${{ matrix.arch }}
+          artifact: build_rhel${{ matrix.DISTR }}_RelWithDebInfo_${{ matrix.arch }}
+          type: rpm
+          delimiter: "_"
 
   publish_macos:
     needs: publish
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: true
       matrix:
         arch: [x86_64, arm64]
     name: macos ${{ matrix.arch }} publishing
     steps:
-      - uses: manticoresoftware/download_artifact_with_retries@main
+      - uses: manticoresoftware/publish_to_repo@main
         with:
-          name: build_macos_RelWithDebInfo_${{ matrix.arch }}
-          path: .
-      - name: Deploy package
-        run: |
-          curl -sSL https://raw.githubusercontent.com/manticoresoftware/repo_scripts/main/upload_repo_arc > script
-          chmod +x script
-          DIGIT_DELIMITER2="-" ./script
-        shell: bash
+          ssh_key: ${{ secrets.REPO_SSH_KEY }}
+          distr: macos
+          arch: ${{ matrix.arch }}
+          artifact: build_macos_RelWithDebInfo_${{ matrix.arch }}
+          type: arc
+          delimiter: "-"
 
   publish_windows:
     name: Publishing Windows packages to repo.manticoresearch.com
     needs: publish
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-22.04
     steps:
-      - uses: manticoresoftware/download_artifact_with_retries@main
+      - uses: manticoresoftware/publish_to_repo@main
         with:
-          name: build_windows_RelWithDebInfo_x64
-          path: .
-      - name: Deploy package
-        run: |
-          curl -sSL https://raw.githubusercontent.com/manticoresoftware/repo_scripts/main/upload_repo_arc > script
-          chmod +x script
-          DIGIT_DELIMITER2="-" ./script
-        shell: bash
+          ssh_key: ${{ secrets.REPO_SSH_KEY }}
+          distr: windows
+          arch: x64
+          artifact: build_windows_RelWithDebInfo_x64
+          type: arc
+          delimiter: "-"
