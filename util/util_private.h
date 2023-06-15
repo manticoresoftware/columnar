@@ -36,7 +36,7 @@ class ByteCodec_c
 {
 public:
 	template <typename T>
-	static inline uint8_t * PackData ( const Span_T<T> & dData )
+	static FORCE_INLINE uint8_t * PackData ( const Span_T<T> & dData )
 	{
 		size_t tSizeBytes = dData.size()*sizeof(T);
 		uint8_t * pResult = nullptr;
@@ -46,7 +46,7 @@ public:
 		return pResult;
 	}
 
-	static inline std::pair<uint8_t *,uint8_t *> PackData ( size_t tDataLen )
+	static FORCE_INLINE std::pair<uint8_t *,uint8_t *> PackData ( size_t tDataLen )
 	{
 		uint8_t dPacked[16];
 		uint8_t * pPacked = dPacked;
@@ -56,7 +56,7 @@ public:
 		return { pResult, pResult+iPackedLen };
 	}
 
-	static inline void PackData ( std::vector<uint8_t> & dPacked, const Span_T<uint8_t> & dData )
+	static FORCE_INLINE void PackData ( std::vector<uint8_t> & dPacked, const Span_T<uint8_t> & dData )
 	{
 		dPacked.resize ( dData.size() + CalcPackedLen (dData.size() ) );
 		uint8_t * p = dPacked.data();
@@ -65,7 +65,7 @@ public:
 	}
 
 	template <typename T>
-	static inline int CalcPackedLen ( T tValue )
+	static FORCE_INLINE int CalcPackedLen ( T tValue )
 	{
 		int iNumBytes = 1;
 		uint64_t uValue = (uint64_t)tValue;
@@ -79,30 +79,30 @@ public:
 		return iNumBytes;
 	}
 
-	static inline int Pack_uint32 ( uint8_t * & pOut, uint32_t uValue )
+	static FORCE_INLINE int Pack_uint32 ( uint8_t * & pOut, uint32_t uValue )
 	{
 		return EncodeValue ( pOut, uValue );
 	}
 
-	static inline int Pack_uint64 ( uint8_t * & pOut, uint64_t uValue )
+	static FORCE_INLINE int Pack_uint64 ( uint8_t * & pOut, uint64_t uValue )
 	{
 		return EncodeValue ( pOut, uValue );
 	}
 
 	template <typename GET>
-	static inline uint32_t Unpack_uint32 ( GET && fnGetByte )
+	static FORCE_INLINE uint32_t Unpack_uint32 ( GET && fnGetByte )
 	{
 		return DecodeValue<uint32_t>(fnGetByte);
 	}
 
 	template <typename GET>
-	static inline uint64_t Unpack_uint64 ( GET && fnGetByte )
+	static FORCE_INLINE uint64_t Unpack_uint64 ( GET && fnGetByte )
 	{
 		return DecodeValue<uint64_t>(fnGetByte);
 	}
 
 	template <typename T>
-	static inline int EncodeValue ( uint8_t * & pOut, T tValue )
+	static FORCE_INLINE int EncodeValue ( uint8_t * & pOut, T tValue )
 	{
 		int iNumBytes = CalcPackedLen(tValue);
 		for ( int i = iNumBytes-1; i>=0; i-- )
@@ -119,7 +119,7 @@ public:
 
 private:
 	template <typename T, typename GET>
-	static inline T DecodeValue ( GET && fnGetByte )
+	static FORCE_INLINE T DecodeValue ( GET && fnGetByte )
 	{
 		uint8_t uByte = fnGetByte();
 		T tValue = 0;

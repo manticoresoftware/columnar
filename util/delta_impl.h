@@ -1,4 +1,4 @@
-// Copyright (c) 2021-2023, Manticore Software LTD (https://manticoresearch.com)
+// Copyright (c) 2023, Manticore Software LTD (https://manticoresearch.com)
 // Copyright (c) Daniel Lemire, http://lemire.me/en/
 // All rights reserved
 //
@@ -15,20 +15,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "delta.h"
+#pragma once
+
+#include "util_private.h"
 
 namespace util
 {
 
 template <class T>
-static void Delta (T *data, const size_t size)
+FORCE_INLINE void Delta (T *data, const size_t size)
 {
 	for (size_t i = size - 1; i > 0; --i)
 		data[i] -= data[i - 1];
 }
 
 
-void FastDeltaUnaligned ( uint32_t * pData, size_t iTotalQty )
+FORCE_INLINE void FastDeltaUnaligned ( uint32_t * pData, size_t iTotalQty )
 {
 	if ( iTotalQty < 5 )
 	{
@@ -65,7 +67,7 @@ void FastDeltaUnaligned ( uint32_t * pData, size_t iTotalQty )
 
 
 template <class T>
-static void InverseDelta ( T * pData, size_t iSize )
+FORCE_INLINE void InverseDelta ( T * pData, size_t iSize )
 {
 	if ( !iSize )
 		return;
@@ -82,7 +84,7 @@ static void InverseDelta ( T * pData, size_t iSize )
 }
 
 
-static void FastInverseDeltaUnaligned ( uint32_t * pData, const size_t iTotalQty )
+FORCE_INLINE void FastInverseDeltaUnaligned ( uint32_t * pData, const size_t iTotalQty )
 {
 	if ( iTotalQty < 5 )
 	{
@@ -109,7 +111,7 @@ static void FastInverseDeltaUnaligned ( uint32_t * pData, const size_t iTotalQty
 }
 
 template <typename T>
-static void CalcDescDeltas ( T * pData, size_t tLength )
+FORCE_INLINE void CalcDescDeltas ( T * pData, size_t tLength )
 {
 	// FIXME: move to SSE
 	T tPrevValue = pData[0];
@@ -123,7 +125,7 @@ static void CalcDescDeltas ( T * pData, size_t tLength )
 }
 
 
-static void DeltaCalc ( uint32_t * pData, size_t tLength, bool bAsc )
+FORCE_INLINE void DeltaCalc ( uint32_t * pData, size_t tLength, bool bAsc )
 {
 	if ( bAsc )
 		FastDeltaUnaligned ( pData, tLength );
@@ -132,7 +134,7 @@ static void DeltaCalc ( uint32_t * pData, size_t tLength, bool bAsc )
 }
 
 
-static void DeltaCalc ( uint64_t * pData, size_t tLength, bool bAsc )
+FORCE_INLINE void DeltaCalc ( uint64_t * pData, size_t tLength, bool bAsc )
 {
 	if ( bAsc )
 		Delta ( pData, tLength );
@@ -141,7 +143,7 @@ static void DeltaCalc ( uint64_t * pData, size_t tLength, bool bAsc )
 }
 
 
-static inline void CalcInverseDelta64 ( uint64_t * pData, size_t tSize )
+FORCE_INLINE void CalcInverseDelta64 ( uint64_t * pData, size_t tSize )
 {
 	if ( tSize & ( sizeof(__m128i)/sizeof(uint64_t) - 1 ) )
 	{
@@ -164,14 +166,14 @@ static inline void CalcInverseDelta64 ( uint64_t * pData, size_t tSize )
 
 
 template<typename T>
-static inline void CalcInverseDescDeltas ( T * pData, size_t tSize )
+FORCE_INLINE void CalcInverseDescDeltas ( T * pData, size_t tSize )
 {
 	for ( size_t i = 1; i < tSize; i++ )
 		pData[i] = pData[i-1] - pData[i];
 }
 
 
-static inline void CalcInverseDelta32Desc ( uint32_t * pData, size_t tSize )
+FORCE_INLINE void CalcInverseDelta32Desc ( uint32_t * pData, size_t tSize )
 {
 	if ( tSize & ( sizeof(__m128i)/sizeof(uint32_t) - 1 ) )
 	{
@@ -196,7 +198,7 @@ static inline void CalcInverseDelta32Desc ( uint32_t * pData, size_t tSize )
 }
 
 
-static inline void CalcInverseDelta64Desc ( uint64_t * pData, size_t tSize )
+FORCE_INLINE void CalcInverseDelta64Desc ( uint64_t * pData, size_t tSize )
 {
 	if ( tSize & ( sizeof(__m128i)/sizeof(uint64_t) - 1 ) )
 	{
@@ -220,19 +222,19 @@ static inline void CalcInverseDelta64Desc ( uint64_t * pData, size_t tSize )
 }
 
 
-void ComputeDeltas ( uint32_t * pData, int iLength, bool bAsc )
+FORCE_INLINE void ComputeDeltas ( uint32_t * pData, int iLength, bool bAsc )
 {
 	DeltaCalc ( pData, iLength, bAsc );
 }
 
 
-void ComputeDeltas ( uint64_t * pData, int iLength, bool bAsc )
+FORCE_INLINE void ComputeDeltas ( uint64_t * pData, int iLength, bool bAsc )
 {
 	DeltaCalc ( pData, iLength, bAsc );
 }
 
 
-void ComputeInverseDeltas ( Span_T<uint32_t> & dData, bool bAsc )
+FORCE_INLINE void ComputeInverseDeltas ( Span_T<uint32_t> & dData, bool bAsc )
 {
 	if ( bAsc )
 		FastInverseDeltaUnaligned ( dData.data(), dData.size() );
@@ -241,7 +243,7 @@ void ComputeInverseDeltas ( Span_T<uint32_t> & dData, bool bAsc )
 }
 
 
-void ComputeInverseDeltas ( Span_T<uint64_t> & dData, bool bAsc )
+FORCE_INLINE void ComputeInverseDeltas ( Span_T<uint64_t> & dData, bool bAsc )
 {
 	if ( bAsc )
 		CalcInverseDelta64 ( dData.data(), dData.size() );
@@ -250,17 +252,29 @@ void ComputeInverseDeltas ( Span_T<uint64_t> & dData, bool bAsc )
 }
 
 
-void ComputeInverseDeltas ( std::vector<uint32_t> & dData, bool bAsc )
+FORCE_INLINE void ComputeInverseDeltas ( std::vector<uint32_t> & dData, bool bAsc )
 {
 	Span_T<uint32_t> tSpan(dData);
 	ComputeInverseDeltas ( tSpan, bAsc );
 }
 
 
-void ComputeInverseDeltas ( std::vector<uint64_t> & dData, bool bAsc )
+FORCE_INLINE void ComputeInverseDeltas ( std::vector<uint64_t> & dData, bool bAsc )
 {
 	Span_T<uint64_t> tSpan(dData);
 	ComputeInverseDeltas ( tSpan, bAsc );
+}
+
+
+FORCE_INLINE void ComputeInverseDeltasAsc ( Span_T<uint32_t> & dData )
+{
+	FastInverseDeltaUnaligned ( dData.data(), dData.size() );
+}
+
+
+FORCE_INLINE void ComputeInverseDeltasAsc ( Span_T<uint64_t> & dData )
+{
+	CalcInverseDelta64 ( dData.data(), dData.size() );
 }
 
 } // namespace util

@@ -159,18 +159,6 @@ std::string FileReader_c::Read_string()
 }
 
 
-uint32_t FileReader_c::Unpack_uint32()
-{
-	return ByteCodec_c::Unpack_uint32 ( [this](){ return Read_uint8(); } );
-}
-
-
-uint64_t FileReader_c::Unpack_uint64()
-{
-	return ByteCodec_c::Unpack_uint64 ( [this](){ return Read_uint8(); } );
-}
-
-
 bool FileReader_c::ReadToBuffer()
 {
 	assert ( m_iFD>=0 );

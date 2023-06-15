@@ -61,14 +61,14 @@ struct FindValueResult_t
 class SplitBitmap_c
 {
 public:
-				SplitBitmap_c ( uint32_t uNumValues );
+						SplitBitmap_c ( uint32_t uNumValues );
 
-	inline void BitSet ( int iBit );
-	inline int	Scan ( int iStart );
-	inline int	GetLength() const { return m_iSize; }
+	FORCE_INLINE void	BitSet ( int iBit );
+	FORCE_INLINE int	Scan ( int iStart );
+	FORCE_INLINE int	GetLength() const { return m_iSize; }
 
 	template <typename RESULT>
-	inline void	Fetch ( int & iIterator, int iBase, RESULT * & pRes, RESULT * pMax );
+	FORCE_INLINE void	Fetch ( int & iIterator, int iBase, RESULT * & pRes, RESULT * pMax );
 
 private:
 	using BITMAP_TYPE = BitVec_T<uint64_t>;
@@ -285,7 +285,7 @@ void DecodeBlock ( VEC & dDst, IntCodec_i * pCodec, SpanResizeable_T<uint32_t> &
 	dBuf.resize ( 0 );
 	ReadVectorLen32 ( dBuf, tReader );
 	pCodec->Decode ( dBuf, dDst );
-	ComputeInverseDeltas ( dDst, true );
+	ComputeInverseDeltasAsc ( dDst );
 }
 
 template<typename VEC>
@@ -391,9 +391,15 @@ BitmapIterator_i * ReaderTraits_c::SpawnBitmapIterator ( const RowidRange_t * pB
 	if ( !NeedBitmapIterator() )
 		return nullptr;
 
-	const uint32_t SMALL_INDEX_THRESH = 262144;
+	float fRatio = 1.0f;
+	if ( pBounds )
+		fRatio = float ( pBounds->m_uMax - pBounds->m_uMin + 1  ) / m_tRsetInfo.m_uRowsCount;
+
+	int64_t iRsetSize = (int64_t) ( m_tRsetInfo.m_iRsetSize*fRatio );
+
+	const int64_t SMALL_INDEX_THRESH = 262144;
 	const float LARGE_BITMAP_RATIO = 0.01f;
-	if ( m_tRsetInfo.m_uRowsCount>SMALL_INDEX_THRESH && float(m_tRsetInfo.m_iRsetSize)/m_tRsetInfo.m_uRowsCount<=LARGE_BITMAP_RATIO )
+	if ( m_tRsetInfo.m_uRowsCount>SMALL_INDEX_THRESH && float(iRsetSize)/m_tRsetInfo.m_uRowsCount<=LARGE_BITMAP_RATIO )
 	{
 		if ( pBounds )
 			return new BitmapIterator_T<SplitBitmap_c, true> ( m_sAttr, m_tRsetInfo.m_uRowsCount, pBounds );

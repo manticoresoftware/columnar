@@ -206,7 +206,7 @@ void StoredBlock_MvaConst_T<T>::ReadHeader ( FileReader_c & tReader )
 {
 	uint32_t uSize = tReader.Unpack_uint32();
 	DecodeValues_PFOR ( m_dValue, tReader, *m_pCodec, m_dTmp, uSize );
-	ComputeInverseDeltas ( m_dValue, true );
+	ComputeInverseDeltasAsc ( m_dValue );
 	m_dValueSpan = m_dValue;
 }
 

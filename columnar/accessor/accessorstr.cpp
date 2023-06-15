@@ -315,7 +315,7 @@ void StoredBlock_StrGeneric_c::ReadSubblock ( int iSubblockId, int iSubblockValu
 	DecodeValues_PFOR ( m_dLengths, tReader, *m_pCodec, m_dTmp, uSubblockSize );
 	m_dCumulativeLengths.resize ( m_dLengths.size() );
 	memcpy ( m_dCumulativeLengths.data(), m_dLengths.data(), m_dLengths.size()*sizeof(m_dLengths[0]) );
-	ComputeInverseDeltas ( m_dCumulativeLengths, true );
+	ComputeInverseDeltasAsc ( m_dCumulativeLengths );
 
 	m_iFirstValueOffset = tReader.GetPos();
 	m_iLastReadId = -1;

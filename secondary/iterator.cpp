@@ -64,7 +64,7 @@ private:
 	BitVec_T<uint64_t>	m_dMatchingBlocks{0};
 
 	bool		StartBlock ( Span_T<uint32_t> & dRowIdBlock );
-	bool		ReadNextBlock ( Span_T<uint32_t> & dRowIdBlock );
+	FORCE_INLINE bool ReadNextBlock ( Span_T<uint32_t> & dRowIdBlock );
 
 	FORCE_INLINE void DecodeDeltaVector ( SpanResizeable_T<uint32_t> & dDecoded, int iRsetSize=0 );
 	uint32_t	MarkMatchingBlocks();
@@ -247,7 +247,7 @@ bool RowidIterator_T<ROWID_RANGE>::ReadNextBlock ( Span_T<uint32_t> & dRowIdBloc
 	m_dTmp.resize(iBlockSize);
 	ReadVectorData ( m_dTmp, *m_pReader );
 	m_pCodec->Decode ( m_dTmp, m_dRows );
-	ComputeInverseDeltas ( m_dRows, true );
+	ComputeInverseDeltasAsc ( m_dRows );
 
 	dRowIdBlock = Span_T<uint32_t>(m_dRows);
 	return ( !dRowIdBlock.empty() );
@@ -260,7 +260,7 @@ void RowidIterator_T<ROWID_RANGE>::DecodeDeltaVector ( SpanResizeable_T<uint32_t
 	m_dTmp.resize(0);
 	ReadVectorLen32 ( m_dTmp, *m_pReader );
 	m_pCodec->Decode ( m_dTmp, dDecoded );
-	ComputeInverseDeltas ( dDecoded, true );
+	ComputeInverseDeltasAsc ( dDecoded );
 }
 
 /////////////////////////////////////////////////////////////////////

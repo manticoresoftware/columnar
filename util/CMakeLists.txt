@@ -20,12 +20,12 @@ cmake_minimum_required ( VERSION 3.17 )
 add_library ( util OBJECT
 		util_private.cpp
 		version.cpp
-		delta.cpp
 		reader.cpp
 		codec.cpp
 		util.h
 		util_private.h
 		delta.h
+		delta_impl.h
 		reader.h
 		codec.h
 		bitvec.h

@@ -37,7 +37,6 @@ public:
 	int						GetFD() const { return m_iFD; }
 	const std::string &		GetFilename() const { return m_sFile; }
 	int64_t					GetFileSize();
-
 	void					Read ( uint8_t * pData, size_t tLen );
 
 	FORCE_INLINE uint8_t	Read_uint8()
@@ -54,8 +53,8 @@ public:
 	FORCE_INLINE uint64_t	Read_uint64()   { return ReadValue<uint64_t>(); }
 	std::string				Read_string();
 
-	uint32_t				Unpack_uint32();
-	uint64_t				Unpack_uint64();
+	FORCE_INLINE uint32_t	Unpack_uint32()	{ return ByteCodec_c::Unpack_uint32 ( [this](){ return Read_uint8(); } ); }
+	FORCE_INLINE uint64_t	Unpack_uint64()	{ return ByteCodec_c::Unpack_uint64 ( [this](){ return Read_uint8(); } ); }
 
 	FORCE_INLINE bool		IsError() const { return m_bError; }
 	std::string				GetError() const { return m_sError; }

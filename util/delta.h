@@ -21,11 +21,15 @@
 namespace util
 {
 
-void	ComputeDeltas ( uint32_t * pData, int iLength, bool bAsc );
-void	ComputeDeltas ( uint64_t * pData, int iLength, bool bAsc );
-void	ComputeInverseDeltas ( util::Span_T<uint32_t> & dData, bool bAsc );
-void	ComputeInverseDeltas ( util::Span_T<uint64_t> & dData, bool bAsc );
-void	ComputeInverseDeltas ( std::vector<uint32_t> & dData, bool bAsc );
-void	ComputeInverseDeltas ( std::vector<uint64_t> & dData, bool bAsc );
+FORCE_INLINE void	ComputeDeltas ( uint32_t * pData, int iLength, bool bAsc );
+FORCE_INLINE void	ComputeDeltas ( uint64_t * pData, int iLength, bool bAsc );
+FORCE_INLINE void	ComputeInverseDeltas ( Span_T<uint32_t> & dData, bool bAsc );
+FORCE_INLINE void	ComputeInverseDeltas ( Span_T<uint64_t> & dData, bool bAsc );
+FORCE_INLINE void	ComputeInverseDeltas ( std::vector<uint32_t> & dData, bool bAsc );
+FORCE_INLINE void	ComputeInverseDeltas ( std::vector<uint64_t> & dData, bool bAsc );
+FORCE_INLINE void	ComputeInverseDeltasAsc ( Span_T<uint32_t> & dData );
+FORCE_INLINE void	ComputeInverseDeltasAsc ( Span_T<uint64_t> & dData );
 
 } // namespace util
+
+#include "delta_impl.h"
