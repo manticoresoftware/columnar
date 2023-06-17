@@ -1134,7 +1134,7 @@ template < bool LEFT_CLOSED, bool RIGHT_CLOSED, bool LEFT_UNBOUNDED, bool RIGHT_
 struct ValueInInterval_T
 {
 	template<typename T=int64_t>
-	static inline bool Eval ( T tValue, T tMin, T tMax )
+	static FORCE_INLINE bool Eval ( T tValue, T tMin, T tMax )
 	{
 		return ValueInInterval<T, LEFT_CLOSED, RIGHT_CLOSED, LEFT_UNBOUNDED, RIGHT_UNBOUNDED> ( tValue, tMin, tMax );
 	}

@@ -40,6 +40,7 @@
 #include "simdvariablebyte.h"
 #include "streamvariablebyte.h"
 #include "simdgroupsimple.h"
+#include "util/delta.h"
 
 
 #if _WIN32
@@ -58,6 +59,9 @@ public:
 	void	Encode ( const util::Span_T<uint64_t> & dUncompressed, std::vector<uint32_t> & dCompressed ) override;
 	bool	Decode ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint32_t> & dDecompressed ) override;
 	bool	Decode ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint64_t> & dDecompressed ) override;
+
+	void	DecodeDelta ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint32_t> & dDecompressed ) override;
+	void	DecodeDelta ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint64_t> & dDecompressed ) override;
 
 private:
 	std::unique_ptr<FastPForLib::IntegerCODEC> m_pCodec32;
@@ -125,6 +129,20 @@ bool IntCodec_c::Decode ( const util::Span_T<uint32_t> & dCompressed, util::Span
 	dDecompressed.resize(uDecompressedSize);
 
 	return pOut-(const uint32_t*)dCompressed.data()==dCompressed.size();
+}
+
+
+void IntCodec_c::DecodeDelta ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint32_t> & dDecompressed )
+{
+	Decode ( dCompressed, dDecompressed );
+	ComputeInverseDeltasAsc ( dDecompressed );
+}
+
+
+void IntCodec_c::DecodeDelta ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint64_t> & dDecompressed )
+{
+	Decode ( dCompressed, dDecompressed );
+	ComputeInverseDeltasAsc ( dDecompressed );
 }
 
 

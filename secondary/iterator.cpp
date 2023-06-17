@@ -246,8 +246,7 @@ bool RowidIterator_T<ROWID_RANGE>::ReadNextBlock ( Span_T<uint32_t> & dRowIdBloc
 
 	m_dTmp.resize(iBlockSize);
 	ReadVectorData ( m_dTmp, *m_pReader );
-	m_pCodec->Decode ( m_dTmp, m_dRows );
-	ComputeInverseDeltasAsc ( m_dRows );
+	m_pCodec->DecodeDelta ( m_dTmp, m_dRows );
 
 	dRowIdBlock = Span_T<uint32_t>(m_dRows);
 	return ( !dRowIdBlock.empty() );
@@ -259,8 +258,7 @@ void RowidIterator_T<ROWID_RANGE>::DecodeDeltaVector ( SpanResizeable_T<uint32_t
 	dDecoded.resize(iRsetSize);
 	m_dTmp.resize(0);
 	ReadVectorLen32 ( m_dTmp, *m_pReader );
-	m_pCodec->Decode ( m_dTmp, dDecoded );
-	ComputeInverseDeltasAsc ( dDecoded );
+	m_pCodec->DecodeDelta ( m_dTmp, dDecoded );
 }
 
 /////////////////////////////////////////////////////////////////////

@@ -22,7 +22,7 @@ namespace common
 {
 
 template<typename T, bool LEFT_CLOSED, bool RIGHT_CLOSED, bool LEFT_UNBOUNDED = false, bool RIGHT_UNBOUNDED = false>
-inline bool ValueInInterval ( T tValue, T tMin, T tMax )
+FORCE_INLINE bool ValueInInterval ( T tValue, T tMin, T tMax )
 {
 	if ( LEFT_UNBOUNDED )
 		return RIGHT_CLOSED ? ( tValue<=tMax ) : ( tValue<tMax );
@@ -34,7 +34,7 @@ inline bool ValueInInterval ( T tValue, T tMin, T tMax )
 }
 
 template <typename T>
-inline bool ValueInInterval ( T tValue, const Filter_t & tFilter )
+FORCE_INLINE bool ValueInInterval ( T tValue, const Filter_t & tFilter )
 {
 	T tMin = (T)tFilter.m_iMinValue;
 	T tMax = (T)tFilter.m_iMaxValue;
@@ -49,7 +49,7 @@ inline bool ValueInInterval ( T tValue, const Filter_t & tFilter )
 }
 
 template<>
-inline bool ValueInInterval<float> ( float fVal, const Filter_t & tFilter )
+FORCE_INLINE bool ValueInInterval<float> ( float fVal, const Filter_t & tFilter )
 {
 	float tMin = tFilter.m_fMinValue;
 	float tMax = tFilter.m_fMaxValue;
@@ -75,19 +75,19 @@ struct Interval_T
 		, m_tEnd ( tEnd )
 	{}
 
-	bool operator< ( const Interval_T & tOther ) const
+	FORCE_INLINE bool operator < ( const Interval_T & tOther ) const
 	{
 		return ( m_tStart<tOther.m_tStart || ( m_tStart==tOther.m_tStart && m_tEnd<tOther.m_tEnd ) );
 	}
 
-	bool Overlaps ( const Interval_T & tOther ) const
+	FORCE_INLINE bool Overlaps ( const Interval_T & tOther ) const
 	{
 		return ( m_tStart<=tOther.m_tEnd && tOther.m_tStart<=m_tEnd );
 	}
 };
 
 template<>
-inline bool Interval_T<float>::operator< ( const Interval_T<float> & tOther ) const
+FORCE_INLINE bool Interval_T<float>::operator < ( const Interval_T<float> & tOther ) const
 {
 	return ( m_tStart<tOther.m_tStart || ( util::FloatEqual ( m_tStart, tOther.m_tStart ) && m_tEnd<tOther.m_tEnd ) );
 }

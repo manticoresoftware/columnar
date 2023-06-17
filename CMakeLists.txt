@@ -129,7 +129,7 @@ endif ()
 
 # here we came in case of full build (i.e. columnar and/or secondary)
 
-set ( CMAKE_CXX_STANDARD 14 )
+set ( CMAKE_CXX_STANDARD 17 )
 
 # Helpers
 include ( helpers )

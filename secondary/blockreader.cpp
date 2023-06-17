@@ -284,8 +284,7 @@ void DecodeBlock ( VEC & dDst, IntCodec_i * pCodec, SpanResizeable_T<uint32_t> &
 {
 	dBuf.resize ( 0 );
 	ReadVectorLen32 ( dBuf, tReader );
-	pCodec->Decode ( dBuf, dDst );
-	ComputeInverseDeltasAsc ( dDst );
+	pCodec->DecodeDelta ( dBuf, dDst );
 }
 
 template<typename VEC>

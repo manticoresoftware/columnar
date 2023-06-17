@@ -107,7 +107,7 @@ class SpanResizeable_T : public Span_T<T>
 	using BASE = Span_T<T>;
 
 public:
-	void resize ( size_t tLength )
+	FORCE_INLINE void resize ( size_t tLength )
 	{
 		if ( tLength>m_tMaxLength )
 		{
