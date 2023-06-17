@@ -29,18 +29,18 @@ class BitVec_T
 public:
 	explicit BitVec_T ( int iSize ) { Resize(iSize); }
 
-	inline bool BitGet ( int iBit )
+	FORCE_INLINE bool BitGet ( int iBit )
 	{
-		if ( !m_dData.size() )
+		if ( !GetDataLen() )
 			return false;
 
 		assert ( iBit>=0 && iBit<m_iSize );
 		return ( ( m_dData [ iBit>>SHIFT ] & ( ( (T)1 )<<( iBit&MASK ) ) )!=0 );
 	}
 
-	inline void BitSet ( int iBit )
+	FORCE_INLINE void BitSet ( int iBit )
 	{
-		if ( !m_dData.size() )
+		if ( !GetDataLen() )
 			return;
 
 		assert ( iBit>=0 && iBit<m_iSize );
@@ -54,7 +54,7 @@ public:
 
 		const T * pDataStart = &m_dData.front();
 		const T * pData = pDataStart + iIterator;
-		const T * pDataMax = pDataStart + m_dData.size();
+		const T * pDataMax = pDataStart + GetDataLen();
 
 		pMax -= SIZEBITS;
 		assert ( pMax>=pRes );
@@ -94,10 +94,10 @@ public:
 			return (iIndex<<SHIFT) + ScanBit ( pData[iIndex], iStart&MASK );
 
 		iIndex++;
-		while ( iIndex<(int)m_dData.size() && !pData[iIndex] )
+		while ( iIndex<(int)GetDataLen() && !pData[iIndex] )
 			iIndex++;
 
-		if ( iIndex>=(int)m_dData.size() )
+		if ( iIndex>=(int)GetDataLen() )
 			return m_iSize;
 
 		return (iIndex<<SHIFT) + ScanBit ( pData[iIndex], 0 );
@@ -107,11 +107,9 @@ public:
 	void Resize ( int iSize )
 	{
 		m_iSize = iSize;
-		if ( iSize )
-		{
-			int iCount = ( iSize+SIZEBITS-1 )/SIZEBITS;
-			m_dData = std::vector<T> ( iCount, 0 );
-		}
+		m_iDataLen = ( iSize+SIZEBITS-1 )/SIZEBITS;
+		if ( m_iDataLen > m_dData.size() )
+			m_dData = std::vector<T> ( m_iDataLen, 0 );
 	}
 
 	int	GetLength() const { return m_iSize; }
@@ -124,8 +122,9 @@ private:
 
 	std::vector<T>	m_dData;
 	int				m_iSize = 0;
+	int				m_iDataLen = 0;
 
-	inline int ScanBit ( T tData, int iStart )
+	FORCE_INLINE int ScanBit ( T tData, int iStart )
 	{
 		for ( int i = iStart; i < SIZEBITS; i++ )
 			if ( tData & ( (T)1<<i ) )
@@ -133,6 +132,8 @@ private:
 
 		return -1;
 	}
+
+	FORCE_INLINE int GetDataLen() const { return m_iDataLen; }
 };
 
 using BitVec_c = BitVec_T<>;

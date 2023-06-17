@@ -466,12 +466,13 @@ protected:
 	virtual void			LoadValues () = 0;
 	virtual FindValueResult_t FindValue ( uint64_t uRefVal ) const = 0;
 
-	BlockIterator_i	*		CreateIterator ( int iItem );
+	BlockIteratorWithSetup_i * CreateIterator ( int iItem );
+	bool					SetupExistingIterator ( BlockIteratorWithSetup_i * pIterator, int iItem );
 	uint32_t				CountValues ( int iItem );
 
 	template <typename ADDITERATOR>
 	int						BlockLoadCreateIterator ( int iBlock, uint64_t uVal, ADDITERATOR && fnAddIterator );
-	bool					AddIterator ( int iItem, std::vector<BlockIterator_i *> & dRes, BitmapIterator_i * pBitmapIterator );
+	bool					AddIterator ( int iItem, std::vector<BlockIterator_i *> & dRes, BitmapIterator_i * pBitmapIterator, std::unique_ptr<BlockIteratorWithSetup_i> & pCommonIterator );
 
 	template <typename ADDITERATOR>
 	void					CreateBlocksIterator ( const BlockIter_t & tIt, ADDITERATOR && fnAddIterator );
@@ -484,18 +485,31 @@ BlockReader_c::BlockReader_c ( int iFD, const std::string & sAttr, uint32_t uVer
 {}
 
 
-bool BlockReader_c::AddIterator ( int iItem, std::vector<BlockIterator_i *> & dRes, BitmapIterator_i * pBitmapIterator )
+bool BlockReader_c::AddIterator ( int iItem, std::vector<BlockIterator_i *> & dRes, BitmapIterator_i * pBitmapIterator, std::unique_ptr<BlockIteratorWithSetup_i> & pCommonIterator )
 {
+	// reuse previous iterator if pBitmapIterator is present
+	if ( pBitmapIterator )
+	{
+		if ( !pCommonIterator )
+		{
+			pCommonIterator = std::unique_ptr<BlockIteratorWithSetup_i> ( CreateIterator(iItem) );
+			if ( !pCommonIterator )
+				return true;
+		}
+		else
+		{
+			if ( !SetupExistingIterator ( pCommonIterator.get(), iItem ) )
+				return true;
+		}
+
+		pBitmapIterator->Add ( pCommonIterator.get() );
+		return !pBitmapIterator->WasCutoffHit();
+	}
+
 	std::unique_ptr<BlockIterator_i> pIterator ( CreateIterator(iItem) );
 	if ( !pIterator )
 		return true;
 
-	if ( pBitmapIterator )
-	{
-		pBitmapIterator->Add ( pIterator.get() );
-		return !pBitmapIterator->WasCutoffHit();
-	}
-	
 	dRes.push_back ( pIterator.release() );
 	return true;
 }
@@ -568,8 +582,9 @@ void BlockReader_c::CreateBlocksIterator ( const std::vector<BlockIter_t> & dIt,
 	if ( pBitmapIterator && m_iCutoff>=0 )
 		pBitmapIterator->SetCutoff(m_iCutoff);
 
+	std::unique_ptr<BlockIteratorWithSetup_i> pCommonIterator;
 	for ( auto & i : dIt )
-		CreateBlocksIterator ( i, [this, &dRes, &pBitmapIterator]( int iItem ){ AddIterator ( iItem, dRes, pBitmapIterator.get() ); } );
+		CreateBlocksIterator ( i, [this, &dRes, &pBitmapIterator, &pCommonIterator]( int iItem ){ AddIterator ( iItem, dRes, pBitmapIterator.get(), pCommonIterator ); } );
 }
 
 
@@ -583,7 +598,7 @@ uint32_t BlockReader_c::CalcValueCount ( const std::vector<BlockIter_t> & dIt )
 }
 
 
-BlockIterator_i * BlockReader_c::CreateIterator ( int iItem )
+BlockIteratorWithSetup_i * BlockReader_c::CreateIterator ( int iItem )
 {
 	if ( m_iOffPastValues!=-1 )
 	{
@@ -594,6 +609,20 @@ BlockIterator_i * BlockReader_c::CreateIterator ( int iItem )
 	}
 
 	return CreateRowidIterator ( m_sAttr, (Packing_e)m_dTypes[iItem], m_iMetaOffset+m_dRowStart[iItem], m_dMin[iItem], m_dMax[iItem], m_pFileReader, m_pCodec, m_bHaveBounds ? &m_tBounds : nullptr, false );
+}
+
+
+bool BlockReader_c::SetupExistingIterator ( BlockIteratorWithSetup_i * pIterator, int iItem )
+{
+	if ( m_iOffPastValues!=-1 )
+	{
+		// seek right after values to load the rest of the block content as only values could be loaded
+		m_pFileReader->Seek ( m_iOffPastValues );
+		m_iOffPastValues = -1;
+		LoadValueBlockData ( false, *m_pFileReader.get() );
+	}
+
+	return SetupRowidIterator ( pIterator, (Packing_e)m_dTypes[iItem], m_iMetaOffset+m_dRowStart[iItem], m_dMin[iItem], m_dMax[iItem], m_bHaveBounds ? &m_tBounds : nullptr );
 }
 
 
@@ -788,9 +817,10 @@ protected:
 	virtual bool		EvalRangeValue ( int iItem, const Filter_t & tRange ) const = 0;
 	virtual int			CmpBlock ( const Filter_t & tRange ) const = 0;
 
-	BlockIterator_i *	CreateIterator ( int iItem, bool bLoad, bool bBitmap );
+	BlockIteratorWithSetup_i * CreateIterator ( int iItem, bool bLoad, bool bBitmap );
+	bool				SetupExistingIterator ( BlockIteratorWithSetup_i * pIterator, int iItem, bool bLoad );
 	uint32_t			CountValues ( int iItem, bool bLoad );
-	bool				AddIterator ( int iValCur, bool bLoad, std::vector<BlockIterator_i *> & dRes, BitmapIterator_i * pBitmapIterator );
+	bool				AddIterator ( int iValCur, bool bLoad, std::vector<BlockIterator_i *> & dRes, BitmapIterator_i * pBitmapIterator, std::unique_ptr<BlockIteratorWithSetup_i> & pCommonIterator );
 
 	template <typename ADDITERATOR>
 	bool				WarmupBlockIterators ( BlockCtx_t & tCtx, const Filter_t & tRange, ADDITERATOR && fnAddIterator );
@@ -810,17 +840,30 @@ RangeReader_c::RangeReader_c ( int iFD, const std::string & sAttr, uint32_t uVer
 {}
 
 
-bool RangeReader_c::AddIterator ( int iValCur, bool bLoad, std::vector<BlockIterator_i *> & dRes, BitmapIterator_i * pBitmapIterator )
+bool RangeReader_c::AddIterator ( int iValCur, bool bLoad, std::vector<BlockIterator_i *> & dRes, BitmapIterator_i * pBitmapIterator, std::unique_ptr<BlockIteratorWithSetup_i> & pCommonIterator )
 {
+	// reuse previous iterator if pBitmapIterator is present
+	if ( pBitmapIterator )
+	{
+		if ( !pCommonIterator )
+		{
+			pCommonIterator = std::unique_ptr<BlockIteratorWithSetup_i> ( CreateIterator ( iValCur, bLoad, !!pBitmapIterator ) );
+			if ( !pCommonIterator )
+				return true;
+		}
+		else
+		{
+			if ( !SetupExistingIterator ( pCommonIterator.get(), iValCur, bLoad ) )
+				return true;
+		}
+
+		pBitmapIterator->Add ( pCommonIterator.get() );
+		return !pBitmapIterator->WasCutoffHit();
+	}
+
 	std::unique_ptr<BlockIterator_i> pIterator ( CreateIterator ( iValCur, bLoad, !!pBitmapIterator ) );
 	if ( !pIterator )
 		return true;
-
-	if ( pBitmapIterator )
-	{
-		pBitmapIterator->Add ( pIterator.get() );
-		return !pBitmapIterator->WasCutoffHit();
-	}
 
 	dRes.push_back ( pIterator.release() );
 	return true;
@@ -947,7 +990,8 @@ void RangeReader_c::CreateBlocksIterator ( const BlockIter_t & tIt, const Filter
 	if ( pBitmapIterator && m_iCutoff>=0 )
 		pBitmapIterator->SetCutoff(m_iCutoff);
 
-	CreateBlocksIterator ( tIt, tRange, [this, &dRes, &pBitmapIterator]( int iValCur, bool bLoad ){ return AddIterator ( iValCur, bLoad, dRes, pBitmapIterator.get() ); } );
+	std::unique_ptr<BlockIteratorWithSetup_i> pCommonIterator;
+	CreateBlocksIterator ( tIt, tRange, [this, &dRes, &pBitmapIterator, &pCommonIterator]( int iValCur, bool bLoad ){ return AddIterator ( iValCur, bLoad, dRes, pBitmapIterator.get(), pCommonIterator ); } );
 }
 
 
@@ -959,12 +1003,21 @@ uint32_t RangeReader_c::CalcValueCount ( const BlockIter_t & tIt, const common::
 }
 
 
-BlockIterator_i * RangeReader_c::CreateIterator ( int iItem, bool bLoad, bool bBitmap )
+BlockIteratorWithSetup_i * RangeReader_c::CreateIterator ( int iItem, bool bLoad, bool bBitmap )
 {
 	if ( bLoad )
 		LoadValueBlockData ( false, *m_pBlockReader.get() );
 
 	return CreateRowidIterator ( m_sAttr, (Packing_e)m_dTypes[iItem], m_iMetaOffset + m_dRowStart[iItem], m_dMin[iItem], m_dMax[iItem], m_pBlockReader, m_pCodec, m_bHaveBounds ? &m_tBounds : nullptr, bBitmap );
+}
+
+
+bool RangeReader_c::SetupExistingIterator ( BlockIteratorWithSetup_i * pIterator, int iItem, bool bLoad )
+{
+	if ( bLoad )
+		LoadValueBlockData ( false, *m_pBlockReader.get() );
+
+	return SetupRowidIterator ( pIterator, (Packing_e)m_dTypes[iItem], m_iMetaOffset + m_dRowStart[iItem], m_dMin[iItem], m_dMax[iItem], m_bHaveBounds ? &m_tBounds : nullptr );
 }
 
 
