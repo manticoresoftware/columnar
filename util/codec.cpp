@@ -134,14 +134,14 @@ bool IntCodec_c::Decode ( const util::Span_T<uint32_t> & dCompressed, util::Span
 
 void IntCodec_c::DecodeDelta ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint32_t> & dDecompressed )
 {
-	Decode ( dCompressed, dDecompressed );
+	Decode ( dCompressed, dDecompressed, *m_pCodec32 );
 	ComputeInverseDeltasAsc ( dDecompressed );
 }
 
 
 void IntCodec_c::DecodeDelta ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint64_t> & dDecompressed )
 {
-	Decode ( dCompressed, dDecompressed );
+	Decode ( dCompressed, dDecompressed, *m_pCodec64 );
 	ComputeInverseDeltasAsc ( dDecompressed );
 }
 

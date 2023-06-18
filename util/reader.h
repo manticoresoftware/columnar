@@ -33,9 +33,10 @@ public:
 	bool					Open ( const std::string & sName, int iBufSize, std::string & sError );
 	void					Close();
 
-	int64_t					GetPos() const { return m_iFilePos+m_tPtr; }
-	int						GetFD() const { return m_iFD; }
-	const std::string &		GetFilename() const { return m_sFile; }
+	int64_t					GetPos() const			{ return m_iFilePos+m_tPtr; }
+	size_t					GetBufferSize() const	{ return m_tSize; }
+	int						GetFD() const			{ return m_iFD; }
+	const std::string &		GetFilename() const		{ return m_sFile; }
 	int64_t					GetFileSize();
 	void					Read ( uint8_t * pData, size_t tLen );
 
