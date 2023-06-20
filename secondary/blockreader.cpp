@@ -66,7 +66,7 @@ public:
 	FORCE_INLINE int	GetLength() const { return m_iSize; }
 
 	template <typename RESULT>
-	FORCE_INLINE void	Fetch ( int & iIterator, int iBase, RESULT * & pRes, RESULT * pMax );
+	void				Fetch ( int & iIterator, int iBase, RESULT * & pRes, RESULT * pMax );
 
 private:
 	using BITMAP_TYPE = BitVec_T<uint64_t>;
