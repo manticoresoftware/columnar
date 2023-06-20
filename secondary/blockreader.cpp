@@ -337,7 +337,7 @@ public:
 
 protected:
 	static const int OFF_READER_BUFFER_SIZE = 16384;
-	static const int BLOCK_READER_BUFFER_SIZE = 262144;
+	static const int READER_BUFFER_SIZE = 262144;
 
 	std::shared_ptr<FileReader_c> m_pReader { nullptr };
 
@@ -367,7 +367,7 @@ protected:
 
 
 ReaderTraits_c::ReaderTraits_c ( const std::string & sAttr, int iFD, uint32_t uVersion, std::shared_ptr<IntCodec_i> & pCodec, uint64_t uBlockBaseOff, const RowidRange_t * pBounds, const RsetInfo_t & tRsetInfo, int iCutoff )
-	: m_pReader ( std::make_shared<FileReader_c> ( iFD, BLOCK_READER_BUFFER_SIZE ) )
+	: m_pReader ( std::make_shared<FileReader_c> ( iFD, READER_BUFFER_SIZE ) )
 	, m_sAttr ( sAttr )
 	, m_uVersion ( uVersion )
 	, m_pCodec ( pCodec )
