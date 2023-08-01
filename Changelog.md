@@ -3,12 +3,29 @@
 # Version X
 
 ### Major new features
-* Added the ability to fetch the number of documents corresponding to a given filter without using iterators.
+* Added the ability to fetch the number of documents corresponding to a given filter without using iterators
+* Significantly improved the performance of secondary indexes with rowid filtering
+* Added cutoff support to analyzers
+* Significantly improved the performance of secondary indexes with non-selective range filters
+
+### Minor changes
+* Сhanged PGM resolution for better estimates
+
+* [Commit 0abc](https://github.com/manticoresoftware/columnar/commit/0abc7246) Inlined some functions
+* [Commit c45d](https://github.com/manticoresoftware/columnar/commit/c45ddf7b) Added inlines; changed codec interface; changed default 64bit codec to fastpfor256
+* [Commit 86b3](https://github.com/manticoresoftware/columnar/commit/86b3af30) Added exclude filters to CalcCount
+* [Commit 5ccf](https://github.com/manticoresoftware/columnar/commit/5ccffa0c) Changed columnar iterator interface to single-call
+* [Commit f7f5](https://github.com/manticoresoftware/columnar/commit/f7f54d93) Reduced partial minmax eval depth
 
 ### Bugfixes
 * [Commit 4f42](https://github.com/manticoresoftware/columnar/commit/1310c8af37398c42cfc010c24f07d146793b4f42) Fixed a crash caused by buffer overflow when encoding integer data
 * [Commit 7653](https://github.com/manticoresoftware/columnar/commit/76530db2f74072ea7787cb7d41124b1117ed014f) Fixed a crash caused by using a string filter without a hash func
 * [Issue #20](https://github.com/manticoresoftware/columnar/issues/20) Fixed a crash on indexing zero-length MVA attributes
+* [Commit 102d](https://github.com/manticoresoftware/columnar/commit/102d67c3) Bitmap iterator now rewinds only forward
+* [Commit 24e7](https://github.com/manticoresoftware/columnar/commit/24e76dd9) Fixed float range filters vs negative values
+* [Commit e447](https://github.com/manticoresoftware/columnar/commit/e447ec88) Fixed header integrity checks
+* [Commit 3c0b](https://github.com/manticoresoftware/columnar/commit/3c0b089c) Fixed bitmap iterator description on empty result sets
+* [Commit 4b21](https://github.com/manticoresoftware/columnar/commit/4b21f461) Clamp iterator esitmates for FilterType_e::VALUES
 
 # Version 2.0.4
 
