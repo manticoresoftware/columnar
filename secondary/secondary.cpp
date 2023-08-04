@@ -307,6 +307,8 @@ int64_t SecondaryIndex_c::GetValsRows ( std::vector<BlockIterator_i *> * pIterat
 	if ( !PrepareBlocksValues ( tFilter, pIterators ? &dBlocksIt : nullptr, uBlockBaseOff, iNumIterators ) )
 		return 0;
 
+	iNumIterators = std::min ( (int64_t)tFilter.m_dValues.size(), iNumIterators );
+
 	if ( !pIterators )
 		return iNumIterators;
 
@@ -539,10 +541,7 @@ uint32_t SecondaryIndex_c::GetNumIterators ( const common::Filter_t & tFilter ) 
 	switch ( tFixedFilter.m_eType )
 	{
 	case FilterType_e::VALUES:
-	{
-		uint32_t uNumIterators = GetValsRows ( nullptr, tFixedFilter, nullptr, 0, 0, INT_MAX );
-		return std::min ( (uint32_t)tFixedFilter.m_dValues.size(), uNumIterators );
-	}
+		return GetValsRows ( nullptr, tFixedFilter, nullptr, 0, 0, INT_MAX );
 
 	case FilterType_e::RANGE:
 	case FilterType_e::FLOATRANGE:
