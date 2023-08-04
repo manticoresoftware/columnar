@@ -1,6 +1,6 @@
 # Changelog
 
-# Version X
+# Version 2.2.0
 
 ### Major new features
 * Added the ability to fetch the number of documents corresponding to a given filter without using iterators
