@@ -870,8 +870,6 @@ Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::Analyzer
 	, m_tBlockValues ( ANALYZER::m_tRowID )
 	, m_tSettings ( tSettings )
 {
-	FixupFilterSettings (m_tSettings, ACCESSOR::m_tHeader.GetType() );
-
 	assert ( !tSettings.m_bExclude || ( tSettings.m_bExclude && tSettings.m_eType==FilterType_e::VALUES ) );
 
 	m_tBlockConst.Setup(m_tSettings);

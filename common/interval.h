@@ -24,10 +24,13 @@ namespace common
 template<typename T, bool LEFT_CLOSED, bool RIGHT_CLOSED, bool LEFT_UNBOUNDED = false, bool RIGHT_UNBOUNDED = false>
 FORCE_INLINE bool ValueInInterval ( T tValue, T tMin, T tMax )
 {
-	if ( LEFT_UNBOUNDED )
+	if constexpr ( LEFT_UNBOUNDED && RIGHT_UNBOUNDED )
+		return true;
+
+	if constexpr ( LEFT_UNBOUNDED )
 		return RIGHT_CLOSED ? ( tValue<=tMax ) : ( tValue<tMax );
 
-	if ( RIGHT_UNBOUNDED )
+	if constexpr ( RIGHT_UNBOUNDED )
 		return  LEFT_CLOSED ? ( tValue>=tMin ) : ( tValue>tMin );
 
 	return ( LEFT_CLOSED ? ( tValue>=tMin ) : ( tValue>tMin ) ) && ( RIGHT_CLOSED ? ( tValue<=tMax ) : ( tValue<tMax ) );

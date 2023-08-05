@@ -32,14 +32,16 @@ void FixupFilterSettings ( Filter_t & tFilter, AttrType_e eAttrType )
 		// clamp to min and max values from a wider type
 		if ( tFilter.m_iMinValue<0 )
 		{
-			tFilter.m_iMinValue = 0;
-			tFilter.m_bLeftClosed = true;
+			tFilter.m_iMinValue = INT64_MIN;
+			tFilter.m_bLeftUnbounded = true;
+			tFilter.m_bLeftClosed = false;
 		}
 
 		if ( tFilter.m_iMaxValue>UINT_MAX )
 		{
-			tFilter.m_iMaxValue = UINT_MAX;
-			tFilter.m_bRightClosed = true;
+			tFilter.m_iMaxValue = INT64_MAX;
+			tFilter.m_bRightUnbounded = true;
+			tFilter.m_bRightClosed = false;
 		}
 		break;
 

@@ -515,13 +515,18 @@ Analyzer_i * Columnar_c::CreateAnalyzer ( const Filter_t & tSettings, bool bHave
 	if ( !pReader )
 		return nullptr;
 
-	switch ( pHeader->GetType() )
+	auto eType = pHeader->GetType();
+	switch ( eType )
 	{
 	case AttrType_e::UINT32:
 	case AttrType_e::TIMESTAMP:
 	case AttrType_e::FLOAT:
 	case AttrType_e::INT64:
-		return CreateAnalyzerInt ( *pHeader, pReader.release(), tSettings, bHaveMatchingBlocks );
+	{
+		Filter_t tFixedSettings = tSettings;
+		FixupFilterSettings ( tFixedSettings, eType );
+		return CreateAnalyzerInt ( *pHeader, pReader.release(), tFixedSettings, bHaveMatchingBlocks );
+	}
 
 	case AttrType_e::BOOLEAN:
 		return CreateAnalyzerBool ( *pHeader, pReader.release(), tSettings, bHaveMatchingBlocks );
