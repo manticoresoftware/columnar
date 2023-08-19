@@ -528,6 +528,9 @@ public:
 	template <typename T, typename RANGE_EVAL>
 	FORCE_INLINE bool	SetupNextBlock ( const StoredBlock_Int_Table_T<T> & tBlock, bool bEq );
 
+	template <typename T>
+	FORCE_INLINE bool	AllPassFilter ( const StoredBlock_Int_Table_T<T> & tBlock ) const;
+
 private:
 	int							m_iTableValueId = -1;
 	std::vector<uint8_t>		m_dTableValues;
@@ -695,6 +698,39 @@ bool AnalyzerBlock_Int_Table_c::SetupNextBlock ( const StoredBlock_Int_Table_T<T
 	}
 
 	return true;
+}
+
+template <typename T>
+bool AnalyzerBlock_Int_Table_c::AllPassFilter ( const StoredBlock_Int_Table_T<T> & tBlock ) const
+{
+	switch ( m_eType )
+	{
+		case FilterType_e::VALUES:
+			if ( m_dValues.size()==1 )
+			{
+				if ( tBlock.GetTableSize()==1 && m_iTableValueId!=-1 )
+					return true;
+			}
+			else
+			{
+				if ( m_dTableValues.size()==tBlock.GetTableSize() )
+					return true;
+			}
+			break;
+
+		case FilterType_e::RANGE:
+		case FilterType_e::FLOATRANGE:
+		{
+			bool bAllPass = true;
+			for ( int i = 0; i < tBlock.GetTableSize(); i++ )
+				bAllPass &= m_dRangeMap[i];
+			return bAllPass;
+		}
+
+		default: break;
+	}
+
+	return false;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -1099,30 +1135,41 @@ bool Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::Get
 template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS>
 bool Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::MoveToBlock ( int iNextBlock )
 {
+	// can be different from block packing
+	IntPacking_e ePackingForProcessingFunc = IntPacking_e::CONST;
+
 	while(true)
 	{
 		ANALYZER::m_iCurBlockId = iNextBlock;
 		ACCESSOR::SetCurBlock ( ANALYZER::m_iCurBlockId );
 
-		if ( ACCESSOR::m_ePacking!=IntPacking_e::CONST && ACCESSOR::m_ePacking!=IntPacking_e::TABLE )
+		ePackingForProcessingFunc = ACCESSOR::m_ePacking;
+
+		bool bProcessBlock = true;
+		switch ( ACCESSOR::m_ePacking )
+		{
+		case IntPacking_e::CONST:
+			bProcessBlock = m_tBlockConst.SetupNextBlock<ACCESSOR_VALUES,RANGE_EVAL> ( ACCESSOR::m_tBlockConst, !m_tSettings.m_bExclude );
 			break;
 
-		if ( ACCESSOR::m_ePacking==IntPacking_e::CONST )
-		{
-			if ( m_tBlockConst.SetupNextBlock<ACCESSOR_VALUES,RANGE_EVAL> ( ACCESSOR::m_tBlockConst, !m_tSettings.m_bExclude ) )
-				break;
+		case IntPacking_e::TABLE:
+			bProcessBlock = m_tBlockTable.SetupNextBlock<ACCESSOR_VALUES,RANGE_EVAL> ( ACCESSOR::m_tBlockTable, !m_tSettings.m_bExclude );
+			if ( bProcessBlock && m_tBlockTable.AllPassFilter ( ACCESSOR::m_tBlockTable ) )
+				ePackingForProcessingFunc = IntPacking_e::CONST;
+			break;
+
+		default:
+			break;
 		}
-		else
-		{
-			if ( m_tBlockTable.SetupNextBlock<ACCESSOR_VALUES,RANGE_EVAL> ( ACCESSOR::m_tBlockTable, !m_tSettings.m_bExclude ) )
-				break;
-		}
+
+		if ( bProcessBlock )
+			break;
 
 		if ( !ANALYZER::RewindToNextBlock ( (ACCESSOR&)*this, iNextBlock ) )
 			return false;
 	}
 
-	m_fnProcessSubblock = m_dProcessingFuncs [ to_underlying ( ACCESSOR::m_ePacking ) ];
+	m_fnProcessSubblock = m_dProcessingFuncs [ to_underlying ( ePackingForProcessingFunc ) ];
 	assert ( m_fnProcessSubblock );
 
 	return true;
