@@ -198,32 +198,17 @@ bool Analyzer_T<HAVE_MATCHING_BLOCKS>::MoveToSubblock ( int iSubblock )
 template <bool HAVE_MATCHING_BLOCKS>
 bool Analyzer_T<HAVE_MATCHING_BLOCKS>::HintRowID ( uint32_t tRowID )
 {
-	int iNextSubblock = m_iCurSubblock;
+	int iNextSubblock = m_tSubblockCalc.GetSubblockId(tRowID);
+	if constexpr ( HAVE_MATCHING_BLOCKS )
+		iNextSubblock = m_pMatchingSubblocks->Find ( m_iCurSubblock, iNextSubblock );
 
-	// we assume that we are only advancing forward
-	while ( iNextSubblock<m_iTotalSubblocks )
-	{
-		int iSubblockID;
-		if ( HAVE_MATCHING_BLOCKS )
-			iSubblockID = m_pMatchingSubblocks->GetBlock(iNextSubblock);
-		else
-			iSubblockID = iNextSubblock;
+	if ( iNextSubblock>=m_iTotalSubblocks )
+		return false;
 
-		uint32_t tSubblockStart = m_tSubblockCalc.SubblockId2RowId(iSubblockID);
-		uint32_t tSubblockEnd = tSubblockStart + m_tSubblockCalc.m_iSubblockSize;
+	if ( iNextSubblock>m_iCurSubblock )
+		return MoveToSubblock(iNextSubblock);
 
-		if ( tRowID<tSubblockStart || ( tRowID>=tSubblockStart && tRowID<tSubblockEnd ) )
-		{
-			if ( iNextSubblock!=m_iCurSubblock )
-				return MoveToSubblock(iNextSubblock);
-
-			return true;
-		}
-
-		iNextSubblock++;
-	}
-
-	return false;
+	return true;
 }
 
 template <bool HAVE_MATCHING_BLOCKS>

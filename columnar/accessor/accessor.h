@@ -32,10 +32,21 @@ public:
 	FORCE_INLINE void	Add ( int iBlock ) { m_dBlocks.push_back(iBlock); }
 	FORCE_INLINE int	GetBlock ( int iBlock ) const { return m_dBlocks[iBlock]; }
 	FORCE_INLINE int	GetNumBlocks() const { return (int)m_dBlocks.size(); }
+	FORCE_INLINE int	Find ( int iStartBlock, int iValue );
 
 private:
 	std::vector<int>	m_dBlocks;
 };
+
+
+int MatchingBlocks_c::Find ( int iStartBlock, int iValue )
+{
+	auto tFound = std::lower_bound ( m_dBlocks.begin()+iStartBlock, m_dBlocks.end(), iValue );
+	if ( tFound==m_dBlocks.end() )
+		return (int)m_dBlocks.size();
+
+	return tFound-m_dBlocks.begin();
+}
 
 
 using SharedBlocks_c = std::shared_ptr<MatchingBlocks_c>;
