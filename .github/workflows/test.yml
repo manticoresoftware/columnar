@@ -5,7 +5,9 @@ run-name: 🔬 Test ${{ github.sha }}
 
 on:
   push:
-    branches: [ master ]
+    branches:
+      - master
+      - columnar-*
   pull_request:
     branches: [ master ]
     types: [opened, synchronize, reopened, labeled, unlabeled]
