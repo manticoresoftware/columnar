@@ -1,5 +1,16 @@
 # Changelog
 
+# Version 2.2.4
+
+### Minor changes
+
+[Commit c6db](https://github.com/manticoresoftware/columnar/commit/c6dbbcbf277ac35f398637980bb57398a4434dbc) Implemented better analyzer rewinding
+
+### Bugfixes
+[Commit 357e](https://github.com/manticoresoftware/columnar/commit/357eab2d7b93759e31927b1bdf62b119ed2d2db2) Fixed bitmap union selection logic
+[Commit 4c90](https://github.com/manticoresoftware/columnar/commit/4c90bc0f11b8b5dddc2db365f4197e3812f20356) Fixup integer filters before creating integer analyzers
+[Commit fea4](https://github.com/manticoresoftware/columnar/commit/fea449a36f45a436712f581f1589111b8ef637a1) Added an analyzer fastpath when all table values pass the filter
+
 # Version 2.2.0
 
 ### Major new features
