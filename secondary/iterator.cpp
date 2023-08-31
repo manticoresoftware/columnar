@@ -104,24 +104,29 @@ bool RowidIterator_T<ROWID_RANGE>::HintRowID ( uint32_t tRowID )
 	case Packing_e::ROW:		return tRowID<=m_dRows[0];
 	case Packing_e::ROW_BLOCK:	return tRowID<=m_uMaxRowID;
 	case Packing_e::ROW_BLOCKS_LIST:
-		if ( tRowID<=m_uMinRowID )
-			return true;
-
-		if ( tRowID>m_uMaxRowID )
 		{
-			m_bStopped = true;
-			return false;
-		}
-
-		do
-		{
-			if ( tRowID<=m_dMinMax[(m_iCurBlock<<1)+1] )
-			{
-				m_bNeedToRewind = false;
+			if ( tRowID<=m_uMinRowID )
 				return true;
+
+			if ( tRowID>m_uMaxRowID )
+			{
+				m_bStopped = true;
+				return false;
 			}
+
+			int iOldBlock = m_iCurBlock;
+			do
+			{
+				if ( tRowID<=m_dMinMax[(m_iCurBlock<<1)+1] )
+				{
+					if ( m_iCurBlock!=iOldBlock )
+						m_bNeedToRewind = false; // reset flag only if we moved to a new block
+
+					return true;
+				}
+			}
+			while ( RewindToNextMatchingBlock() );
 		}
-		while ( RewindToNextMatchingBlock() );
 		return false;
 
 	default:
