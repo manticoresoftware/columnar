@@ -158,6 +158,8 @@ endif ()
 # if no fastpfor here, we can't continue, sorry...
 include ( GetFastPFOR )
 
+include ( GetStreamvbyte )
+
 # cpack project file has minor function - it checks that configured version is the same as build version
 set ( CPACK_PROJECT_CONFIG_FILE "${CMAKE_CURRENT_BINARY_DIR}/config/CPackOptions.cmake" )
 

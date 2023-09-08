@@ -180,7 +180,7 @@ Span_T<Span_T<uint8_t>> & StoredBlock_StrConstLen_c::ReadAllSubblockValues ( int
 class StoredBlock_StrTable_c
 {
 public:
-							StoredBlock_StrTable_c ( const std::string & sCodec32, const std::string & sCodec64, int iSubblockSize );
+							StoredBlock_StrTable_c ( const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion, int iSubblockSize );
 
 	FORCE_INLINE void		ReadHeader ( FileReader_c & tReader );
 	FORCE_INLINE void		ReadSubblock ( int iSubblockId, int iNumValues, FileReader_c & tReader );
@@ -194,12 +194,13 @@ public:
 	FORCE_INLINE Span_T<uint32_t> GetValueIndexes()						{ return m_tValuesRead; }
 
 private:
+	std::unique_ptr<IntCodec_i>			m_pCodec;
+	uint32_t							m_uVersion = 0;
 	std::vector<std::vector<uint8_t>>	m_dTableValues;
 	SpanResizeable_T<uint32_t>			m_dTableValueLengths;
 	SpanResizeable_T<uint32_t> 			m_dTmp;
 	std::vector<uint32_t>				m_dValueIndexes;
 	std::vector<uint32_t>				m_dEncoded;
-	std::unique_ptr<IntCodec_i>			m_pCodec;
 	Span_T<uint32_t>					m_tValuesRead;
 
 	int64_t		m_iValuesOffset = 0;
@@ -208,8 +209,9 @@ private:
 };
 
 
-StoredBlock_StrTable_c::StoredBlock_StrTable_c ( const std::string & sCodec32, const std::string & sCodec64, int iSubblockSize )
+StoredBlock_StrTable_c::StoredBlock_StrTable_c ( const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion, int iSubblockSize )
 	: m_pCodec ( CreateIntCodec ( sCodec32, sCodec64 ) ) 
+	, m_uVersion ( uVersion )
 {
 	m_dValueIndexes.resize(iSubblockSize);
 }
@@ -218,9 +220,10 @@ StoredBlock_StrTable_c::StoredBlock_StrTable_c ( const std::string & sCodec32, c
 void StoredBlock_StrTable_c::ReadHeader ( FileReader_c & tReader )
 {
 	m_dTableValues.resize ( tReader.Read_uint8() );
+	m_dTableValueLengths.resize ( m_dTableValues.size() );
 
 	uint32_t uTotalSizeOfLengths = tReader.Unpack_uint32();
-	DecodeValues_Delta_PFOR ( m_dTableValueLengths, tReader, *m_pCodec, m_dTmp, uTotalSizeOfLengths, false );
+	DecodeValues_Delta_PFOR ( m_dTableValueLengths, tReader, *m_pCodec, m_dTmp, uTotalSizeOfLengths, false, m_uVersion );
 	for ( size_t i = 0; i < m_dTableValues.size(); i++ )
 	{
 		auto & tValue = m_dTableValues[i];
@@ -264,9 +267,9 @@ Span_T<uint8_t> StoredBlock_StrTable_c::GetValue ( int iIdInSubblock )
 class StoredBlock_StrGeneric_c
 {
 public:
-									StoredBlock_StrGeneric_c ( const std::string & sCodec32, const std::string & sCodec64 ) : m_pCodec ( CreateIntCodec ( sCodec32, sCodec64 ) ) {}
+									StoredBlock_StrGeneric_c ( const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion );
 
-	FORCE_INLINE void				ReadHeader ( FileReader_c & tReader );
+	FORCE_INLINE void				ReadHeader ( FileReader_c & tReader, int iNumSubblocks );
 	FORCE_INLINE void				ReadSubblock ( int iSubblockId, int iSubblockValues, FileReader_c & tReader );
 	template <bool PACK>
 	FORCE_INLINE Span_T<uint8_t>	ReadValue ( int iIdInSubblock, FileReader_c & tReader );
@@ -277,6 +280,7 @@ public:
 
 private:
 	std::unique_ptr<IntCodec_i>	m_pCodec;
+	uint32_t					m_uVersion = 0;
 	SpanResizeable_T<uint32_t>	m_dTmp;
 	SpanResizeable_T<uint64_t>	m_dOffsets;
 	SpanResizeable_T<uint64_t>	m_dCumulativeLengths;
@@ -294,10 +298,18 @@ private:
 };
 
 
-void StoredBlock_StrGeneric_c::ReadHeader ( FileReader_c & tReader )
+StoredBlock_StrGeneric_c::StoredBlock_StrGeneric_c ( const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion )
+	: m_pCodec ( CreateIntCodec ( sCodec32, sCodec64 ) ) 
+	, m_uVersion ( uVersion )
+{}
+
+
+void StoredBlock_StrGeneric_c::ReadHeader ( FileReader_c & tReader, int iNumSubblocks )
 {
+	m_dOffsets.resize(iNumSubblocks);
+
 	uint32_t uSubblockSize = tReader.Unpack_uint32();
-	DecodeValues_Delta_PFOR ( m_dOffsets, tReader, *m_pCodec, m_dTmp, uSubblockSize, false );
+	DecodeValues_Delta_PFOR ( m_dOffsets, tReader, *m_pCodec, m_dTmp, uSubblockSize, false, m_uVersion );
 
 	m_tValuesOffset = tReader.GetPos();
 }
@@ -311,6 +323,7 @@ void StoredBlock_StrGeneric_c::ReadSubblock ( int iSubblockId, int iSubblockValu
 	m_iSubblockId = iSubblockId;
 	tReader.Seek ( m_tValuesOffset+m_dOffsets[iSubblockId] );
 
+	m_dLengths.resize(iSubblockValues);
 	uint32_t uSubblockSize = (uint32_t)tReader.Unpack_uint64();
 	DecodeValues_PFOR ( m_dLengths, tReader, *m_pCodec, m_dTmp, uSubblockSize );
 	m_dCumulativeLengths.resize ( m_dLengths.size() );
@@ -397,7 +410,7 @@ class Accessor_String_c : public StoredBlockTraits_t
 	using BASE = StoredBlockTraits_t;
 
 public:
-									Accessor_String_c ( const AttributeHeader_i & tHeader, FileReader_c * pReader );
+									Accessor_String_c ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader );
 
 	FORCE_INLINE void				SetCurBlock ( uint32_t uBlockId );
 
@@ -434,13 +447,13 @@ protected:
 };
 
 
-Accessor_String_c::Accessor_String_c ( const AttributeHeader_i & tHeader, FileReader_c * pReader )
+Accessor_String_c::Accessor_String_c ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader )
 	: StoredBlockTraits_t ( tHeader.GetSettings().m_iSubblockSize )
 	, m_tHeader ( tHeader )
 	, m_pReader ( pReader )
 	, m_tBlockConstLen ( tHeader.GetSettings().m_iSubblockSize )
-	, m_tBlockTable ( tHeader.GetSettings().m_sCompressionUINT32, tHeader.GetSettings().m_sCompressionUINT64, tHeader.GetSettings().m_iSubblockSize )
-	, m_tBlockGeneric ( tHeader.GetSettings().m_sCompressionUINT32, tHeader.GetSettings().m_sCompressionUINT64 )
+	, m_tBlockTable ( tHeader.GetSettings().m_sCompressionUINT32, tHeader.GetSettings().m_sCompressionUINT64, uVersion, tHeader.GetSettings().m_iSubblockSize )
+	, m_tBlockGeneric ( tHeader.GetSettings().m_sCompressionUINT32, tHeader.GetSettings().m_sCompressionUINT64, uVersion )
 {
 	assert(pReader);
 }
@@ -450,6 +463,11 @@ void Accessor_String_c::SetCurBlock ( uint32_t uBlockId )
 {
 	m_pReader->Seek ( m_tHeader.GetBlockOffset(uBlockId) );
 	m_ePacking = (StrPacking_e)m_pReader->Unpack_uint32();
+
+	m_tRequestedRowID = INVALID_ROW_ID;
+	m_tResult = { nullptr, 0 };
+
+	SetBlockId ( uBlockId, m_tHeader.GetNumDocs(uBlockId) );
 
 	switch ( m_ePacking )
 	{
@@ -478,18 +496,13 @@ void Accessor_String_c::SetCurBlock ( uint32_t uBlockId )
 		m_fnReadValue			= &Accessor_String_c::ReadValue_Generic<false>;
 		m_fnReadValuePacked		= &Accessor_String_c::ReadValue_Generic<true>;
 		m_fnGetValueLength		= &Accessor_String_c::GetValueLen_Generic;
-		m_tBlockGeneric.ReadHeader ( *m_pReader );
+		m_tBlockGeneric.ReadHeader ( *m_pReader, m_iNumSubblocks );
 		break;
 
 	default:
 		assert ( 0 && "Packing not implemented yet" );
 		break;
 	}
-
-	m_tRequestedRowID = INVALID_ROW_ID;
-	m_tResult = { nullptr, 0 };
-	
-	SetBlockId ( uBlockId, m_tHeader.GetNumDocs(uBlockId) );
 }
 
 template <typename T>
@@ -508,7 +521,7 @@ class Iterator_String_c : public Iterator_i, public Accessor_String_c
 	using BASE = Accessor_String_c;
 
 public:
-				Iterator_String_c ( const AttributeHeader_i & tHeader, FileReader_c * pReader );
+				Iterator_String_c ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader );
 
 	int64_t		Get ( uint32_t tRowID ) final						{ assert ( 0 && "INTERNAL ERROR: requesting int from string iterator" ); return 0; }
 	void		Fetch ( const Span_T<uint32_t> & dRowIDs, Span_T<int64_t> & dValues ) final { assert ( 0 && "INTERNAL ERROR: requesting batch int from string iterator" ); }
@@ -524,8 +537,8 @@ private:
 };
 
 
-Iterator_String_c::Iterator_String_c ( const AttributeHeader_i & tHeader, FileReader_c * pReader )
-	: Accessor_String_c ( tHeader, pReader )
+Iterator_String_c::Iterator_String_c ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader )
+	: Accessor_String_c ( tHeader, uVersion, pReader )
 {}
 
 
@@ -736,7 +749,7 @@ class Analyzer_String_T : public Analyzer_T<HAVE_MATCHING_BLOCKS>, public Access
 	using ACCESSOR = Accessor_String_c;
 
 public:
-				Analyzer_String_T ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings );
+				Analyzer_String_T ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader, const Filter_t & tSettings );
 
 	bool		GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBlock ) final;
 	void		AddDesc ( std::vector<IteratorDesc_t> & dDesc ) const final { dDesc.push_back ( { ACCESSOR::m_tHeader.GetName(), "ColumnarScan" } ); }
@@ -763,9 +776,9 @@ private:
 };
 
 template <bool HAVE_MATCHING_BLOCKS, bool EQ>
-Analyzer_String_T<HAVE_MATCHING_BLOCKS,EQ>::Analyzer_String_T ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings )
+Analyzer_String_T<HAVE_MATCHING_BLOCKS,EQ>::Analyzer_String_T ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader, const Filter_t & tSettings )
 	: ANALYZER ( tHeader.GetSettings().m_iSubblockSize )
-	, ACCESSOR ( tHeader, pReader )
+	, ACCESSOR ( tHeader, uVersion, pReader )
 	, m_tBlockConst ( ANALYZER::m_tRowID )
 	, m_tBlockTable ( ANALYZER::m_tRowID )
 	, m_tBlockValues ( ANALYZER::m_tRowID )
@@ -895,23 +908,23 @@ bool Analyzer_String_T<HAVE_MATCHING_BLOCKS,EQ>::MoveToBlock ( int iNextBlock )
 
 //////////////////////////////////////////////////////////////////////////
 
-Iterator_i * CreateIteratorStr ( const AttributeHeader_i & tHeader, FileReader_c * pReader )
+Iterator_i * CreateIteratorStr ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader )
 {
-	return new Iterator_String_c ( tHeader, pReader );
+	return new Iterator_String_c ( tHeader, uVersion, pReader );
 }
 
 
-Analyzer_i * CreateAnalyzerStr ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings, bool bHaveMatchingBlocks )
+Analyzer_i * CreateAnalyzerStr ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader, const Filter_t & tSettings, bool bHaveMatchingBlocks )
 {
 	bool bEq = !tSettings.m_bExclude;
 	int iIndex = 2*( bHaveMatchingBlocks ? 1 : 0 ) + ( bEq ? 1 : 0 );
 
 	switch ( iIndex )
 	{
-	case 0:	return new Analyzer_String_T<false,false> ( tHeader, pReader, tSettings );
-	case 1:	return new Analyzer_String_T<false,true>  ( tHeader, pReader, tSettings );
-	case 2:	return new Analyzer_String_T<true, false> ( tHeader, pReader, tSettings );
-	case 3:	return new Analyzer_String_T<true, true>  ( tHeader, pReader, tSettings );
+	case 0:	return new Analyzer_String_T<false,false> ( tHeader, uVersion, pReader, tSettings );
+	case 1:	return new Analyzer_String_T<false,true>  ( tHeader, uVersion, pReader, tSettings );
+	case 2:	return new Analyzer_String_T<true, false> ( tHeader, uVersion, pReader, tSettings );
+	case 3:	return new Analyzer_String_T<true, true>  ( tHeader, uVersion, pReader, tSettings );
 	default: return nullptr;
 	}
 }

@@ -39,29 +39,7 @@ namespace SI
 {
 
 static const int LIB_VERSION = 10;
-static const uint32_t STORAGE_VERSION = 7;
-
-struct ColumnInfo_t
-{
-	common::AttrType_e m_eType = common::AttrType_e::NONE;
-	std::string m_sName;
-	uint32_t	m_uCountDistinct = 0;
-	bool		m_bEnabled = true;
-
-	void		Load ( util::FileReader_c & tReader );
-	void		Save ( util::FileWriter_c & tWriter ) const; 
-};
-
-
-struct Settings_t
-{
-	std::string	m_sCompressionUINT32 = "streamvbyte";
-	std::string	m_sCompressionUINT64 = "fastpfor256";
-
-	void		Load ( util::FileReader_c & tReader );
-	void		Save ( util::FileWriter_c & tWriter ) const;
-};
-
+static const uint32_t STORAGE_VERSION = 8;
 
 class Index_i
 {

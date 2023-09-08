@@ -16,6 +16,7 @@
 
 #include "builder.h"
 #include "secondary.h"
+#include "blockreader.h"
 #include "codec.h"
 #include "delta.h"
 #include "pgm.h"
@@ -42,6 +43,25 @@ namespace SI
 #define VALUES_PER_BLOCK 128
 #define ROWIDS_PER_BLOCK 1024
 
+/////////////////////////////////////////////////////////////////////
+
+void Settings_t::Load ( FileReader_c & tReader, uint32_t uVersion )
+{
+	m_sCompressionUINT32 = tReader.Read_string();
+	m_sCompressionUINT64 = tReader.Read_string();
+
+	if ( uVersion<8 && m_sCompressionUINT32=="libstreamvbyte" )
+		m_sCompressionUINT32 = "streamvbyte";
+}
+
+
+void Settings_t::Save ( FileWriter_c & tWriter ) const
+{
+	tWriter.Write_string(m_sCompressionUINT32);
+	tWriter.Write_string(m_sCompressionUINT64);
+}
+
+/////////////////////////////////////////////////////////////////////
 
 class SIWriter_i
 {
@@ -180,9 +200,7 @@ static void EncodeRowsBlock ( VEC & dSrcRows, uint32_t iOff, uint32_t iCount, In
 		dRows = Span_T<uint32_t> ( dSrcRows.data(), iCount );
 	}
 
-	dBufRows.resize(0);
-	ComputeDeltas ( dRows.data(), (int)dRows.size(), true );
-	pCodec->Encode ( dRows, dBufRows );
+	pCodec->EncodeDelta ( dRows, dBufRows );
 
 	if ( bWriteSize )
 		WriteVectorLen32 ( dBufRows, tWriter );
@@ -190,14 +208,11 @@ static void EncodeRowsBlock ( VEC & dSrcRows, uint32_t iOff, uint32_t iCount, In
 		WriteVector ( dBufRows, tWriter );
 }
 
-template<typename VEC, typename WRITER>
-void EncodeBlock ( VEC & dSrc, IntCodec_i * pCodec, std::vector<uint32_t> & dBuf, WRITER & tWriter )
+template<typename T, typename WRITER>
+void EncodeBlock ( std::vector<T> & dSrc, IntCodec_i * pCodec, std::vector<uint32_t> & dBuf, WRITER & tWriter )
 {
-	dBuf.resize ( 0 );
-
-	ComputeDeltas ( dSrc.data(), (int)dSrc.size(), true );
-	pCodec->Encode ( dSrc, dBuf );
-
+	Span_T<T> tSpan (dSrc);
+	pCodec->EncodeDelta ( tSpan, dBuf );
 	WriteVectorLen32 ( dBuf, tWriter );
 }
 
@@ -851,6 +866,7 @@ bool Builder_c::WriteMeta ( const std::string & sPgmName, const std::string & sB
 		Settings_t tSettings;
 		tSettings.Save(tDstFile);
 		tDstFile.Write_uint32 ( VALUES_PER_BLOCK );
+		tDstFile.Write_uint32 ( ROWIDS_PER_BLOCK );
 		
 		// write schema
 		for ( const auto & i : m_dAttrs )

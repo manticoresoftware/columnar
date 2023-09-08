@@ -240,6 +240,7 @@ void Packer_MVA_T<T,HEADER_T>::WritePacked_Const()
 	Span_T<uint32_t> dLengths ( m_dCollectedLengths.data(), 1 );
 	Span_T<T> dValues ( m_dCollectedValues.data(), dLengths[0] );
 	PrepareValues ( dValues, dLengths );
+	BASE::m_tWriter.Pack_uint32 ( dValues.size() );
 	WriteValues_PFOR ( dValues, m_dUncompressed, m_dCompressed, BASE::m_tWriter, m_pCodec.get(), true );
 }
 
@@ -276,6 +277,7 @@ void Packer_MVA_T<T,HEADER_T>::WritePacked_Table()
 		}
 	}
 
+	BASE::m_tWriter.Pack_uint32 ( m_dTableLengths.size() );
 	WriteValues_PFOR ( Span_T<uint32_t>(m_dTableLengths), m_dUncompressed32, m_dCompressed, BASE::m_tWriter, m_pCodec.get(), true );
 
 	Span_T<T> dTableValues ( m_dTableValues );

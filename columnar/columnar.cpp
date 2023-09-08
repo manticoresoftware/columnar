@@ -386,7 +386,8 @@ public:
 
 private:
 	std::string							m_sFilename;
-	uint32_t							m_uTotalDocs;
+	uint32_t							m_uTotalDocs = 0;
+	uint32_t							m_uVersion = 0;
 	std::vector<std::unique_ptr<AttributeHeader_i>>	m_dHeaders;
 	std::unordered_map<std::string, HeaderWithLocator_t> m_hHeaders;
 	FileReader_c						m_tReader;
@@ -415,10 +416,10 @@ bool Columnar_c::Setup ( std::string & sError )
 	if ( !m_tReader.Open ( m_sFilename, sError ) )
 		return false;
 
-	uint32_t uStorageVersion = m_tReader.Read_uint32();
-	if ( uStorageVersion!=STORAGE_VERSION )
+	m_uVersion = m_tReader.Read_uint32();
+	if ( m_uVersion > STORAGE_VERSION )
 	{
-		sError = FormatStr ( "Unable to load columnar storage: %s is v.%d, binary is v.%d", m_sFilename.c_str(), uStorageVersion, STORAGE_VERSION );
+		sError = FormatStr ( "Unable to load columnar storage: %s is v.%d, binary is v.%d", m_sFilename.c_str(), m_uVersion, STORAGE_VERSION );
 		return false;
 	}
 
@@ -454,9 +455,9 @@ Iterator_i * Columnar_c::CreateIterator ( const std::string & sName, const Itera
 	case AttrType_e::UINT32:
 	case AttrType_e::TIMESTAMP:
 	case AttrType_e::FLOAT:
-		return CreateIteratorUint32 ( *pHeader, pReader.release() );
+		return CreateIteratorUint32 ( *pHeader, m_uVersion, pReader.release() );
 
-	case AttrType_e::INT64:		return CreateIteratorUint64 ( *pHeader, pReader.release() );
+	case AttrType_e::INT64:		return CreateIteratorUint64 ( *pHeader, m_uVersion, pReader.release() );
 	case AttrType_e::BOOLEAN:	return CreateIteratorBool ( *pHeader, pReader.release() );
 	case AttrType_e::STRING:
 		if ( tHints.m_bNeedStringHashes )
@@ -467,14 +468,14 @@ Iterator_i * Columnar_c::CreateIterator ( const std::string & sName, const Itera
 				if ( pCapabilities )
 					pCapabilities->m_bStringHashes = true;
 
-				return CreateIteratorUint64 ( *pHashHeader, pReader.release() );
+				return CreateIteratorUint64 ( *pHashHeader, m_uVersion, pReader.release() );
 			}
 		}
-		return CreateIteratorStr ( *pHeader, pReader.release() );
+		return CreateIteratorStr ( *pHeader, m_uVersion, pReader.release() );
 	
 	case AttrType_e::UINT32SET:
 	case AttrType_e::INT64SET:
-		return CreateIteratorMVA ( *pHeader, pReader.release() );
+		return CreateIteratorMVA ( *pHeader, m_uVersion, pReader.release() );
 
 	default:
 		sError = "Unsupported columnar iterator type";
@@ -509,7 +510,7 @@ Analyzer_i * Columnar_c::CreateAnalyzer ( const Filter_t & tSettings, bool bHave
 	{
 		Filter_t tFixedSettings = tSettings;
 		FixupFilterSettings ( tFixedSettings, eType );
-		return CreateAnalyzerInt ( *pHeader, pReader.release(), tFixedSettings, bHaveMatchingBlocks );
+		return CreateAnalyzerInt ( *pHeader, m_uVersion, pReader.release(), tFixedSettings, bHaveMatchingBlocks );
 	}
 
 	case AttrType_e::BOOLEAN:
@@ -517,17 +518,17 @@ Analyzer_i * Columnar_c::CreateAnalyzer ( const Filter_t & tSettings, bool bHave
 
 	case AttrType_e::UINT32SET:
 	case AttrType_e::INT64SET:
-		return CreateAnalyzerMVA ( *pHeader, pReader.release(), tSettings, bHaveMatchingBlocks );
+		return CreateAnalyzerMVA ( *pHeader, m_uVersion, pReader.release(), tSettings, bHaveMatchingBlocks );
 
 	case AttrType_e::STRING:
 		if ( tSettings.m_fnCalcStrHash )
 		{
 			const AttributeHeader_i * pHashHeader = GetHeader ( GenerateHashAttrName ( tSettings.m_sName ) );
 			if ( pHashHeader )
-				return CreateAnalyzerInt ( *pHashHeader, pReader.release(), StringFilterToHashFilter ( tSettings, true ), bHaveMatchingBlocks );
+				return CreateAnalyzerInt ( *pHashHeader, m_uVersion, pReader.release(), StringFilterToHashFilter ( tSettings, true ), bHaveMatchingBlocks );
 		}
 
-		return CreateAnalyzerStr ( *pHeader, pReader.release(), tSettings, bHaveMatchingBlocks );
+		return CreateAnalyzerStr ( *pHeader, m_uVersion, pReader.release(), tSettings, bHaveMatchingBlocks );
 
 	default:
 		return nullptr;

@@ -79,7 +79,7 @@ using Reporter_fn = std::function<void (const char*)>;
 struct Settings_t
 {
 	int			m_iSubblockSize = 1024;
-	std::string	m_sCompressionUINT32 = "streamvbyte";
+	std::string	m_sCompressionUINT32 = "libstreamvbyte";
 	std::string	m_sCompressionUINT64 = "fastpfor256";
 
 	void		Load ( util::FileReader_c & tReader );

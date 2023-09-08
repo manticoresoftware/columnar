@@ -19,7 +19,14 @@
 #include "util/codec.h"
 #include "common/filter.h"
 #include "common/blockiterator.h"
+#include "builder.h"
 #include <memory>
+
+namespace util
+{
+	class FileReader_c;
+	class FileWriter_c;
+}
 
 namespace SI
 {
@@ -36,7 +43,7 @@ struct BlockIter_t
 	uint64_t m_iLast { 0 };
 
 	BlockIter_t() = default;
-	BlockIter_t ( const ApproxPos_t & tFrom, uint64_t uVal, uint64_t uBlocksCount, int iValuesPerBlock );
+	BlockIter_t ( const ApproxPos_t & tFrom, uint64_t uVal, uint64_t uBlocksCount, uint32_t uValuesPerBlock );
 };
 
 
@@ -58,9 +65,36 @@ struct RsetInfo_t
 	int64_t		m_iRsetSize = 0;
 };
 
-struct Settings_t;
-struct ColumnInfo_t;
-BlockReader_i * CreateBlockReader ( int iFD, const ColumnInfo_t & tCol, const Settings_t & tSettings, uint32_t uVersion, uint64_t uBlockBaseOff, const common::RowidRange_t * pBounds, const RsetInfo_t & tInfo, int iCutoff );
-BlockReader_i * CreateRangeReader ( int iFD, const ColumnInfo_t & tCol, const Settings_t & tSettings, uint32_t uVersion, uint64_t uBlockBaseOff, const common::RowidRange_t * pBounds, const RsetInfo_t & tInfo, int iCutoff );
+
+struct ColumnInfo_t
+{
+	common::AttrType_e m_eType = common::AttrType_e::NONE;
+	std::string m_sName;
+	uint32_t	m_uCountDistinct = 0;
+	bool		m_bEnabled = true;
+
+	void		Load ( util::FileReader_c & tReader );
+	void		Save ( util::FileWriter_c & tWriter ) const; 
+};
+
+
+class ReaderFactory_c
+{
+public:
+	ColumnInfo_t 			m_tCol;
+	Settings_t 				m_tSettings;
+	RsetInfo_t 				m_tRsetInfo;
+	int						m_iFD = -1;
+	uint32_t				m_uVersion = 0;
+	uint64_t				m_uBlockBaseOff = 0;
+	uint64_t				m_uBlocksCount = 0;
+	uint32_t				m_uValuesPerBlock = 1;
+	uint32_t				m_uRowidsPerBlock = 1;
+	const common::RowidRange_t * m_pBounds = nullptr;
+	int						m_iCutoff = 0;
+
+	BlockReader_i *			CreateBlockReader();
+	BlockReader_i *			CreateRangeReader();
+};
 
 } // namespace SI

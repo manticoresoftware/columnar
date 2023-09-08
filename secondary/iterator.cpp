@@ -30,7 +30,7 @@ template <bool ROWID_RANGE>
 class RowidIterator_T : public BlockIteratorWithSetup_i
 {
 public:
-				RowidIterator_T ( const std::string & sAttr, Packing_e eType, int64_t iStartOffset, uint32_t uMinRowID, uint32_t uMaxRowID, std::shared_ptr<FileReader_c> & pReader, std::shared_ptr<IntCodec_i> & pCodec, const RowidRange_t * pBounds, bool bBitmap );
+				RowidIterator_T ( const std::string & sAttr, Packing_e eType, int64_t iStartOffset, uint32_t uMinRowID, uint32_t uMaxRowID, uint32_t uCount, uint32_t uRowidsPerBlock, std::shared_ptr<FileReader_c> & pReader, std::shared_ptr<IntCodec_i> & pCodec, const RowidRange_t * pBounds, bool bBitmap );
 
 	bool		HintRowID ( uint32_t tRowID ) override;
 	bool		GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBlock ) override;
@@ -41,7 +41,7 @@ public:
 	void		SetCutoff ( int iCutoff ) override {}
 	bool		WasCutoffHit() const override { return false; }
 
-	void		Setup ( Packing_e eType, uint64_t uStartOffset, uint32_t uMinRowID, uint32_t uMaxRowID ) override;
+	void		Setup ( Packing_e eType, uint64_t uStartOffset, uint32_t uMinRowID, uint32_t uMaxRowID, uint32_t uCount ) override;
 
 private:
 	std::string			m_sAttr;
@@ -51,6 +51,8 @@ private:
 	std::shared_ptr<IntCodec_i>	m_pCodec { nullptr };
 	uint32_t			m_uMinRowID = 0;
 	uint32_t			m_uMaxRowID = 0;
+	uint32_t			m_uCount = 0;
+	uint32_t			m_uRowidsPerBlock = 0;
 	int64_t				m_iDataOffset = 0;
 	RowidRange_t		m_tBounds;
 
@@ -68,19 +70,22 @@ private:
 	bool				StartBlock ( Span_T<uint32_t> & dRowIdBlock );
 	FORCE_INLINE bool	ReadNextBlock ( Span_T<uint32_t> & dRowIdBlock );
 
-	FORCE_INLINE void	DecodeDeltaVector ( SpanResizeable_T<uint32_t> & dDecoded, int iRsetSize=0 );
+	FORCE_INLINE void	DecodeDeltaVector ( SpanResizeable_T<uint32_t> & dDecoded, int iRsetSize );
 	uint32_t			MarkMatchingBlocks();
 	bool				RewindToNextMatchingBlock();
+	FORCE_INLINE uint32_t CalcNumBlockRowids() const;
 };
 
 template <bool ROWID_RANGE>
-RowidIterator_T<ROWID_RANGE>::RowidIterator_T ( const std::string & sAttr, Packing_e eType, int64_t iStartOffset, uint32_t uMinRowID, uint32_t uMaxRowID, std::shared_ptr<FileReader_c> & pReader, std::shared_ptr<IntCodec_i> & pCodec, const RowidRange_t * pBounds, bool bBitmap )
+RowidIterator_T<ROWID_RANGE>::RowidIterator_T ( const std::string & sAttr, Packing_e eType, int64_t iStartOffset, uint32_t uMinRowID, uint32_t uMaxRowID, uint32_t uCount, uint32_t uRowidsPerBlock, std::shared_ptr<FileReader_c> & pReader, std::shared_ptr<IntCodec_i> & pCodec, const RowidRange_t * pBounds, bool bBitmap )
 	: m_sAttr ( sAttr )
 	, m_eType ( eType )
 	, m_iStartOffset ( iStartOffset )
 	, m_pCodec ( pCodec )
 	, m_uMinRowID ( uMinRowID )
 	, m_uMaxRowID ( uMaxRowID )
+	, m_uCount ( uCount )
+	, m_uRowidsPerBlock ( uRowidsPerBlock )
 {
 	if ( pBounds )
 		m_tBounds = *pBounds;
@@ -194,7 +199,7 @@ bool RowidIterator_T<ROWID_RANGE>::StartBlock ( Span_T<uint32_t> & dRowIdBlock )
 	case Packing_e::ROW_BLOCK:
 		m_pReader->Seek ( m_iStartOffset );
 		m_bStopped = true;
-		DecodeDeltaVector ( m_dRows );
+		DecodeDeltaVector ( m_dRows, m_uCount );
 		break;
 
 	case Packing_e::ROW_BLOCKS_LIST:
@@ -257,6 +262,7 @@ bool RowidIterator_T<ROWID_RANGE>::ReadNextBlock ( Span_T<uint32_t> & dRowIdBloc
 
 	m_dTmp.resize(iBlockSize);
 	ReadVectorData ( m_dTmp, *m_pReader );
+	m_dRows.resize ( CalcNumBlockRowids() );
 	m_pCodec->DecodeDelta ( m_dTmp, m_dRows );
 
 	dRowIdBlock = Span_T<uint32_t>(m_dRows);
@@ -267,19 +273,29 @@ template <bool ROWID_RANGE>
 void RowidIterator_T<ROWID_RANGE>::DecodeDeltaVector ( SpanResizeable_T<uint32_t> & dDecoded, int iRsetSize )
 {
 	dDecoded.resize(iRsetSize);
-	m_dTmp.resize(0);
 	ReadVectorLen32 ( m_dTmp, *m_pReader );
 	m_pCodec->DecodeDelta ( m_dTmp, dDecoded );
 }
 
 template <bool ROWID_RANGE>
-void RowidIterator_T<ROWID_RANGE>::Setup ( Packing_e eType, uint64_t uStartOffset, uint32_t uMinRowID, uint32_t uMaxRowID )
+uint32_t RowidIterator_T<ROWID_RANGE>::CalcNumBlockRowids() const
+{
+	if ( m_iCurBlock < (int)m_dBlockOffsets.size()-1 )
+		return m_uRowidsPerBlock;
+
+	uint32_t uLeftover = m_uCount % m_uRowidsPerBlock;
+	return uLeftover ? uLeftover : m_uRowidsPerBlock;
+}
+
+template <bool ROWID_RANGE>
+void RowidIterator_T<ROWID_RANGE>::Setup ( Packing_e eType, uint64_t uStartOffset, uint32_t uMinRowID, uint32_t uMaxRowID, uint32_t uCount )
 {
 	m_eType = eType;
 	m_iStartOffset = uStartOffset;
 
 	m_uMinRowID = uMinRowID;
 	m_uMaxRowID = uMaxRowID;
+	m_uCount = uCount;
 
 	m_iDataOffset = 0;
 
@@ -298,7 +314,7 @@ void RowidIterator_T<ROWID_RANGE>::Setup ( Packing_e eType, uint64_t uStartOffse
 
 /////////////////////////////////////////////////////////////////////
 
-BlockIteratorWithSetup_i * CreateRowidIterator ( const std::string & sAttr, Packing_e eType, uint64_t uStartOffset, uint32_t uMinRowID, uint32_t uMaxRowID, std::shared_ptr<FileReader_c> & pSharedReader, std::shared_ptr<IntCodec_i> & pCodec, const RowidRange_t * pBounds, bool bBitmap )
+BlockIteratorWithSetup_i * CreateRowidIterator ( const std::string & sAttr, Packing_e eType, uint64_t uStartOffset, uint32_t uMinRowID, uint32_t uMaxRowID, uint32_t uCount, uint32_t uRowidsPerBlock, std::shared_ptr<FileReader_c> & pSharedReader, std::shared_ptr<IntCodec_i> & pCodec, const RowidRange_t * pBounds, bool bBitmap )
 {
 	if ( pBounds )
 	{
@@ -306,14 +322,14 @@ BlockIteratorWithSetup_i * CreateRowidIterator ( const std::string & sAttr, Pack
 		if ( !tRowidBounds.Overlaps ( { uMinRowID, uMaxRowID } ) )
 			return nullptr;
 
-		return new RowidIterator_T<true> ( sAttr, eType, uStartOffset, uMinRowID, uMaxRowID, pSharedReader, pCodec, pBounds, bBitmap );
+		return new RowidIterator_T<true> ( sAttr, eType, uStartOffset, uMinRowID, uMaxRowID, uCount, uRowidsPerBlock, pSharedReader, pCodec, pBounds, bBitmap );
 	}
 
-	return new RowidIterator_T<false> ( sAttr, eType, uStartOffset, uMinRowID, uMaxRowID, pSharedReader, pCodec, nullptr, bBitmap );
+	return new RowidIterator_T<false> ( sAttr, eType, uStartOffset, uMinRowID, uMaxRowID, uCount, uRowidsPerBlock, pSharedReader, pCodec, nullptr, bBitmap );
 }
 
 
-bool SetupRowidIterator ( BlockIteratorWithSetup_i * pIterator, Packing_e eType, uint64_t uStartOffset, uint32_t uMinRowID, uint32_t uMaxRowID, const RowidRange_t * pBounds )
+bool SetupRowidIterator ( BlockIteratorWithSetup_i * pIterator, Packing_e eType, uint64_t uStartOffset, uint32_t uMinRowID, uint32_t uMaxRowID, uint32_t uCount, const RowidRange_t * pBounds )
 {
 	assert(pIterator);
 
@@ -324,7 +340,7 @@ bool SetupRowidIterator ( BlockIteratorWithSetup_i * pIterator, Packing_e eType,
 			return false;
 	}
 
-	pIterator->Setup ( eType, uStartOffset, uMinRowID, uMaxRowID );
+	pIterator->Setup ( eType, uStartOffset, uMinRowID, uMaxRowID, uCount );
 	return true;
 }
 

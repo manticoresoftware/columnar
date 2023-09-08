@@ -52,7 +52,7 @@ template <typename T>
 class StoredBlock_Int_Table_T
 {
 public:
-							StoredBlock_Int_Table_T ( int iSubblockSize, const std::string & sCodec32, const std::string & sCodec64 );
+							StoredBlock_Int_Table_T ( int iSubblockSize, const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion );
 
 	FORCE_INLINE void		ReadHeader ( FileReader_c & tReader );
 	FORCE_INLINE void		ReadSubblock ( int iSubblockId, int iNumValues, FileReader_c & tReader );
@@ -64,6 +64,7 @@ public:
 
 private:
 	std::unique_ptr<IntCodec_i>	m_pCodec;
+	uint32_t				m_uVersion = 0;
 	SpanResizeable_T<T>		m_dTableValues;
 	std::vector<uint32_t>	m_dValueIndexes;
 	std::vector<uint32_t>	m_dEncoded;
@@ -75,8 +76,9 @@ private:
 };
 
 template <typename T>
-StoredBlock_Int_Table_T<T>::StoredBlock_Int_Table_T ( int iSubblockSize, const std::string & sCodec32, const std::string & sCodec64 )
+StoredBlock_Int_Table_T<T>::StoredBlock_Int_Table_T ( int iSubblockSize, const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion )
 	: m_pCodec ( CreateIntCodec ( sCodec32, sCodec64 ) )
+	, m_uVersion ( uVersion )
 {
 	assert ( !( iSubblockSize & 127 ) );
 	m_dValueIndexes.resize(iSubblockSize);
@@ -88,7 +90,7 @@ void StoredBlock_Int_Table_T<T>::ReadHeader ( FileReader_c & tReader )
 	m_dTableValues.resize ( tReader.Read_uint8() );
 
 	uint32_t uTotalSize = tReader.Unpack_uint32();
-	DecodeValues_Delta_PFOR ( m_dTableValues, tReader, *m_pCodec, m_dTmp, uTotalSize, false );
+	DecodeValues_Delta_PFOR ( m_dTableValues, tReader, *m_pCodec, m_dTmp, uTotalSize, false, m_uVersion );
 
 	m_iBits = CalcNumBits ( m_dTableValues.size() );
 	m_dEncoded.resize ( ( m_dValueIndexes.size() >> 5 ) * m_iBits );
@@ -135,17 +137,18 @@ template <typename T>
 class StoredBlock_Int_PFOR_T
 {
 public:
-							StoredBlock_Int_PFOR_T ( const std::string & sCodec32, const std::string & sCodec64 ) : m_pCodec ( CreateIntCodec ( sCodec32, sCodec64 ) ) {}
+							StoredBlock_Int_PFOR_T ( const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion );
 
-	FORCE_INLINE void		ReadHeader ( FileReader_c & tReader );
-	FORCE_INLINE void		ReadSubblock_Delta ( int iSubblockId, FileReader_c & tReader );
-	FORCE_INLINE void		ReadSubblock_Generic ( int iSubblockId, FileReader_c & tReader );
-	FORCE_INLINE void		ReadSubblock_Hash ( int iSubblockId, FileReader_c & tReader, int iNumSubblockValues );
+	FORCE_INLINE void		ReadHeader ( FileReader_c & tReader, int iNumSubblocks );
+	FORCE_INLINE void		ReadSubblock_Delta ( int iSubblockId, int iNumValues, FileReader_c & tReader );
+	FORCE_INLINE void		ReadSubblock_Generic ( int iSubblockId, int iNumValues, FileReader_c & tReader );
+	FORCE_INLINE void		ReadSubblock_Hash ( int iSubblockId, int iNumValues, FileReader_c & tReader );
 	FORCE_INLINE T			GetValue ( int iIdInSubblock ) const;
 	FORCE_INLINE const Span_T<T> & GetAllValues() const { return m_dSubblockValues; }
 
 private:
 	std::unique_ptr<IntCodec_i>	m_pCodec;
+	uint32_t					m_uVersion = 0;
 	SpanResizeable_T<uint32_t>	m_dSubblockCumulativeSizes;
 	SpanResizeable_T<uint32_t>	m_dTmp;
 	SpanResizeable_T<uint64_t>	m_dTmp64;
@@ -156,48 +159,56 @@ private:
 	SpanResizeable_T<T>			m_dSubblockValues;
 
 	template <typename DECOMPRESS>
-	FORCE_INLINE void		ReadSubblock ( int iSubblockId, FileReader_c & tReader, DECOMPRESS && fnDecompress );
+	FORCE_INLINE void		ReadSubblock ( int iSubblockId, int iNumValues, FileReader_c & tReader, DECOMPRESS && fnDecompress );
 	FORCE_INLINE void		DecodeValues_Hash ( SpanResizeable_T<T> & dValues, FileReader_c & tReader, int iNumSubblockValues );
 	FORCE_INLINE void		ReadHashesWithNullMap ( FileReader_c & tReader, int iValues, int iNumHashes );
 };
 
 template <typename T>
-void StoredBlock_Int_PFOR_T<T>::ReadHeader ( FileReader_c & tReader )
+StoredBlock_Int_PFOR_T<T>::StoredBlock_Int_PFOR_T ( const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion )
+	: m_pCodec ( CreateIntCodec ( sCodec32, sCodec64 ) )
+	, m_uVersion ( uVersion )
+{}
+
+template <typename T>
+void StoredBlock_Int_PFOR_T<T>::ReadHeader ( FileReader_c & tReader, int iNumSubblocks )
 {
+	m_dSubblockCumulativeSizes.resize(iNumSubblocks);
+
 	uint32_t uSubblockSize = tReader.Unpack_uint32();
-	DecodeValues_Delta_PFOR ( m_dSubblockCumulativeSizes, tReader, *m_pCodec, m_dTmp, uSubblockSize, false );
+	DecodeValues_Delta_PFOR ( m_dSubblockCumulativeSizes, tReader, *m_pCodec, m_dTmp, uSubblockSize, false, m_uVersion );
 
 	m_tValuesOffset = tReader.GetPos();
 	m_iSubblockId = -1;
 }
 
 template <typename T>
-void StoredBlock_Int_PFOR_T<T>::ReadSubblock_Delta ( int iSubblockId, FileReader_c & tReader )
+void StoredBlock_Int_PFOR_T<T>::ReadSubblock_Delta ( int iSubblockId, int iNumValues, FileReader_c & tReader )
 {
-	ReadSubblock ( iSubblockId, tReader, [this] ( SpanResizeable_T<T> & dValues, FileReader_c & tReader, uint32_t uTotalSize )
-		{ DecodeValues_Delta_PFOR ( dValues, tReader, *m_pCodec, m_dTmp, uTotalSize, true ); }
+	ReadSubblock ( iSubblockId, iNumValues, tReader, [this] ( SpanResizeable_T<T> & dValues, FileReader_c & tReader, uint32_t uTotalSize )
+		{ DecodeValues_Delta_PFOR ( dValues, tReader, *m_pCodec, m_dTmp, uTotalSize, true, m_uVersion ); }
 	);
 }
 
 template <typename T>
-void StoredBlock_Int_PFOR_T<T>::ReadSubblock_Generic ( int iSubblockId, FileReader_c & tReader )
+void StoredBlock_Int_PFOR_T<T>::ReadSubblock_Generic ( int iSubblockId, int iNumValues, FileReader_c & tReader )
 {
-	ReadSubblock ( iSubblockId, tReader, [this] ( SpanResizeable_T<T> & dValues, FileReader_c & tReader, uint32_t uTotalSize )
-		{ DecodeValues_PFOR ( dValues, tReader, *m_pCodec, m_dTmp, uTotalSize); }
+	ReadSubblock ( iSubblockId, iNumValues, tReader, [this] ( SpanResizeable_T<T> & dValues, FileReader_c & tReader, uint32_t uTotalSize )
+		{ DecodeValues_PFOR ( dValues, tReader, *m_pCodec, m_dTmp, uTotalSize ); }
 	);
 }
 
 template <typename T>
-void StoredBlock_Int_PFOR_T<T>::ReadSubblock_Hash ( int iSubblockId, FileReader_c & tReader, int iNumSubblockValues )
+void StoredBlock_Int_PFOR_T<T>::ReadSubblock_Hash ( int iSubblockId, int iNumValues, FileReader_c & tReader )
 {
-	ReadSubblock ( iSubblockId, tReader, [this,iNumSubblockValues] ( SpanResizeable_T<T> & dValues, FileReader_c & tReader, uint32_t uTotalSize )
-		{ DecodeValues_Hash ( dValues, tReader, iNumSubblockValues ); }
+	ReadSubblock ( iSubblockId, iNumValues, tReader, [this,iNumValues] ( SpanResizeable_T<T> & dValues, FileReader_c & tReader, uint32_t uTotalSize )
+		{ DecodeValues_Hash ( dValues, tReader, iNumValues ); }
 	);
 }
 
 template <typename T>
 template <typename DECOMPRESS>
-void StoredBlock_Int_PFOR_T<T>::ReadSubblock ( int iSubblockId, FileReader_c & tReader, DECOMPRESS && fnDecompress )
+void StoredBlock_Int_PFOR_T<T>::ReadSubblock ( int iSubblockId, int iNumValues, FileReader_c & tReader, DECOMPRESS && fnDecompress )
 {
 	if ( m_iSubblockId==iSubblockId )
 		return;
@@ -212,6 +223,7 @@ void StoredBlock_Int_PFOR_T<T>::ReadSubblock ( int iSubblockId, FileReader_c & t
 		uSize -= uOffset;
 	}
 
+	m_dSubblockValues.resize(iNumValues);
 	tReader.Seek ( m_tValuesOffset+uOffset );
 	fnDecompress ( m_dSubblockValues, tReader, uSize );
 }
@@ -269,7 +281,7 @@ template<typename T>
 class Accessor_INT_T : public StoredBlockTraits_t
 {
 public:
-					Accessor_INT_T ( const AttributeHeader_i & tHeader, FileReader_c * pReader );
+					Accessor_INT_T ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader );
 
 protected:
 	const AttributeHeader_i &		m_tHeader;
@@ -293,12 +305,12 @@ protected:
 };
 
 template<typename T>
-Accessor_INT_T<T>::Accessor_INT_T ( const AttributeHeader_i & tHeader, FileReader_c * pReader )
+Accessor_INT_T<T>::Accessor_INT_T ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader )
 	: StoredBlockTraits_t ( tHeader.GetSettings().m_iSubblockSize )
 	, m_tHeader ( tHeader )
 	, m_pReader ( pReader )
-	, m_tBlockTable ( tHeader.GetSettings().m_iSubblockSize, tHeader.GetSettings().m_sCompressionUINT32, tHeader.GetSettings().m_sCompressionUINT64 )
-	, m_tBlockPFOR ( tHeader.GetSettings().m_sCompressionUINT32, tHeader.GetSettings().m_sCompressionUINT64 )
+	, m_tBlockTable ( tHeader.GetSettings().m_iSubblockSize, tHeader.GetSettings().m_sCompressionUINT32, tHeader.GetSettings().m_sCompressionUINT64, uVersion )
+	, m_tBlockPFOR ( tHeader.GetSettings().m_sCompressionUINT32, tHeader.GetSettings().m_sCompressionUINT64, uVersion )
 {
 	assert(pReader);
 }
@@ -310,6 +322,7 @@ void Accessor_INT_T<T>::SetCurBlock ( uint32_t uBlockId )
 	m_ePacking = (IntPacking_e)m_pReader->Unpack_uint32();
 
 	m_tRequestedRowID = INVALID_ROW_ID;
+	SetBlockId ( uBlockId, m_tHeader.GetNumDocs(uBlockId) );
 
 	switch ( m_ePacking )
 	{
@@ -325,24 +338,22 @@ void Accessor_INT_T<T>::SetCurBlock ( uint32_t uBlockId )
 
 	case IntPacking_e::DELTA:
 		m_fnReadValue = &Accessor_INT_T<T>::ReadValue_Delta;
-		m_tBlockPFOR.ReadHeader ( *m_pReader );
+		m_tBlockPFOR.ReadHeader ( *m_pReader, m_iNumSubblocks );
 		break;
 
 	case IntPacking_e::GENERIC:
 		m_fnReadValue = &Accessor_INT_T<T>::ReadValue_Generic;
-		m_tBlockPFOR.ReadHeader ( *m_pReader );
+		m_tBlockPFOR.ReadHeader ( *m_pReader, m_iNumSubblocks );
 		break;
 
 	case IntPacking_e::HASH:
 		m_fnReadValue = &Accessor_INT_T<T>::ReadValue_Hash;
-		m_tBlockPFOR.ReadHeader ( *m_pReader );
+		m_tBlockPFOR.ReadHeader ( *m_pReader, m_iNumSubblocks );
 		break;
 
 	default:
 		assert ( 0 && "Packing not implemented yet" );
 	}
-
-	SetBlockId ( uBlockId, m_tHeader.GetNumDocs(uBlockId) );
 }
 
 template<typename T>
@@ -364,7 +375,8 @@ template<typename T>
 int64_t Accessor_INT_T<T>::ReadValue_Delta()
 {
 	uint32_t uIdInBlock = m_tRequestedRowID - m_tStartBlockRowId;
-	m_tBlockPFOR.ReadSubblock_Delta ( StoredBlockTraits_t::GetSubblockId(uIdInBlock), *m_pReader );
+	int iSubblockId = StoredBlockTraits_t::GetSubblockId(uIdInBlock);
+	m_tBlockPFOR.ReadSubblock_Delta ( StoredBlockTraits_t::GetSubblockId(uIdInBlock), StoredBlockTraits_t::GetNumSubblockValues(iSubblockId), *m_pReader );
 	return m_tBlockPFOR.GetValue ( GetValueIdInSubblock(uIdInBlock) );
 }
 
@@ -372,7 +384,8 @@ template<typename T>
 int64_t Accessor_INT_T<T>::ReadValue_Generic()
 {
 	uint32_t uIdInBlock = m_tRequestedRowID - m_tStartBlockRowId;
-	m_tBlockPFOR.ReadSubblock_Generic ( GetSubblockId(uIdInBlock), *m_pReader );
+	int iSubblockId = StoredBlockTraits_t::GetSubblockId(uIdInBlock);
+	m_tBlockPFOR.ReadSubblock_Generic ( GetSubblockId(uIdInBlock), StoredBlockTraits_t::GetNumSubblockValues(iSubblockId), *m_pReader );
 	return m_tBlockPFOR.GetValue ( GetValueIdInSubblock(uIdInBlock) );
 }
 
@@ -381,7 +394,7 @@ int64_t Accessor_INT_T<T>::ReadValue_Hash()
 {
 	uint32_t uIdInBlock = m_tRequestedRowID - m_tStartBlockRowId;
 	int iSubblockId = GetSubblockId(uIdInBlock);
-	m_tBlockPFOR.ReadSubblock_Hash ( iSubblockId, *m_pReader, StoredBlockTraits_t::GetNumSubblockValues(iSubblockId) );
+	m_tBlockPFOR.ReadSubblock_Hash ( iSubblockId, StoredBlockTraits_t::GetNumSubblockValues(iSubblockId), *m_pReader );
 	return m_tBlockPFOR.GetValue ( GetValueIdInSubblock(uIdInBlock) );
 }
 
@@ -854,7 +867,7 @@ class Analyzer_INT_T : public Analyzer_T<HAVE_MATCHING_BLOCKS>, public Accessor_
 	using ACCESSOR = Accessor_INT_T<ACCESSOR_VALUES>;
 
 public:
-					Analyzer_INT_T ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings );
+					Analyzer_INT_T ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader, const Filter_t & tSettings );
 
 	bool			GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBlock ) final;
 	void			AddDesc ( std::vector<IteratorDesc_t> & dDesc ) const final { dDesc.push_back ( { ACCESSOR::m_tHeader.GetName(), "ColumnarScan" } ); }
@@ -898,9 +911,9 @@ private:
 };
 
 template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS>
-Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::Analyzer_INT_T ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings )
+Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::Analyzer_INT_T ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader, const Filter_t & tSettings )
 	: ANALYZER ( tHeader.GetSettings().m_iSubblockSize )
-	, ACCESSOR ( tHeader, pReader )
+	, ACCESSOR ( tHeader, uVersion, pReader )
 	, m_tBlockConst ( ANALYZER::m_tRowID )
 	, m_tBlockTable ( ANALYZER::m_tRowID )
 	, m_tBlockValues ( ANALYZER::m_tRowID )
@@ -1029,7 +1042,7 @@ template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HA
 template <bool EQ>
 int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockGeneric_SingleValue ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
-	ACCESSOR::m_tBlockPFOR.ReadSubblock_Generic ( iSubblockIdInBlock, *ACCESSOR::m_pReader );
+	ACCESSOR::m_tBlockPFOR.ReadSubblock_Generic ( iSubblockIdInBlock, StoredBlockTraits_t::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
 	return m_tBlockValues.template ProcessSubblock_SingleValue<EQ> ( pRowID, ACCESSOR::m_tBlockPFOR.GetAllValues() );
 }
 
@@ -1037,7 +1050,7 @@ template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HA
 template <bool EQ, bool LINEAR>
 int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockGeneric_Values ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
-	ACCESSOR::m_tBlockPFOR.ReadSubblock_Generic ( iSubblockIdInBlock, *ACCESSOR::m_pReader );
+	ACCESSOR::m_tBlockPFOR.ReadSubblock_Generic ( iSubblockIdInBlock, StoredBlockTraits_t::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
 
 	if ( LINEAR )
 		return m_tBlockValues.template ProcessSubblock_ValuesLinear<EQ> ( pRowID, ACCESSOR::m_tBlockPFOR.GetAllValues() );
@@ -1048,7 +1061,7 @@ int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::Proc
 template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS>
 int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockGeneric_Range ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
-	ACCESSOR::m_tBlockPFOR.ReadSubblock_Generic ( iSubblockIdInBlock, *ACCESSOR::m_pReader );
+	ACCESSOR::m_tBlockPFOR.ReadSubblock_Generic ( iSubblockIdInBlock, StoredBlockTraits_t::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
 	return m_tBlockValues.template ProcessSubblock_Range<RANGE_EVAL> ( pRowID, ACCESSOR::m_tBlockPFOR.GetAllValues() );
 }
 
@@ -1056,7 +1069,7 @@ template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HA
 template <bool EQ>
 int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockHash_SingleValue ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
-	ACCESSOR::m_tBlockPFOR.ReadSubblock_Hash ( iSubblockIdInBlock, *ACCESSOR::m_pReader, StoredBlockTraits_t::GetNumSubblockValues(iSubblockIdInBlock) );
+	ACCESSOR::m_tBlockPFOR.ReadSubblock_Hash ( iSubblockIdInBlock, StoredBlockTraits_t::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
 	return m_tBlockValues.template ProcessSubblock_SingleValue<EQ> ( pRowID, ACCESSOR::m_tBlockPFOR.GetAllValues() );
 }
 
@@ -1064,7 +1077,7 @@ template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HA
 template <bool EQ, bool LINEAR>
 int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockHash_Values ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
-	ACCESSOR::m_tBlockPFOR.ReadSubblock_Hash ( iSubblockIdInBlock, *ACCESSOR::m_pReader, StoredBlockTraits_t::GetNumSubblockValues(iSubblockIdInBlock) );
+	ACCESSOR::m_tBlockPFOR.ReadSubblock_Hash ( iSubblockIdInBlock, StoredBlockTraits_t::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
 
 	if ( LINEAR )
 		return m_tBlockValues.template ProcessSubblock_ValuesLinear<EQ> ( pRowID, ACCESSOR::m_tBlockPFOR.GetAllValues() );
@@ -1076,7 +1089,7 @@ template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HA
 template <bool EQ>
 int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockDelta_SingleValue ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
-	ACCESSOR::m_tBlockPFOR.ReadSubblock_Delta ( iSubblockIdInBlock, *ACCESSOR::m_pReader );
+	ACCESSOR::m_tBlockPFOR.ReadSubblock_Delta ( iSubblockIdInBlock, StoredBlockTraits_t::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
 	return m_tBlockValues.template ProcessSubblock_SingleValue<EQ> ( pRowID, ACCESSOR::m_tBlockPFOR.GetAllValues() );
 }
 
@@ -1084,7 +1097,7 @@ template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HA
 template <bool EQ, bool LINEAR>
 int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockDelta_Values ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
-	ACCESSOR::m_tBlockPFOR.ReadSubblock_Delta ( iSubblockIdInBlock, *ACCESSOR::m_pReader );
+	ACCESSOR::m_tBlockPFOR.ReadSubblock_Delta ( iSubblockIdInBlock, StoredBlockTraits_t::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
 
 	if ( LINEAR )
 		return m_tBlockValues.template ProcessSubblock_ValuesLinear<EQ> ( pRowID, ACCESSOR::m_tBlockPFOR.GetAllValues() );
@@ -1095,7 +1108,7 @@ int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::Proc
 template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS>
 int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockDelta_Range ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
-	ACCESSOR::m_tBlockPFOR.ReadSubblock_Delta ( iSubblockIdInBlock, *ACCESSOR::m_pReader );
+	ACCESSOR::m_tBlockPFOR.ReadSubblock_Delta ( iSubblockIdInBlock, StoredBlockTraits_t::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
 	return m_tBlockValues.template ProcessSubblock_Range<RANGE_EVAL> ( pRowID, ACCESSOR::m_tBlockPFOR.GetAllValues() );
 }
 
@@ -1187,36 +1200,36 @@ struct ValueInInterval_T
 
 //////////////////////////////////////////////////////////////////////////
 
-Iterator_i * CreateIteratorUint32 ( const AttributeHeader_i & tHeader, FileReader_c * pReader )
+Iterator_i * CreateIteratorUint32 ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader )
 {
-	return ::new Iterator_INT_T<uint32_t> ( tHeader, pReader );
+	return ::new Iterator_INT_T<uint32_t> ( tHeader, uVersion, pReader );
 }
 
 
-Iterator_i * CreateIteratorUint64 ( const AttributeHeader_i & tHeader, FileReader_c * pReader )
+Iterator_i * CreateIteratorUint64 ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader )
 {
-	return ::new Iterator_INT_T<uint64_t> ( tHeader, pReader );
+	return ::new Iterator_INT_T<uint64_t> ( tHeader, uVersion, pReader );
 }
 
 //////////////////////////////////////////////////////////////////////////
 
 template <typename RANGE_EVAL, bool MATCHING_BLOCKS>
-static Analyzer_i * CreateAnalyzerInt ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings )
+static Analyzer_i * CreateAnalyzerInt ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader, const Filter_t & tSettings )
 {
 	switch ( tHeader.GetType() )
 	{
 	case AttrType_e::UINT32:
 	case AttrType_e::TIMESTAMP:
-		return ::new Analyzer_INT_T<uint32_t, uint32_t, RANGE_EVAL, MATCHING_BLOCKS> ( tHeader, pReader, tSettings );
+		return ::new Analyzer_INT_T<uint32_t, uint32_t, RANGE_EVAL, MATCHING_BLOCKS> ( tHeader, uVersion, pReader, tSettings );
 
 	case AttrType_e::INT64:
-		return ::new Analyzer_INT_T<int64_t, uint64_t, RANGE_EVAL, MATCHING_BLOCKS> ( tHeader, pReader, tSettings );
+		return ::new Analyzer_INT_T<int64_t, uint64_t, RANGE_EVAL, MATCHING_BLOCKS> ( tHeader, uVersion, pReader, tSettings );
 
 	case AttrType_e::UINT64:
-		return ::new Analyzer_INT_T<uint64_t, uint64_t, RANGE_EVAL, MATCHING_BLOCKS> ( tHeader, pReader, tSettings );
+		return ::new Analyzer_INT_T<uint64_t, uint64_t, RANGE_EVAL, MATCHING_BLOCKS> ( tHeader, uVersion, pReader, tSettings );
 
 	case AttrType_e::FLOAT:
-		return ::new Analyzer_INT_T<float, uint32_t, RANGE_EVAL, MATCHING_BLOCKS> ( tHeader, pReader, tSettings );
+		return ::new Analyzer_INT_T<float, uint32_t, RANGE_EVAL, MATCHING_BLOCKS> ( tHeader, uVersion, pReader, tSettings );
 
 	default:
 		assert ( 0 && "Unknown int analyzer" );
@@ -1225,7 +1238,7 @@ static Analyzer_i * CreateAnalyzerInt ( const AttributeHeader_i & tHeader, FileR
 }
 
 
-Analyzer_i * CreateAnalyzerInt ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings, bool bHaveMatchingBlocks )
+Analyzer_i * CreateAnalyzerInt ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader, const Filter_t & tSettings, bool bHaveMatchingBlocks )
 {
 	if ( tSettings.m_eType!=FilterType_e::VALUES && tSettings.m_eType!=FilterType_e::RANGE && tSettings.m_eType!=FilterType_e::FLOATRANGE )
 		return nullptr;
@@ -1233,38 +1246,38 @@ Analyzer_i * CreateAnalyzerInt ( const AttributeHeader_i & tHeader, FileReader_c
 	int iIndex = bHaveMatchingBlocks*16 + tSettings.m_bLeftClosed*8 + tSettings.m_bRightClosed*4 + tSettings.m_bLeftUnbounded*2 + tSettings.m_bRightUnbounded;
  	switch ( iIndex )
 	{
-	case 0:		return CreateAnalyzerInt<ValueInInterval_T<false, false, false, false>,	false>	( tHeader, pReader, tSettings );
-	case 1:		return CreateAnalyzerInt<ValueInInterval_T<false, false, false, true>,	false>	( tHeader, pReader, tSettings );
-	case 2:		return CreateAnalyzerInt<ValueInInterval_T<false, false, true,  false>,	false>	( tHeader, pReader, tSettings );
-	case 3:		return CreateAnalyzerInt<ValueInInterval_T<false, false, true,  true>,	false>	( tHeader, pReader, tSettings );
-	case 4:		return CreateAnalyzerInt<ValueInInterval_T<false, true,  false, false>,	false>	( tHeader, pReader, tSettings );
-	case 5:		return CreateAnalyzerInt<ValueInInterval_T<false, true,  false, true>,	false>	( tHeader, pReader, tSettings );
-	case 6:		return CreateAnalyzerInt<ValueInInterval_T<false, true,  true,  false>,	false>	( tHeader, pReader, tSettings );
-	case 7:		return CreateAnalyzerInt<ValueInInterval_T<false, true,  true,  true>,	false>	( tHeader, pReader, tSettings );
-	case 8:		return CreateAnalyzerInt<ValueInInterval_T<true,  false, false, false>,	false>	( tHeader, pReader, tSettings );
-	case 9:		return CreateAnalyzerInt<ValueInInterval_T<true,  false, false, true>,	false>	( tHeader, pReader, tSettings );
-	case 10:	return CreateAnalyzerInt<ValueInInterval_T<true,  false, true,  false>,	false>	( tHeader, pReader, tSettings );
-	case 11:	return CreateAnalyzerInt<ValueInInterval_T<true,  false, true,  true>,	false>	( tHeader, pReader, tSettings );
-	case 12:	return CreateAnalyzerInt<ValueInInterval_T<true,  true,  false, false>,	false>	( tHeader, pReader, tSettings );
-	case 13:	return CreateAnalyzerInt<ValueInInterval_T<true,  true,  false, true>,	false>	( tHeader, pReader, tSettings );
-	case 14:	return CreateAnalyzerInt<ValueInInterval_T<true,  true,  true,  false>,	false>	( tHeader, pReader, tSettings );
-	case 15:	return CreateAnalyzerInt<ValueInInterval_T<true,  true,  true,  true>,	false>	( tHeader, pReader, tSettings );
-	case 16:	return CreateAnalyzerInt<ValueInInterval_T<false, false, false, false>,	true>	( tHeader, pReader, tSettings );
-	case 17:	return CreateAnalyzerInt<ValueInInterval_T<false, false, false, true>,	true>	( tHeader, pReader, tSettings );
-	case 18:	return CreateAnalyzerInt<ValueInInterval_T<false, false, true,  false>,	true>	( tHeader, pReader, tSettings );
-	case 19:	return CreateAnalyzerInt<ValueInInterval_T<false, false, true,  true>,	true>	( tHeader, pReader, tSettings );
-	case 20:	return CreateAnalyzerInt<ValueInInterval_T<false, true,  false, false>,	true>	( tHeader, pReader, tSettings );
-	case 21:	return CreateAnalyzerInt<ValueInInterval_T<false, true,  false, true>,	true>	( tHeader, pReader, tSettings );
-	case 22:	return CreateAnalyzerInt<ValueInInterval_T<false, true,  true,  false>,	true>	( tHeader, pReader, tSettings );
-	case 23:	return CreateAnalyzerInt<ValueInInterval_T<false, true,  true,  true>,	true>	( tHeader, pReader, tSettings );
-	case 24:	return CreateAnalyzerInt<ValueInInterval_T<true,  false, false, false>,	true>	( tHeader, pReader, tSettings );
-	case 25:	return CreateAnalyzerInt<ValueInInterval_T<true,  false, false, true>,	true>	( tHeader, pReader, tSettings );
-	case 26:	return CreateAnalyzerInt<ValueInInterval_T<true,  false, true,  false>,	true>	( tHeader, pReader, tSettings );
-	case 27:	return CreateAnalyzerInt<ValueInInterval_T<true,  false, true,  true>,	true>	( tHeader, pReader, tSettings );
-	case 28:	return CreateAnalyzerInt<ValueInInterval_T<true,  true,  false, false>,	true>	( tHeader, pReader, tSettings );
-	case 29:	return CreateAnalyzerInt<ValueInInterval_T<true,  true,  false, true>,	true>	( tHeader, pReader, tSettings );
-	case 30:	return CreateAnalyzerInt<ValueInInterval_T<true,  true,  true,  false>,	true>	( tHeader, pReader, tSettings );
-	case 31:	return CreateAnalyzerInt<ValueInInterval_T<true,  true,  true,  true>,	true>	( tHeader, pReader, tSettings );
+	case 0:		return CreateAnalyzerInt<ValueInInterval_T<false, false, false, false>,	false>	( tHeader, uVersion, pReader, tSettings );
+	case 1:		return CreateAnalyzerInt<ValueInInterval_T<false, false, false, true>,	false>	( tHeader, uVersion, pReader, tSettings );
+	case 2:		return CreateAnalyzerInt<ValueInInterval_T<false, false, true,  false>,	false>	( tHeader, uVersion, pReader, tSettings );
+	case 3:		return CreateAnalyzerInt<ValueInInterval_T<false, false, true,  true>,	false>	( tHeader, uVersion, pReader, tSettings );
+	case 4:		return CreateAnalyzerInt<ValueInInterval_T<false, true,  false, false>,	false>	( tHeader, uVersion, pReader, tSettings );
+	case 5:		return CreateAnalyzerInt<ValueInInterval_T<false, true,  false, true>,	false>	( tHeader, uVersion, pReader, tSettings );
+	case 6:		return CreateAnalyzerInt<ValueInInterval_T<false, true,  true,  false>,	false>	( tHeader, uVersion, pReader, tSettings );
+	case 7:		return CreateAnalyzerInt<ValueInInterval_T<false, true,  true,  true>,	false>	( tHeader, uVersion, pReader, tSettings );
+	case 8:		return CreateAnalyzerInt<ValueInInterval_T<true,  false, false, false>,	false>	( tHeader, uVersion, pReader, tSettings );
+	case 9:		return CreateAnalyzerInt<ValueInInterval_T<true,  false, false, true>,	false>	( tHeader, uVersion, pReader, tSettings );
+	case 10:	return CreateAnalyzerInt<ValueInInterval_T<true,  false, true,  false>,	false>	( tHeader, uVersion, pReader, tSettings );
+	case 11:	return CreateAnalyzerInt<ValueInInterval_T<true,  false, true,  true>,	false>	( tHeader, uVersion, pReader, tSettings );
+	case 12:	return CreateAnalyzerInt<ValueInInterval_T<true,  true,  false, false>,	false>	( tHeader, uVersion, pReader, tSettings );
+	case 13:	return CreateAnalyzerInt<ValueInInterval_T<true,  true,  false, true>,	false>	( tHeader, uVersion, pReader, tSettings );
+	case 14:	return CreateAnalyzerInt<ValueInInterval_T<true,  true,  true,  false>,	false>	( tHeader, uVersion, pReader, tSettings );
+	case 15:	return CreateAnalyzerInt<ValueInInterval_T<true,  true,  true,  true>,	false>	( tHeader, uVersion, pReader, tSettings );
+	case 16:	return CreateAnalyzerInt<ValueInInterval_T<false, false, false, false>,	true>	( tHeader, uVersion, pReader, tSettings );
+	case 17:	return CreateAnalyzerInt<ValueInInterval_T<false, false, false, true>,	true>	( tHeader, uVersion, pReader, tSettings );
+	case 18:	return CreateAnalyzerInt<ValueInInterval_T<false, false, true,  false>,	true>	( tHeader, uVersion, pReader, tSettings );
+	case 19:	return CreateAnalyzerInt<ValueInInterval_T<false, false, true,  true>,	true>	( tHeader, uVersion, pReader, tSettings );
+	case 20:	return CreateAnalyzerInt<ValueInInterval_T<false, true,  false, false>,	true>	( tHeader, uVersion, pReader, tSettings );
+	case 21:	return CreateAnalyzerInt<ValueInInterval_T<false, true,  false, true>,	true>	( tHeader, uVersion, pReader, tSettings );
+	case 22:	return CreateAnalyzerInt<ValueInInterval_T<false, true,  true,  false>,	true>	( tHeader, uVersion, pReader, tSettings );
+	case 23:	return CreateAnalyzerInt<ValueInInterval_T<false, true,  true,  true>,	true>	( tHeader, uVersion, pReader, tSettings );
+	case 24:	return CreateAnalyzerInt<ValueInInterval_T<true,  false, false, false>,	true>	( tHeader, uVersion, pReader, tSettings );
+	case 25:	return CreateAnalyzerInt<ValueInInterval_T<true,  false, false, true>,	true>	( tHeader, uVersion, pReader, tSettings );
+	case 26:	return CreateAnalyzerInt<ValueInInterval_T<true,  false, true,  false>,	true>	( tHeader, uVersion, pReader, tSettings );
+	case 27:	return CreateAnalyzerInt<ValueInInterval_T<true,  false, true,  true>,	true>	( tHeader, uVersion, pReader, tSettings );
+	case 28:	return CreateAnalyzerInt<ValueInInterval_T<true,  true,  false, false>,	true>	( tHeader, uVersion, pReader, tSettings );
+	case 29:	return CreateAnalyzerInt<ValueInInterval_T<true,  true,  false, true>,	true>	( tHeader, uVersion, pReader, tSettings );
+	case 30:	return CreateAnalyzerInt<ValueInInterval_T<true,  true,  true,  false>,	true>	( tHeader, uVersion, pReader, tSettings );
+	case 31:	return CreateAnalyzerInt<ValueInInterval_T<true,  true,  true,  true>,	true>	( tHeader, uVersion, pReader, tSettings );
 	default:	return nullptr;
 	}
 }

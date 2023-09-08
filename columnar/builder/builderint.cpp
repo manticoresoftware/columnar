@@ -322,15 +322,21 @@ void Packer_Int_T<T,HEADER>::WriteSubblock_Delta ( const Span_T<U> & dSubblockVa
 {
 	dTmp.resize ( dSubblockValues.size() );
 	memcpy ( dTmp.data(), dSubblockValues.data(), dSubblockValues.size()*sizeof(dSubblockValues[0]) );
-	ComputeDeltas ( dTmp.data(), (int)dTmp.size(), bWriteFlag ? m_bMonoAsc : true );
-
+	
 	if ( bWriteFlag )
 		tWriter.Write_uint8 ( m_bMonoAsc ? to_underlying ( IntDeltaPacking_e::DELTA_ASC ) : to_underlying ( IntDeltaPacking_e::DELTA_DESC ) );
 
-	tWriter.Pack_uint64 ( dTmp[0] );
-	dTmp[0]=0;
-
-	m_pCodec->Encode ( dTmp, m_dCompressed );
+	bool bAsc = bWriteFlag ? m_bMonoAsc : true;
+	if ( bAsc )
+	{
+		Span_T<U> tUncompressed(dTmp);
+		m_pCodec->EncodeDelta ( tUncompressed, m_dCompressed );
+	}
+	else
+	{
+		ComputeDeltas ( dTmp.data(), (int)dTmp.size(), false );
+		m_pCodec->Encode ( dTmp, m_dCompressed );
+	}
 
 	tWriter.Write ( (uint8_t*)m_dCompressed.data(), m_dCompressed.size()*sizeof ( m_dCompressed[0] ) );
 }

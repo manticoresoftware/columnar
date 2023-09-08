@@ -325,25 +325,46 @@ FORCE_INLINE void AddMinValue ( util::Span_T<uint64_t> & dValues, uint64_t uMin 
 
 
 template <typename T>
-FORCE_INLINE void DecodeValues_Delta_PFOR ( util::SpanResizeable_T<T> & dValues, util::FileReader_c & tReader, util::IntCodec_i & tCodec, util::SpanResizeable_T<uint32_t> & dTmp, uint32_t uTotalSize, bool bReadFlag )
+FORCE_INLINE void DecodeValues_Delta_PFOR ( util::SpanResizeable_T<T> & dValues, util::FileReader_c & tReader, util::IntCodec_i & tCodec, util::SpanResizeable_T<uint32_t> & dTmp, uint32_t uTotalSize, bool bReadFlag, uint32_t uVersion )
 {
 	int64_t tStart = tReader.GetPos();
 	uint8_t uFlags = util::to_underlying ( IntDeltaPacking_e::DELTA_ASC );
 	if ( bReadFlag )
 		uFlags = tReader.Read_uint8();
 
-	T uMin = (T)tReader.Unpack_uint64();
-	uint32_t uPFOREncodedSize = uint32_t ( uTotalSize - ( tReader.GetPos() - tStart ) );
-	assert ( uPFOREncodedSize % 4 == 0 );
+	bool bAsc = uFlags==util::to_underlying ( IntDeltaPacking_e::DELTA_ASC );
 
-	dTmp.resize ( uPFOREncodedSize>>2 );
-	tReader.Read ( (uint8_t*)dTmp.data(), (int)dTmp.size()*sizeof(dTmp[0]) );
+	if ( uVersion >= 11 )
+	{
+		uint32_t uPFOREncodedSize = uint32_t ( uTotalSize - ( tReader.GetPos() - tStart ) );
+		assert ( uPFOREncodedSize % 4 == 0 );
 
-	tCodec.Decode ( dTmp, dValues );
+		dTmp.resize ( uPFOREncodedSize >>2 );
+		tReader.Read ( (uint8_t*)dTmp.data(), (int)dTmp.size()*sizeof(dTmp[0]) );
 
-	assert ( !dValues[0] );
-	dValues[0] = uMin;
-	ComputeInverseDeltas ( dValues, uFlags==util::to_underlying ( IntDeltaPacking_e::DELTA_ASC ) );
+		if ( bAsc )
+			tCodec.DecodeDelta ( dTmp, dValues );
+		else
+		{
+			tCodec.Decode ( dTmp, dValues );
+			ComputeInverseDeltas ( dValues, false );
+		}
+	}
+	else
+	{
+		T uMin = (T)tReader.Unpack_uint64();
+		uint32_t uPFOREncodedSize = uint32_t ( uTotalSize - ( tReader.GetPos() - tStart ) );
+		assert ( uPFOREncodedSize % 4 == 0 );
+
+		dTmp.resize ( uPFOREncodedSize>>2 );
+		tReader.Read ( (uint8_t*)dTmp.data(), (int)dTmp.size()*sizeof(dTmp[0]) );
+
+		tCodec.Decode ( dTmp, dValues );
+
+		assert ( !dValues[0] );
+		dValues[0] = uMin;
+		ComputeInverseDeltas ( dValues, bAsc );
+	}
 }
 
 template <typename T>

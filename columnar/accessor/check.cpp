@@ -102,7 +102,7 @@ bool StorageChecker_c::Check()
 	}
 
 	uint32_t uStorageVersion = m_tReader.Read_uint32();
-	if ( uStorageVersion!=STORAGE_VERSION )
+	if ( uStorageVersion > STORAGE_VERSION )
 	{
 		m_fnError ( FormatStr ( "Unable to load columnar storage: %s is v.%d, binary is v.%d", m_sFilename.c_str(), uStorageVersion, STORAGE_VERSION ).c_str() );
 		return false;
@@ -294,7 +294,7 @@ bool CheckInt32Packed ( FileReader_c & tReader, int iMin, int iMax, const std::s
 
 bool CheckInt64 ( FileReader_c & tReader, int64_t iMin, int64_t iMax, const std::string & sMessage, int64_t & iValue, Reporter_fn & fnError )
 {
-	iValue = (int)tReader.Read_uint64();
+	iValue = (int64_t)tReader.Read_uint64();
 	if ( iValue<iMin || iValue>iMax )
 	{
 		fnError ( FormatStr ( "%s out of bounds: %lld", sMessage.c_str(), iValue ).c_str() );

@@ -22,8 +22,24 @@
 #include "util/util.h"
 #include "common/schema.h"
 
+namespace util
+{
+	class FileReader_c;
+	class FileWriter_c;
+}
+
 namespace SI
 {
+
+struct Settings_t
+{
+	std::string	m_sCompressionUINT32 = "libstreamvbyte";
+	std::string	m_sCompressionUINT64 = "fastpfor256";
+
+	void		Load ( util::FileReader_c & tReader, uint32_t uVersion );
+	void		Save ( util::FileWriter_c & tWriter ) const;
+};
+
 
 enum class Packing_e : uint32_t
 {
@@ -47,8 +63,6 @@ public:
 
 	virtual bool	Done ( std::string & sError ) = 0;
 };
-
-struct Settings_t;
 
 } // namespace SI
 

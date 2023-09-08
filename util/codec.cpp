@@ -41,6 +41,8 @@
 #include "streamvariablebyte.h"
 #include "simdgroupsimple.h"
 #include "util/delta.h"
+#include "streamvbyte.h"
+#include "streamvbytedelta.h"
 
 
 #if _WIN32
@@ -50,64 +52,18 @@
 namespace util
 {
 
-class IntCodec_c : public IntCodec_i
+template <typename T>
+static FORCE_INLINE size_t ReserveSpaceForDecoded ( util::SpanResizeable_T<T> & dDecompressed )
 {
-public:
-			IntCodec_c ( const std::string & sCodec32, const std::string & szCodec64 );
+	const int MAX_DECODED_SIZE = 32768;
+	if ( dDecompressed.size()<MAX_DECODED_SIZE )
+		dDecompressed.resize(MAX_DECODED_SIZE);
 
-	void	Encode ( const util::Span_T<uint32_t> & dUncompressed, std::vector<uint32_t> & dCompressed ) override;
-	void	Encode ( const util::Span_T<uint64_t> & dUncompressed, std::vector<uint32_t> & dCompressed ) override;
-	bool	Decode ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint32_t> & dDecompressed ) override;
-	bool	Decode ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint64_t> & dDecompressed ) override;
-
-	void	DecodeDelta ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint32_t> & dDecompressed ) override;
-	void	DecodeDelta ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint64_t> & dDecompressed ) override;
-
-private:
-	std::unique_ptr<FastPForLib::IntegerCODEC> m_pCodec32;
-	std::unique_ptr<FastPForLib::IntegerCODEC> m_pCodec64;
-
-	template <typename T>
-	FORCE_INLINE void	Encode ( const util::Span_T<T> & dUncompressed, std::vector<uint32_t> & dCompressed, FastPForLib::IntegerCODEC & tCodec );
-
-	template <typename T>
-	FORCE_INLINE bool	Decode ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<T> & dDecompressed, FastPForLib::IntegerCODEC & tCodec );
-
-	FastPForLib::IntegerCODEC *	CreateCodec ( const std::string & sName );
-};
-
-
-IntCodec_c::IntCodec_c ( const std::string & sCodec32, const std::string & sCodec64 )
-	: m_pCodec32 ( CreateCodec(sCodec32) )
-	, m_pCodec64 ( CreateCodec(sCodec64) )
-{}
-
-
-void IntCodec_c::Encode ( const util::Span_T<uint32_t> & dUncompressed, std::vector<uint32_t> & dCompressed )
-{
-	Encode ( dUncompressed, dCompressed, *m_pCodec32 );
-}
-
-
-void IntCodec_c::Encode ( const util::Span_T<uint64_t> & dUncompressed, std::vector<uint32_t> & dCompressed )
-{
-	Encode ( dUncompressed, dCompressed, *m_pCodec64 );
-}
-
-
-bool IntCodec_c::Decode ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint32_t> & dDecompressed )
-{
-	return Decode ( dCompressed, dDecompressed, *m_pCodec32 );
-}
-
-
-bool IntCodec_c::Decode ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint64_t> & dDecompressed )
-{
-	return Decode ( dCompressed, dDecompressed, *m_pCodec64 );
+	return dDecompressed.size();
 }
 
 template <typename T>
-void IntCodec_c::Encode ( const util::Span_T<T> & dUncompressed, std::vector<uint32_t> & dCompressed, FastPForLib::IntegerCODEC & tCodec )
+static FORCE_INLINE void Encode ( const util::Span_T<T> & dUncompressed, std::vector<uint32_t> & dCompressed, FastPForLib::IntegerCODEC & tCodec )
 {
 	const size_t EXTRA_GAP = 1024;
 	dCompressed.resize ( dUncompressed.size()*sizeof(dUncompressed[0])/sizeof(dCompressed[0]) + EXTRA_GAP );
@@ -117,13 +73,9 @@ void IntCodec_c::Encode ( const util::Span_T<T> & dUncompressed, std::vector<uin
 }
 
 template <typename T>
-bool IntCodec_c::Decode ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<T> & dDecompressed, FastPForLib::IntegerCODEC & tCodec )
+static FORCE_INLINE bool Decode ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<T> & dDecompressed, FastPForLib::IntegerCODEC & tCodec )
 {
-	const int MAX_DECODED_SIZE = 32768;
-	if ( dDecompressed.size()<MAX_DECODED_SIZE )
-		dDecompressed.resize(MAX_DECODED_SIZE);
-
-	size_t uDecompressedSize = dDecompressed.size();
+	size_t uDecompressedSize = ReserveSpaceForDecoded(dDecompressed);
 	const uint32_t * pOut = tCodec.decodeArray ( dCompressed.data(), dCompressed.size(), dDecompressed.data(), uDecompressedSize );
 	assert ( uDecompressedSize<=dDecompressed.size() );
 	dDecompressed.resize(uDecompressedSize);
@@ -132,21 +84,7 @@ bool IntCodec_c::Decode ( const util::Span_T<uint32_t> & dCompressed, util::Span
 }
 
 
-void IntCodec_c::DecodeDelta ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint32_t> & dDecompressed )
-{
-	Decode ( dCompressed, dDecompressed, *m_pCodec32 );
-	ComputeInverseDeltasAsc ( dDecompressed );
-}
-
-
-void IntCodec_c::DecodeDelta ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint64_t> & dDecompressed )
-{
-	Decode ( dCompressed, dDecompressed, *m_pCodec64 );
-	ComputeInverseDeltasAsc ( dDecompressed );
-}
-
-
-FastPForLib::IntegerCODEC * IntCodec_c::CreateCodec ( const std::string & sName )
+FastPForLib::IntegerCODEC * CreateFastPFORCodec ( const std::string & sName )
 {
 	using namespace FastPForLib;
 
@@ -154,7 +92,7 @@ FastPForLib::IntegerCODEC * IntCodec_c::CreateCodec ( const std::string & sName 
 	if ( sName=="fastbinarypacking16" )		return new CompositeCodec<FastBinaryPacking<16>, VariableByte>;
 	if ( sName=="fastbinarypacking32" )		return new CompositeCodec<FastBinaryPacking<32>, VariableByte>;
 	if ( sName=="BP32" )					return new CompositeCodec<BP32, VariableByte>;
-//	if ( sName=="vsencoding" )				return new vsencoding::VSEncodingBlocks(1U << 16);
+	//	if ( sName=="vsencoding" )				return new vsencoding::VSEncodingBlocks(1U << 16);
 	if ( sName=="fastpfor128" )				return new CompositeCodec<FastPFor<4>, VariableByte>;
 	if ( sName=="fastpfor256" )				return new CompositeCodec<FastPFor<8>, VariableByte>;
 	if ( sName=="simdfastpfor128" )			return new CompositeCodec<SIMDFastPFor<4>, VariableByte>;
@@ -164,10 +102,10 @@ FastPForLib::IntegerCODEC * IntCodec_c::CreateCodec ( const std::string & sName 
 	if ( sName=="pfor" )					return new CompositeCodec<PFor, VariableByte>;
 	if ( sName=="simdpfor" )				return new CompositeCodec<SIMDPFor, VariableByte>;
 	if ( sName=="pfor2008" )				return new CompositeCodec<PFor2008, VariableByte>;
-//	if ( sName=="simdnewpfor" )				return new CompositeCodec<SIMDNewPFor<4, Simple16<false>>, VariableByte>;
-//	if ( sName=="newpfor" )					return new CompositeCodec<NewPFor<4, Simple16<false>>, VariableByte>;
-//	if ( sName=="optpfor" )					return new CompositeCodec<OPTPFor<4, Simple16<false>>, VariableByte>;
-//	if ( sName=="simdoptpfor" )				return new CompositeCodec<SIMDOPTPFor<4, Simple16<false>>, VariableByte>;
+	//	if ( sName=="simdnewpfor" )				return new CompositeCodec<SIMDNewPFor<4, Simple16<false>>, VariableByte>;
+	//	if ( sName=="newpfor" )					return new CompositeCodec<NewPFor<4, Simple16<false>>, VariableByte>;
+	//	if ( sName=="optpfor" )					return new CompositeCodec<OPTPFor<4, Simple16<false>>, VariableByte>;
+	//	if ( sName=="simdoptpfor" )				return new CompositeCodec<SIMDOPTPFor<4, Simple16<false>>, VariableByte>;
 	if ( sName=="varint" )					return new VariableByte;
 	if ( sName=="vbyte" )					return new VByte;
 	if ( sName=="maskedvbyte" )				return new MaskedVByte;
@@ -186,6 +124,121 @@ FastPForLib::IntegerCODEC * IntCodec_c::CreateCodec ( const std::string & sName 
 	assert ( 0 && "Unknown integer codec" );
 	return nullptr;
 }
+
+//////////////////////////////////////////////////////////////////////////
+
+class Int32FastPFORCodec_c
+{
+public:
+		Int32FastPFORCodec_c ( const std::string & sCodec32 ) : m_pCodec32 ( CreateFastPFORCodec(sCodec32) ) {}
+
+	FORCE_INLINE void	Encode ( const util::Span_T<uint32_t> & dUncompressed, std::vector<uint32_t> & dCompressed )			{ util::Encode ( dUncompressed, dCompressed, *m_pCodec32 ); }
+	FORCE_INLINE void	EncodeDelta ( util::Span_T<uint32_t> & dUncompressed, std::vector<uint32_t> & dCompressed );
+	FORCE_INLINE void	Decode ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint32_t> & dDecompressed )	{ util::Decode ( dCompressed, dDecompressed, *m_pCodec32 ); }
+	FORCE_INLINE void	DecodeDelta ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint32_t> & dDecompressed );
+
+private:
+	std::unique_ptr<FastPForLib::IntegerCODEC> m_pCodec32;
+};
+
+
+void Int32FastPFORCodec_c::EncodeDelta ( util::Span_T<uint32_t> & dUncompressed, std::vector<uint32_t> & dCompressed )
+{
+	dCompressed.resize(0);
+	ComputeDeltas ( dUncompressed.data(), (int)dUncompressed.size(), true );
+	util::Encode ( dUncompressed, dCompressed, *m_pCodec32 );
+}
+
+
+void Int32FastPFORCodec_c::DecodeDelta ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint32_t> & dDecompressed )
+{
+	util::Decode ( dCompressed, dDecompressed, *m_pCodec32 );
+	ComputeInverseDeltasAsc ( dDecompressed );
+}
+
+//////////////////////////////////////////////////////////////////////////
+
+class Int64FastPFORCodec_c
+{
+public:
+		Int64FastPFORCodec_c ( const std::string & sCodec64 )  : m_pCodec64 ( CreateFastPFORCodec(sCodec64) ) {}
+
+	FORCE_INLINE void	Encode ( const util::Span_T<uint64_t> & dUncompressed, std::vector<uint32_t> & dCompressed )			{ util::Encode ( dUncompressed, dCompressed, *m_pCodec64 ); }
+	FORCE_INLINE void	EncodeDelta ( util::Span_T<uint64_t> & dUncompressed, std::vector<uint32_t> & dCompressed );
+	FORCE_INLINE void	Decode ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint64_t> & dDecompressed ) { util::Decode ( dCompressed, dDecompressed, *m_pCodec64 ); }
+	FORCE_INLINE void	DecodeDelta ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint64_t> & dDecompressed );
+
+private:
+	std::unique_ptr<FastPForLib::IntegerCODEC> m_pCodec64;
+};
+
+
+void Int64FastPFORCodec_c::EncodeDelta ( util::Span_T<uint64_t> & dUncompressed, std::vector<uint32_t> & dCompressed )
+{
+	ComputeDeltas ( dUncompressed.data(), (int)dUncompressed.size(), true );
+	util::Encode ( dUncompressed, dCompressed, *m_pCodec64 );
+}
+
+
+void Int64FastPFORCodec_c::DecodeDelta ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint64_t> & dDecompressed )
+{
+	util::Decode ( dCompressed, dDecompressed, *m_pCodec64 );
+	ComputeInverseDeltasAsc ( dDecompressed );
+}
+
+//////////////////////////////////////////////////////////////////////////
+
+class Int32SVBCodec_c
+{
+public:
+	Int32SVBCodec_c ( const std::string & sCodec )  {}
+
+	FORCE_INLINE void Encode ( const util::Span_T<uint32_t> & dUncompressed, std::vector<uint32_t> & dCompressed )
+	{
+		auto uNumValues = dUncompressed.size();
+		dCompressed.resize ( ( streamvbyte_max_compressedbytes(uNumValues) + sizeof(uint32_t)-1 ) / sizeof(uint32_t) );
+		size_t uBytesWritten = streamvbyte_encode ( dUncompressed.data(), uNumValues, (uint8_t*)dCompressed.data() );
+		dCompressed.resize ( ( uBytesWritten + sizeof(uint32_t)-1 ) / sizeof(uint32_t) );
+	}
+
+	FORCE_INLINE void EncodeDelta ( const util::Span_T<uint32_t> & dUncompressed, std::vector<uint32_t> & dCompressed )
+	{
+		auto uNumValues = dUncompressed.size();
+		dCompressed.resize ( ( streamvbyte_max_compressedbytes(uNumValues) + sizeof(uint32_t)-1 ) / sizeof(uint32_t) );
+		size_t uBytesWritten = streamvbyte_delta_encode ( dUncompressed.data(), uNumValues, (uint8_t*)dCompressed.data(), 0 );
+		dCompressed.resize ( ( uBytesWritten + sizeof(uint32_t)-1 ) / sizeof(uint32_t) );
+	}
+
+	FORCE_INLINE void Decode ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint32_t> & dDecompressed )		{ streamvbyte_decode ( (const uint8_t*)dCompressed.data(), dDecompressed.data(), dDecompressed.size() ); }
+	FORCE_INLINE void DecodeDelta ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint32_t> & dDecompressed )	{ streamvbyte_delta_decode ( (const uint8_t*)dCompressed.data(), dDecompressed.data(), dDecompressed.size(), 0 ); }
+};
+
+//////////////////////////////////////////////////////////////////////////
+
+template<typename CODEC32, typename CODEC64>
+class IntCodec_T : public IntCodec_i, public CODEC32, public CODEC64
+{
+public:
+			IntCodec_T ( const std::string & sCodec32, const std::string & szCodec64 );
+
+	void	Encode ( const util::Span_T<uint32_t> & dUncompressed, std::vector<uint32_t> & dCompressed ) override	{ CODEC32::Encode ( dUncompressed, dCompressed ); }
+	void	EncodeDelta ( util::Span_T<uint32_t> & dUncompressed, std::vector<uint32_t> & dCompressed ) override	{ CODEC32::EncodeDelta ( dUncompressed, dCompressed ); }
+
+	void	Encode ( const util::Span_T<uint64_t> & dUncompressed, std::vector<uint32_t> & dCompressed ) override	{ CODEC64::Encode ( dUncompressed, dCompressed ); }
+	void	EncodeDelta ( util::Span_T<uint64_t> & dUncompressed, std::vector<uint32_t> & dCompressed ) override	{ CODEC64::EncodeDelta ( dUncompressed, dCompressed ); }
+
+	void	Decode ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint32_t> & dDecompressed ) override		{ CODEC32::Decode ( dCompressed, dDecompressed ); }
+	void	DecodeDelta ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint32_t> & dDecompressed ) override	{ CODEC32::DecodeDelta ( dCompressed, dDecompressed ); }
+
+	void	Decode ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint64_t> & dDecompressed ) override		{ CODEC64::Decode ( dCompressed, dDecompressed ); }
+	void	DecodeDelta ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint64_t> & dDecompressed ) override	{ CODEC64::DecodeDelta ( dCompressed, dDecompressed ); }
+};
+
+template<typename CODEC32, typename CODEC64>
+IntCodec_T<CODEC32,CODEC64>::IntCodec_T( const std::string & sCodec32, const std::string & sCodec64 )
+	: CODEC32(sCodec32)
+	, CODEC64(sCodec64)
+{}
 
 //////////////////////////////////////////////////////////////////////////
 
@@ -237,7 +290,10 @@ void BitUnpack ( const util::Span_T<uint32_t> & dPacked, util::Span_T<uint32_t> 
 
 IntCodec_i * CreateIntCodec ( const std::string & sCodec32, const std::string & sCodec64 )
 {
-	return new IntCodec_c ( sCodec32, sCodec64 );
+	if ( sCodec32=="libstreamvbyte" )
+		return new IntCodec_T<Int32SVBCodec_c, Int64FastPFORCodec_c> ( sCodec32, sCodec64 );
+		
+	return new IntCodec_T<Int32FastPFORCodec_c, Int64FastPFORCodec_c> ( sCodec32, sCodec64 );
 }
 
 } // namespace util

@@ -35,7 +35,7 @@ include ( CheckFunctionExists )
 check_function_exists ( pread HAVE_PREAD )
 set_source_files_properties ( reader.cpp PROPERTIES COMPILE_DEFINITIONS HAVE_PREAD=${HAVE_PREAD} )
 
-target_link_libraries ( util PRIVATE FastPFOR::FastPFOR columnar_root )
+target_link_libraries ( util PRIVATE FastPFOR::FastPFOR streamvbyte::streamvbyte columnar_root )
 set_property ( TARGET util PROPERTY POSITION_INDEPENDENT_CODE ON )
 
 message ( STATUS "Version ${CMAKE_PROJECT_VERSION} ${GIT_COMMIT_ID}@${GIT_TIMESTAMP_ID}, ${GIT_BRANCH_ID}" )

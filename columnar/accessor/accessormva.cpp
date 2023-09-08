@@ -186,7 +186,7 @@ template <typename T>
 class StoredBlock_MvaConst_T
 {
 public:
-							StoredBlock_MvaConst_T ( const std::string & sCodec32, const std::string & sCodec64 ) : m_pCodec ( CreateIntCodec ( sCodec32, sCodec64 ) ) {}
+							StoredBlock_MvaConst_T ( const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion );
 
 	FORCE_INLINE void		ReadHeader ( FileReader_c & tReader );
 
@@ -196,14 +196,24 @@ public:
 
 private:
 	std::unique_ptr<IntCodec_i>	m_pCodec;
+	uint32_t					m_uVersion = 0;
 	SpanResizeable_T<T>			m_dValue;
 	Span_T<T>					m_dValueSpan;
 	SpanResizeable_T<uint32_t>	m_dTmp;
 };
 
 template <typename T>
+StoredBlock_MvaConst_T<T>::StoredBlock_MvaConst_T ( const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion )
+	: m_pCodec ( CreateIntCodec ( sCodec32, sCodec64 ) )
+	, m_uVersion ( uVersion )
+{}
+
+template <typename T>
 void StoredBlock_MvaConst_T<T>::ReadHeader ( FileReader_c & tReader )
 {
+	if ( m_uVersion>=11 )
+		m_dValue.resize ( tReader.Unpack_uint32() );
+
 	uint32_t uSize = tReader.Unpack_uint32();
 	DecodeValues_PFOR ( m_dValue, tReader, *m_pCodec, m_dTmp, uSize );
 	ComputeInverseDeltasAsc ( m_dValue );
@@ -216,9 +226,9 @@ template <typename T>
 class StoredBlock_MvaConstLen_T
 {
 public:
-						StoredBlock_MvaConstLen_T ( const std::string & sCodec32, const std::string & sCodec64 ) : m_pCodec ( CreateIntCodec ( sCodec32, sCodec64 ) ) {}
+						StoredBlock_MvaConstLen_T ( const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion );
 
-	FORCE_INLINE void	ReadHeader ( FileReader_c & tReader );
+	FORCE_INLINE void	ReadHeader ( FileReader_c & tReader, int iNumSubblocks );
 	FORCE_INLINE void	ReadSubblock ( int iSubblockId, int iSubblockValues, FileReader_c & tReader );
 
 	template <bool PACK>
@@ -228,6 +238,7 @@ public:
 
 private:
 	std::unique_ptr<IntCodec_i>	m_pCodec;
+	uint32_t					m_uVersion = 0;
 	SpanResizeable_T<uint32_t>	m_dSubblockCumulativeSizes;
 	SpanResizeable_T<uint32_t>	m_dTmp;
 
@@ -242,11 +253,19 @@ private:
 };
 
 template <typename T>
-void StoredBlock_MvaConstLen_T<T>::ReadHeader ( FileReader_c & tReader )
+StoredBlock_MvaConstLen_T<T>::StoredBlock_MvaConstLen_T ( const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion )
+	: m_pCodec ( CreateIntCodec ( sCodec32, sCodec64 ) )
+	, m_uVersion ( uVersion )
+{}
+
+template <typename T>
+void StoredBlock_MvaConstLen_T<T>::ReadHeader ( FileReader_c & tReader, int iNumSubblocks )
 {
+	m_dSubblockCumulativeSizes.resize(iNumSubblocks);
+
 	m_iLength = tReader.Unpack_uint32();
 	uint32_t uSubblockSize = tReader.Unpack_uint32();
-	DecodeValues_Delta_PFOR ( m_dSubblockCumulativeSizes, tReader, *m_pCodec, m_dTmp, uSubblockSize, false );
+	DecodeValues_Delta_PFOR ( m_dSubblockCumulativeSizes, tReader, *m_pCodec, m_dTmp, uSubblockSize, false, m_uVersion );
 
 	m_tValuesOffset = tReader.GetPos();
 	m_iSubblockId = -1;
@@ -296,9 +315,9 @@ template <typename T>
 class StoredBlock_MvaTable_T
 {
 public:
-								StoredBlock_MvaTable_T ( const std::string & sCodec32, const std::string & sCodec64, int iSubblockSize );
+								StoredBlock_MvaTable_T ( const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion, int iSubblockSize );
 
-	FORCE_INLINE void			ReadHeader ( FileReader_c & tReader, uint32_t uDocsInBlock );
+	FORCE_INLINE void			ReadHeader ( FileReader_c & tReader );
 	FORCE_INLINE void			ReadSubblock ( int iSubblockId, int iNumValues, FileReader_c & tReader );
 
 	template <bool PACK>
@@ -312,6 +331,7 @@ public:
 
 private:
 	std::unique_ptr<IntCodec_i>	m_pCodec;
+	uint32_t					m_uVersion = 0;
 	SpanResizeable_T<uint32_t>	m_dTmp;
 
 	SpanResizeable_T<uint32_t>	m_dLengths;
@@ -328,15 +348,19 @@ private:
 };
 
 template <typename T>
-StoredBlock_MvaTable_T<T>::StoredBlock_MvaTable_T ( const std::string & sCodec32, const std::string & sCodec64, int iSubblockSize )
+StoredBlock_MvaTable_T<T>::StoredBlock_MvaTable_T ( const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion, int iSubblockSize )
 	: m_pCodec ( CreateIntCodec ( sCodec32, sCodec64 ) )
+	, m_uVersion ( uVersion )
 {
 	m_dValueIndexes.resize(iSubblockSize);
 }
 
 template <typename T>
-void StoredBlock_MvaTable_T<T>::ReadHeader ( FileReader_c & tReader, uint32_t uDocsInBlock )
+void StoredBlock_MvaTable_T<T>::ReadHeader ( FileReader_c & tReader )
 {
+	if ( m_uVersion>=11 )
+		m_dLengths.resize ( tReader.Unpack_uint32() );
+
 	uint32_t uSizeOfLengths = tReader.Unpack_uint32();
 	DecodeValues_PFOR ( m_dLengths, tReader, *m_pCodec, m_dTmp, uSizeOfLengths );
 
@@ -380,9 +404,9 @@ template <typename T>
 class StoredBlock_MvaPFOR_T
 {
 public:
-							StoredBlock_MvaPFOR_T ( const std::string & sCodec32, const std::string & sCodec64 );
+							StoredBlock_MvaPFOR_T ( const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion );
 
-	FORCE_INLINE void		ReadHeader ( FileReader_c & tReader );
+	FORCE_INLINE void		ReadHeader ( FileReader_c & tReader, int iNumSubblocks );
 	FORCE_INLINE void		ReadSubblock ( int iSubblockId, int iSubblockValues, FileReader_c & tReader );
 
 	template <bool PACK>
@@ -392,6 +416,7 @@ public:
 
 private:
 	std::unique_ptr<IntCodec_i>	m_pCodec;
+	uint32_t					m_uVersion;
 	SpanResizeable_T<uint32_t>	m_dSubblockCumulativeSizes;
 	SpanResizeable_T<uint32_t>	m_dTmp;
 
@@ -404,15 +429,18 @@ private:
 };
 
 template <typename T>
-StoredBlock_MvaPFOR_T<T>::StoredBlock_MvaPFOR_T ( const std::string & sCodec32, const std::string & sCodec64 )
+StoredBlock_MvaPFOR_T<T>::StoredBlock_MvaPFOR_T ( const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion  )
 	: m_pCodec ( CreateIntCodec ( sCodec32, sCodec64 ) )
+	, m_uVersion ( uVersion )
 {}
 
 template <typename T>
-void StoredBlock_MvaPFOR_T<T>::ReadHeader ( FileReader_c & tReader )
+void StoredBlock_MvaPFOR_T<T>::ReadHeader ( FileReader_c & tReader, int iNumSubblocks )
 {
+	m_dSubblockCumulativeSizes.resize(iNumSubblocks);
+
 	uint32_t uSubblockSize = tReader.Unpack_uint32();
-	DecodeValues_Delta_PFOR ( m_dSubblockCumulativeSizes, tReader, *m_pCodec, m_dTmp, uSubblockSize, false );
+	DecodeValues_Delta_PFOR ( m_dSubblockCumulativeSizes, tReader, *m_pCodec, m_dTmp, uSubblockSize, false, m_uVersion );
 
 	m_tValuesOffset = tReader.GetPos();
 	m_iSubblockId = -1;
@@ -440,6 +468,7 @@ void StoredBlock_MvaPFOR_T<T>::ReadSubblock ( int iSubblockId, int iSubblockValu
 	uint32_t uSize1 = tReader.Unpack_uint32();
 	int64_t iDelta  = tReader.GetPos()-iOffset;
 
+	m_dLengths.resize(iSubblockValues);
 	DecodeValues_PFOR ( m_dLengths, tReader, *m_pCodec, m_dTmp, uSize1 );
 	uint32_t uTotalLength = 0;
 	for ( auto i : m_dLengths )
@@ -467,7 +496,7 @@ class Accessor_MVA_T : public StoredBlockTraits_t
 	using BASE = StoredBlockTraits_t;
 
 public:
-									Accessor_MVA_T ( const AttributeHeader_i & tHeader, FileReader_c * pReader );
+									Accessor_MVA_T ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader );
 
 	FORCE_INLINE void				SetCurBlock ( uint32_t uBlockId );
 
@@ -506,14 +535,14 @@ protected:
 };
 
 template<typename T>
-Accessor_MVA_T<T>::Accessor_MVA_T ( const AttributeHeader_i & tHeader, FileReader_c * pReader )
+Accessor_MVA_T<T>::Accessor_MVA_T ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader )
 	: StoredBlockTraits_t ( tHeader.GetSettings().m_iSubblockSize )
 	, m_tHeader ( tHeader )
 	, m_pReader ( pReader )
-	, m_tBlockConst ( tHeader.GetSettings().m_sCompressionUINT32, tHeader.GetSettings().m_sCompressionUINT64 )
-	, m_tBlockConstLen ( tHeader.GetSettings().m_sCompressionUINT32, tHeader.GetSettings().m_sCompressionUINT64 )
-	, m_tBlockTable ( tHeader.GetSettings().m_sCompressionUINT32, tHeader.GetSettings().m_sCompressionUINT64, tHeader.GetSettings().m_iSubblockSize )
-	, m_tBlockPFOR ( tHeader.GetSettings().m_sCompressionUINT32, tHeader.GetSettings().m_sCompressionUINT64 )
+	, m_tBlockConst ( tHeader.GetSettings().m_sCompressionUINT32, tHeader.GetSettings().m_sCompressionUINT64, uVersion )
+	, m_tBlockConstLen ( tHeader.GetSettings().m_sCompressionUINT32, tHeader.GetSettings().m_sCompressionUINT64, uVersion )
+	, m_tBlockTable ( tHeader.GetSettings().m_sCompressionUINT32, tHeader.GetSettings().m_sCompressionUINT64, uVersion, tHeader.GetSettings().m_iSubblockSize )
+	, m_tBlockPFOR ( tHeader.GetSettings().m_sCompressionUINT32, tHeader.GetSettings().m_sCompressionUINT64, uVersion )
 {
 	assert(pReader);
 }
@@ -525,6 +554,10 @@ void Accessor_MVA_T<T>::SetCurBlock ( uint32_t uBlockId )
 	m_ePacking = (MvaPacking_e)m_pReader->Unpack_uint32();
 
 	uint32_t uDocsInBlock = m_tHeader.GetNumDocs(uBlockId);
+	m_tRequestedRowID = INVALID_ROW_ID;
+	m_pResult = nullptr;
+
+	SetBlockId ( uBlockId, uDocsInBlock );
 
 	switch ( m_ePacking )
 	{
@@ -539,32 +572,27 @@ void Accessor_MVA_T<T>::SetCurBlock ( uint32_t uBlockId )
 		m_fnReadValue		= &Accessor_MVA_T<T>::ReadValue_ConstLen<false>;
 		m_fnReadValuePacked = &Accessor_MVA_T<T>::ReadValue_ConstLen<true>;
 		m_fnGetValueLength	= &Accessor_MVA_T<T>::GetValueLength_ConstLen;
-		m_tBlockConstLen.ReadHeader ( *m_pReader );
+		m_tBlockConstLen.ReadHeader ( *m_pReader, m_iNumSubblocks );
 		break;
 
 	case MvaPacking_e::TABLE:
 		m_fnReadValue		= &Accessor_MVA_T<T>::ReadValue_Table<false>;
 		m_fnReadValuePacked = &Accessor_MVA_T<T>::ReadValue_Table<true>;
 		m_fnGetValueLength	= &Accessor_MVA_T<T>::GetValueLength_Table;
-		m_tBlockTable.ReadHeader ( *m_pReader, uDocsInBlock );
+		m_tBlockTable.ReadHeader ( *m_pReader );
 		break;
 
 	case MvaPacking_e::DELTA_PFOR:
 		m_fnReadValue		= &Accessor_MVA_T<T>::ReadValue_PFOR<false>;
 		m_fnReadValuePacked = &Accessor_MVA_T<T>::ReadValue_PFOR<true>;
 		m_fnGetValueLength	= &Accessor_MVA_T<T>::GetValueLength_PFOR;
-		m_tBlockPFOR.ReadHeader ( *m_pReader );
+		m_tBlockPFOR.ReadHeader ( *m_pReader, m_iNumSubblocks );
 		break;
 
 	default:
 		assert ( 0 && "Packing not implemented yet" );
 		break;
 	}
-
-	m_tRequestedRowID = INVALID_ROW_ID;
-	m_pResult = nullptr;
-
-	SetBlockId ( uBlockId, uDocsInBlock );
 }
 
 template <typename T>
@@ -873,7 +901,7 @@ class Analyzer_MVA_T : public Analyzer_T<HAVE_MATCHING_BLOCKS>, public Accessor_
 	using ACCESSOR = Accessor_MVA_T<T>;
 
 public:
-				Analyzer_MVA_T ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings );
+				Analyzer_MVA_T ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader, const Filter_t & tSettings );
 
 	bool		GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBlock ) final;
 	void		AddDesc ( std::vector<IteratorDesc_t> & dDesc ) const final { dDesc.push_back ( { ACCESSOR::m_tHeader.GetName(), "ColumnarScan" } ); }
@@ -907,9 +935,9 @@ private:
 };
 
 template <typename T, typename T_COMP, typename FUNC, bool HAVE_MATCHING_BLOCKS>
-Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::Analyzer_MVA_T ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings )
+Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::Analyzer_MVA_T ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader, const Filter_t & tSettings )
 	: ANALYZER ( tHeader.GetSettings().m_iSubblockSize )
-	, ACCESSOR ( tHeader, pReader )
+	, ACCESSOR ( tHeader, uVersion, pReader )
 	, m_tBlockConst ( ANALYZER::m_tRowID )
 	, m_tBlockTable ( ANALYZER::m_tRowID )
 	, m_tBlockValues ( ANALYZER::m_tRowID )
@@ -1055,16 +1083,16 @@ bool Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::MoveToBlock ( int iNext
 
 //////////////////////////////////////////////////////////////////////////
 
-Iterator_i * CreateIteratorMVA ( const AttributeHeader_i & tHeader, FileReader_c * pReader )
+Iterator_i * CreateIteratorMVA ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader )
 {
 	if ( tHeader.GetType()==AttrType_e::UINT32SET )
-		return new Iterator_MVA_T<uint32_t> ( tHeader, pReader );
+		return new Iterator_MVA_T<uint32_t> ( tHeader, uVersion, pReader );
 
-	return new Iterator_MVA_T<uint64_t> ( tHeader, pReader );
+	return new Iterator_MVA_T<uint64_t> ( tHeader, uVersion, pReader );
 }
 
 template <typename ANY, typename ALL>
-static Analyzer_i * CreateAnalyzerMVA ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings, bool bHaveMatchingBlocks )
+static Analyzer_i * CreateAnalyzerMVA ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader, const Filter_t & tSettings, bool bHaveMatchingBlocks )
 {
 	bool b64 = tHeader.GetType()==AttrType_e::INT64SET;
 	bool bAny = tSettings.m_eMvaAggr==MvaAggr_e::ANY;
@@ -1072,19 +1100,19 @@ static Analyzer_i * CreateAnalyzerMVA ( const AttributeHeader_i & tHeader, FileR
 
 	switch ( iIndex )
 	{
-	case 0:		return new Analyzer_MVA_T<uint32_t, uint32_t, ALL, false> ( tHeader, pReader, tSettings );
-	case 1:		return new Analyzer_MVA_T<uint32_t, uint32_t, ALL, true>  ( tHeader, pReader, tSettings );
-	case 2:		return new Analyzer_MVA_T<uint32_t, uint32_t, ANY, false> ( tHeader, pReader, tSettings );
-	case 3:		return new Analyzer_MVA_T<uint32_t, uint32_t, ANY, true>  ( tHeader, pReader, tSettings );
-	case 4:		return new Analyzer_MVA_T<uint64_t, int64_t,  ALL, false> ( tHeader, pReader, tSettings );
-	case 5:		return new Analyzer_MVA_T<uint64_t, int64_t,  ALL, true>  ( tHeader, pReader, tSettings );
-	case 6:		return new Analyzer_MVA_T<uint64_t, int64_t,  ANY, false> ( tHeader, pReader, tSettings );
-	case 7:		return new Analyzer_MVA_T<uint64_t, int64_t,  ANY, true>  ( tHeader, pReader, tSettings );
+	case 0:		return new Analyzer_MVA_T<uint32_t, uint32_t, ALL, false> ( tHeader, uVersion, pReader, tSettings );
+	case 1:		return new Analyzer_MVA_T<uint32_t, uint32_t, ALL, true>  ( tHeader, uVersion, pReader, tSettings );
+	case 2:		return new Analyzer_MVA_T<uint32_t, uint32_t, ANY, false> ( tHeader, uVersion, pReader, tSettings );
+	case 3:		return new Analyzer_MVA_T<uint32_t, uint32_t, ANY, true>  ( tHeader, uVersion, pReader, tSettings );
+	case 4:		return new Analyzer_MVA_T<uint64_t, int64_t,  ALL, false> ( tHeader, uVersion, pReader, tSettings );
+	case 5:		return new Analyzer_MVA_T<uint64_t, int64_t,  ALL, true>  ( tHeader, uVersion, pReader, tSettings );
+	case 6:		return new Analyzer_MVA_T<uint64_t, int64_t,  ANY, false> ( tHeader, uVersion, pReader, tSettings );
+	case 7:		return new Analyzer_MVA_T<uint64_t, int64_t,  ANY, true>  ( tHeader, uVersion, pReader, tSettings );
 	default:	return nullptr;
 	}
 }
 
-Analyzer_i * CreateAnalyzerMVA ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings, bool bHaveMatchingBlocks )
+Analyzer_i * CreateAnalyzerMVA ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader, const Filter_t & tSettings, bool bHaveMatchingBlocks )
 {
 	bool bLeftClosed	= tSettings.m_bLeftClosed;
 	bool bRightClosed	= tSettings.m_bRightClosed;
@@ -1094,14 +1122,14 @@ Analyzer_i * CreateAnalyzerMVA ( const AttributeHeader_i & tHeader, FileReader_c
 
 	switch ( iIndex )
 	{
-	case 0:		return CreateAnalyzerMVA < MvaAny_T<false,false,false>, MvaAll_T<false,false,false> > ( tHeader, pReader, tSettings, bHaveMatchingBlocks );
-	case 1:		return CreateAnalyzerMVA < MvaAny_T<false,false,true >, MvaAll_T<false,false,true > > ( tHeader, pReader, tSettings, bHaveMatchingBlocks );
-	case 2:		return CreateAnalyzerMVA < MvaAny_T<false,true, false>, MvaAll_T<false,true, false> > ( tHeader, pReader, tSettings, bHaveMatchingBlocks );
-	case 3:		return CreateAnalyzerMVA < MvaAny_T<false,true, true >, MvaAll_T<false,true, true > > ( tHeader, pReader, tSettings, bHaveMatchingBlocks );
-	case 4:		return CreateAnalyzerMVA < MvaAny_T<true, false,false>, MvaAll_T<true, false,false> > ( tHeader, pReader, tSettings, bHaveMatchingBlocks );
-	case 5:		return CreateAnalyzerMVA < MvaAny_T<true, false,true >, MvaAll_T<true, false,true > > ( tHeader, pReader, tSettings, bHaveMatchingBlocks );
-	case 6:		return CreateAnalyzerMVA < MvaAny_T<true, true, false>, MvaAll_T<true, true, false> > ( tHeader, pReader, tSettings, bHaveMatchingBlocks );
-	case 7:		return CreateAnalyzerMVA < MvaAny_T<true, true, true >, MvaAll_T<true, true, true > > ( tHeader, pReader, tSettings, bHaveMatchingBlocks );
+	case 0:		return CreateAnalyzerMVA < MvaAny_T<false,false,false>, MvaAll_T<false,false,false> > ( tHeader, uVersion, pReader, tSettings, bHaveMatchingBlocks );
+	case 1:		return CreateAnalyzerMVA < MvaAny_T<false,false,true >, MvaAll_T<false,false,true > > ( tHeader, uVersion, pReader, tSettings, bHaveMatchingBlocks );
+	case 2:		return CreateAnalyzerMVA < MvaAny_T<false,true, false>, MvaAll_T<false,true, false> > ( tHeader, uVersion, pReader, tSettings, bHaveMatchingBlocks );
+	case 3:		return CreateAnalyzerMVA < MvaAny_T<false,true, true >, MvaAll_T<false,true, true > > ( tHeader, uVersion, pReader, tSettings, bHaveMatchingBlocks );
+	case 4:		return CreateAnalyzerMVA < MvaAny_T<true, false,false>, MvaAll_T<true, false,false> > ( tHeader, uVersion, pReader, tSettings, bHaveMatchingBlocks );
+	case 5:		return CreateAnalyzerMVA < MvaAny_T<true, false,true >, MvaAll_T<true, false,true > > ( tHeader, uVersion, pReader, tSettings, bHaveMatchingBlocks );
+	case 6:		return CreateAnalyzerMVA < MvaAny_T<true, true, false>, MvaAll_T<true, true, false> > ( tHeader, uVersion, pReader, tSettings, bHaveMatchingBlocks );
+	case 7:		return CreateAnalyzerMVA < MvaAny_T<true, true, true >, MvaAll_T<true, true, true > > ( tHeader, uVersion, pReader, tSettings, bHaveMatchingBlocks );
 	default:	return nullptr;
 	}
 }

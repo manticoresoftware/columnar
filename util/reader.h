@@ -136,10 +136,9 @@ void ReadVectorPacked ( std::vector<uint64_t> & dData, FileReader_c & tReader );
 template<typename VEC>
 FORCE_INLINE void ReadVectorLen32 ( VEC & dData, FileReader_c & tReader )
 {
-	size_t uOff = dData.size();
 	uint32_t uLen =  tReader.Unpack_uint32();
-	dData.resize ( uOff + uLen );
-	tReader.Read ( (uint8_t *)( dData.data() + uOff ), sizeof ( dData[0] ) * uLen );
+	dData.resize(uLen);
+	tReader.Read ( (uint8_t *)( dData.data() ), sizeof ( dData[0] ) * uLen );
 }
 
 template<typename T>
