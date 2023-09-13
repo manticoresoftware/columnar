@@ -38,7 +38,7 @@ namespace common
 namespace SI
 {
 
-static const int LIB_VERSION = 10;
+static const int LIB_VERSION = 11;
 static const uint32_t STORAGE_VERSION = 8;
 
 class Index_i
