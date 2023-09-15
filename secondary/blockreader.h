@@ -66,6 +66,16 @@ struct RsetInfo_t
 };
 
 
+enum class Packing_e : uint32_t
+{
+	ROW,
+	ROW_BLOCK,
+	ROW_BLOCKS_LIST,
+
+	TOTAL
+};
+
+
 struct ColumnInfo_t
 {
 	common::AttrType_e m_eType = common::AttrType_e::NONE;
@@ -75,6 +85,16 @@ struct ColumnInfo_t
 
 	void		Load ( util::FileReader_c & tReader );
 	void		Save ( util::FileWriter_c & tWriter ) const; 
+};
+
+
+struct Settings_t
+{
+	std::string	m_sCompressionUINT32 = "libstreamvbyte";
+	std::string	m_sCompressionUINT64 = "fastpfor256";
+
+	void		Load ( util::FileReader_c & tReader, uint32_t uVersion );
+	void		Save ( util::FileWriter_c & tWriter ) const;
 };
 
 

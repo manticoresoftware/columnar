@@ -45,24 +45,6 @@ namespace SI
 
 /////////////////////////////////////////////////////////////////////
 
-void Settings_t::Load ( FileReader_c & tReader, uint32_t uVersion )
-{
-	m_sCompressionUINT32 = tReader.Read_string();
-	m_sCompressionUINT64 = tReader.Read_string();
-
-	if ( uVersion<8 && m_sCompressionUINT32=="libstreamvbyte" )
-		m_sCompressionUINT32 = "streamvbyte";
-}
-
-
-void Settings_t::Save ( FileWriter_c & tWriter ) const
-{
-	tWriter.Write_string(m_sCompressionUINT32);
-	tWriter.Write_string(m_sCompressionUINT64);
-}
-
-/////////////////////////////////////////////////////////////////////
-
 class SIWriter_i
 {
 public:
@@ -1037,9 +1019,10 @@ RawValue_T<uint64_t> Convert ( const BinValue_T<uint64_t> & tSrc )
 } // namespace SI
 
 
-SI::Builder_i * CreateBuilder ( const SI::Settings_t & tSettings, const Schema_t & tSchema, int iMemoryLimit, const std::string & sFile, std::string & sError )
+SI::Builder_i * CreateBuilder ( const Schema_t & tSchema, int iMemoryLimit, const std::string & sFile, std::string & sError )
 {
 	std::unique_ptr<SI::Builder_c> pBuilder ( new SI::Builder_c );
+	SI::Settings_t tSettings;
 	if ( !pBuilder->Setup ( tSettings, tSchema, iMemoryLimit, sFile, sError ) )
 		return nullptr;
 

@@ -48,6 +48,21 @@ void ColumnInfo_t::Save ( util::FileWriter_c & tWriter ) const
 
 /////////////////////////////////////////////////////////////////////
 
+void Settings_t::Load ( FileReader_c & tReader, uint32_t uVersion )
+{
+	m_sCompressionUINT32 = tReader.Read_string();
+	m_sCompressionUINT64 = tReader.Read_string();
+}
+
+
+void Settings_t::Save ( FileWriter_c & tWriter ) const
+{
+	tWriter.Write_string(m_sCompressionUINT32);
+	tWriter.Write_string(m_sCompressionUINT64);
+}
+
+/////////////////////////////////////////////////////////////////////
+
 static uint64_t GetValueBlock ( uint64_t uPos, uint32_t uValuesPerBlock )
 {
 	return uPos / uValuesPerBlock;

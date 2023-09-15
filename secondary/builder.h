@@ -22,34 +22,8 @@
 #include "util/util.h"
 #include "common/schema.h"
 
-namespace util
-{
-	class FileReader_c;
-	class FileWriter_c;
-}
-
 namespace SI
 {
-
-struct Settings_t
-{
-	std::string	m_sCompressionUINT32 = "libstreamvbyte";
-	std::string	m_sCompressionUINT64 = "fastpfor256";
-
-	void		Load ( util::FileReader_c & tReader, uint32_t uVersion );
-	void		Save ( util::FileWriter_c & tWriter ) const;
-};
-
-
-enum class Packing_e : uint32_t
-{
-	ROW,
-	ROW_BLOCK,
-	ROW_BLOCKS_LIST,
-
-	TOTAL
-};
-
 
 class Builder_i
 {
@@ -69,5 +43,5 @@ public:
 
 extern "C"
 {
-	DLLEXPORT SI::Builder_i * CreateBuilder ( const SI::Settings_t & tSettings, const common::Schema_t & tSchema, int iMemoryLimit, const std::string & sFile, std::string & sError );
+	DLLEXPORT SI::Builder_i * CreateBuilder ( const common::Schema_t & tSchema, int iMemoryLimit, const std::string & sFile, std::string & sError );
 }

@@ -32,6 +32,7 @@ enum class StrPacking_e : uint32_t
 };
 
 class Packer_i;
+struct Settings_t;
 Packer_i * CreatePackerStr ( const Settings_t & tSettings, const std::string & sName );
 
 } // namespace columnar

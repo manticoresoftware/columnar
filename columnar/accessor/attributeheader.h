@@ -26,6 +26,8 @@ namespace util
 namespace columnar
 {
 
+struct Settings_t;
+
 class AttributeHeader_i
 {
 public:

@@ -229,8 +229,9 @@ bool CheckSubblockSize ( int iSubblockSize, std::string & sError )
 } // namespace columnar
 
 
-columnar::Builder_i * CreateColumnarBuilder ( const columnar::Settings_t & tSettings, const columnar::Schema_t & tSchema, const std::string & sFile, std::string & sError )
+columnar::Builder_i * CreateColumnarBuilder ( const columnar::Schema_t & tSchema, const std::string & sFile, std::string & sError )
 {
+	columnar::Settings_t tSettings;
 	if ( !columnar::CheckSubblockSize ( tSettings.m_iSubblockSize, sError ) )
 		return nullptr;
 

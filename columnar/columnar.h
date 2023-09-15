@@ -34,7 +34,7 @@ namespace util
 namespace columnar
 {
 
-static const int LIB_VERSION = 22;
+static const int LIB_VERSION = 23;
 
 class Iterator_i
 {
@@ -75,18 +75,6 @@ struct IteratorCapabilities_t
 };
 
 using Reporter_fn = std::function<void (const char*)>;
-
-struct Settings_t
-{
-	int			m_iSubblockSize = 1024;
-	std::string	m_sCompressionUINT32 = "libstreamvbyte";
-	std::string	m_sCompressionUINT64 = "fastpfor256";
-
-	void		Load ( util::FileReader_c & tReader );
-	void		Save ( util::FileWriter_c & tWriter );
-	bool		Check ( util::FileReader_c & tReader, Reporter_fn & fnError );
-};
-
 
 struct AttrInfo_t
 {
