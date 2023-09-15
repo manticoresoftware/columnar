@@ -32,7 +32,7 @@ public:
 	bool		Save ( util::FileWriter_c & tWriter, std::string & sError );
 
 private:
-	const Settings_t & m_tSettings;
+	Settings_t	m_tSettings;
 
 	using TreeLevel_t = std::vector<std::pair<T,T>>;
 	std::vector<TreeLevel_t> m_dTreeLevels;

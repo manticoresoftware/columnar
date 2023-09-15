@@ -43,17 +43,17 @@ struct Settings_t
 class AttributeHeaderBuilder_c
 {
 public:
-				AttributeHeaderBuilder_c ( const Settings_t & tSettings, const std::string & sName, common::AttrType_e eType );
+						AttributeHeaderBuilder_c ( const Settings_t & tSettings, const std::string & sName, common::AttrType_e eType );
 
 	common::AttrType_e	GetType() const { return m_eType; }
-	const		Settings_t & GetSettings() const { return m_tSettings; }
-	void		AddBlock ( uint64_t uOffset, uint32_t uPacking ) { m_dBlocks.push_back ( { uOffset, uPacking } ); }
-	bool		Save ( util::FileWriter_c & tWriter, int64_t & tBaseOffset, std::string & sError );
+	const Settings_t &	GetSettings() const { return m_tSettings; }
+	void				AddBlock ( uint64_t uOffset, uint32_t uPacking ) { m_dBlocks.push_back ( { uOffset, uPacking } ); }
+	bool				Save ( util::FileWriter_c & tWriter, int64_t & tBaseOffset, std::string & sError );
 
 private:
-	std::string				m_sName;
-	common::AttrType_e		m_eType = common::AttrType_e::NONE;
-	Settings_t				m_tSettings;
+	std::string			m_sName;
+	common::AttrType_e	m_eType = common::AttrType_e::NONE;
+	Settings_t			m_tSettings;
 
 	std::vector<std::pair<int64_t,uint32_t>>	m_dBlocks;
 };
