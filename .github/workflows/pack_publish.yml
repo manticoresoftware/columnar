@@ -192,3 +192,61 @@ jobs:
           artifact: build_windows_RelWithDebInfo_x64
           type: arc
           delimiter: "-"
+  vars:
+    name: Detecting versions
+    needs:
+      - publish_debian_ubuntu
+      - publish_rhel
+      - publish_macos
+      - publish_windows
+    runs-on: ubuntu-22.04
+    outputs:
+      app_version: ${{ steps.vars.outputs.app_version }}
+      app_date: ${{ steps.vars.outputs.app_date }}
+      app_commit: ${{ steps.vars.outputs.app_commit }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - id: vars
+        run: |
+          version=$( cat CMakeLists.txt | grep 'columnar VERSION' | cut -d' ' -f5  )
+          date=$( git log -1 --date=short --format=%cd | cut -c3- | tr -d '-' )
+          commit=${GITHUB_SHA:0:7}
+
+          echo "app_version=$version" >> $GITHUB_OUTPUT
+          echo "app_date=$date" >> $GITHUB_OUTPUT
+          echo "app_commit=$commit" >> $GITHUB_OUTPUT
+
+  update-manticoresearch-deps:
+    name: Updating deps of manticoresearch
+    needs:
+      - vars
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout manticoresearch
+        uses: actions/checkout@v3
+        with:
+          repository: "manticoresoftware/manticoresearch"
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update deps.txt
+        id: deps
+        run: |
+          version=${{ needs.vars.outputs.app_version }}
+          date=${{ needs.vars.outputs.app_date }}
+          commit=${{ needs.vars.outputs.app_commit }}
+
+          version_string="$version $date $commit"
+          echo "version_string=${version_string// /-}" >> $GITHUB_OUTPUT
+          sed -i '/^mcl\s/c\mcl '"$version_string" deps.txt
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.PR_TOKEN }}
+          commit-message: "Bump columnar version to: ${{ steps.deps.outputs.version_string }}"
+          title: "Update columnar version"
+          body: "Updating columnar version to ${{ steps.deps.outputs.version_string }}"
+          branch: "update-columnar-version"
+          draft: false
