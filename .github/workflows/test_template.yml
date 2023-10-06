@@ -63,7 +63,7 @@ jobs:
         uses: manticoresoftware/download_artifact_with_retries@v2
         with:
           name: build_bionic_${{ inputs.CTEST_CONFIGURATION_TYPE }}_x86_64
-          path: build
+          path: .
 
       - name: Check out main cache before building
         uses: actions/cache@v3.3.1
