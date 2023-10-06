@@ -22,12 +22,12 @@ on:
 jobs:
   test_windows:
     name: ${{ inputs.CTEST_START }}_${{ inputs.CTEST_END }}
-    runs-on: windows-2019
+    runs-on: windows-2022
     env:
       CACHEB: "D:/a/columnar/columnar/cache"
       LIBS_BUNDLE: "D:/a/columnar/columnar/bundle"
       BOOST_ROOT: "D:/a/columnar/columnar/boost_1_75_0"
-      CTEST_CMAKE_GENERATOR: "Visual Studio 16 2019"
+      CTEST_CMAKE_GENERATOR: "Visual Studio 17 2022"
       CTEST_CONFIGURATION_TYPE: Debug
       CTEST_START: ${{ inputs.CTEST_START }}
       CTEST_END: ${{ inputs.CTEST_END }}
@@ -74,13 +74,16 @@ jobs:
           cp bundle/Expat-1.95.8-x64/Libs/libexpat* build/_deps/manticore-build/src/Debug/
           cp bundle/libiconv-1.9.1-x64/lib/iconv* build/_deps/manticore-build/src/Debug/
       - name: Setup Flex and Bison
-        run: choco install winflexbison
+        run: Choco-Install -PackageName winflexbison
       - name: Run mysql
         run: |
           C:\PROGRA~1\MySQL\"MySQL Server 8.0"\bin\mysqld.exe --initialize-insecure
           C:\PROGRA~1\MySQL\"MySQL Server 8.0"\bin\mysqld.exe --install mysql
           net start mysql
           mysql -e "create user 'test'@'localhost' IDENTIFIED WITH mysql_native_password BY ''; create database test; grant all on test.* to 'test'@'localhost'; flush privileges;" -uroot
+      # TODO: Uncomment the below if there's no more OpenSSL in the runner like it happened in Sep 2023 (https://github.com/actions/runner-images/issues/8344)
+      # - name: Install OpenSSL
+      #   run: powershell.exe ./.github/workflows/Install-OpenSSL.ps1
       - name: Setup PHP and mysqli
         uses: shivammathur/setup-php@v2
         with:
@@ -89,6 +92,7 @@ jobs:
       - name: 🚀 Test
         id: test
         # --timeout may be not working https://gitlab.kitware.com/cmake/cmake/-/issues/23979
+        # Add -VV to ctest to display extra debug info
         run: ctest -V -S cmake/citest.cmake -C $CTEST_CONFIGURATION_TYPE --no-compress-output --timeout 60
         continue-on-error: true
       - name: Remember status
