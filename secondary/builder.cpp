@@ -608,7 +608,7 @@ struct ScopedFilesRemoval_t
 	{
 		for ( const std::string & sFile : m_dFiles )
 		{
-			if ( IsFileExists ( sFile ))
+			if ( IsFileExists ( sFile ) )
 				::unlink ( sFile.c_str() );
 		}
 	}
@@ -684,10 +684,13 @@ bool Builder_c::Setup ( const Settings_t & tSettings, const Schema_t & tSchema, 
 			return false;
 		}
 
-		if ( !pWriter->Setup ( sFile, tSrcAttr, iAttr++, sError ) )
+		bool bOpened = pWriter->Setup ( sFile, tSrcAttr, iAttr++, sError );
+		if ( pWriter ) // should track files and remove all tmp file on any error
+			m_tCleanup.m_dFiles.push_back ( pWriter->GetFilename() );
+		if ( !bOpened )
 			return false;
 
-		m_dRawWriter.push_back(pWriter);
+		m_dRawWriter.push_back ( pWriter );
 		ColumnInfo_t tInfo;
 		tInfo.m_eType = tSrcAttr.m_eType;
 		tInfo.m_sName = tSrcAttr.m_sName;
@@ -707,7 +710,6 @@ bool Builder_c::Setup ( const Settings_t & tSettings, const Schema_t & tSchema, 
 			continue;
 
 		pWriter->SetItemsCount ( m_iMaxRows );
-		m_tCleanup.m_dFiles.push_back ( pWriter->GetFilename() );
 	}
 
 	return true;
