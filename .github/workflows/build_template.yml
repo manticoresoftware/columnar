@@ -34,7 +34,7 @@ on:
       artifact_list:
         required: false
         type: string
-        default: "build/xml build/columnar/lib_manticore_columnar.so build/secondary/lib_manticore_secondary.so build/_deps/manticore-build/src/searchd build/_deps/manticore-build/src/indexer build/_deps/manticore-build/src/indextool build/_deps/manticore-build/config/*.c build/_deps/manticore-build/config/*.h"
+        default: "build/columnar/lib_manticore_columnar.so build/secondary/lib_manticore_secondary.so build/_deps/manticore-build/src/searchd build/_deps/manticore-build/src/indexer build/_deps/manticore-build/src/indextool build/_deps/manticore-build/config/*.c build/_deps/manticore-build/config/*.h"
       HOMEBREW_PREFIX:
         required: false
         type: string
@@ -98,7 +98,7 @@ jobs:
 
       - name: Upload build artifacts
         if: success()
-        uses: manticoresoftware/upload_artifact_with_retries@v1
+        uses: manticoresoftware/upload_artifact_with_retries@v2
         with:
           name: build_${{ inputs.DISTR }}_${{ inputs.CTEST_CONFIGURATION_TYPE }}_${{ inputs.arch }}
           path: ${{ inputs.artifact_list }}
