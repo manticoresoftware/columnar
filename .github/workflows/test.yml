@@ -73,7 +73,7 @@ jobs:
       CTEST_CMAKE_GENERATOR: "Ninja Multi-Config"
       CTEST_CONFIGURATION_TYPE: Debug
       cache_key: build_windows_x64
-      artifact_list: "build/xml build/columnar/Debug/lib_manticore_columnar.dll build/secondary/Debug/lib_manticore_secondary.dll build/_deps/manticore-build/src/Debug/indexer.exe build/_deps/manticore-build/src/Debug/searchd.exe" #
+      artifact_list: "build/columnar/Debug/lib_manticore_columnar.dll build/secondary/Debug/lib_manticore_secondary.dll build/_deps/manticore-build/src/Debug/indexer.exe build/_deps/manticore-build/src/Debug/searchd.exe" #
       MANTICORE_LOCATOR: ${{ github.event.schedule == '00 20 * * *' && 'GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG master' || '' }}
 
   test_linux_debug:
@@ -198,7 +198,7 @@ jobs:
       - name: Upload combined artifacts
         if: always()
         continue-on-error: true
-        uses: manticoresoftware/upload_artifact_with_retries@v1
+        uses: manticoresoftware/upload_artifact_with_retries@v2
         with:
           name: debug_test_resuls
           path: build
@@ -325,7 +325,7 @@ jobs:
       - name: Upload combined artifacts
         if: always()
         continue-on-error: true
-        uses: manticoresoftware/upload_artifact_with_retries@v1
+        uses: manticoresoftware/upload_artifact_with_retries@v2
         with:
           name: release_test_resuls
           path: build
@@ -426,7 +426,7 @@ jobs:
       - name: Upload combined artifacts
         if: always()
         continue-on-error: true
-        uses: manticoresoftware/upload_artifact_with_retries@v1
+        uses: manticoresoftware/upload_artifact_with_retries@v2
         with:
           name: windows_test_resuls
           path: build
