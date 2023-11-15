@@ -43,6 +43,18 @@ int CalcNumBits ( uint64_t uNumber )
     return iNumBits;
 }
 
+
+void NormalizeVec ( util::Span_T<float> & dData )
+{
+	float fNorm = 0.0f;
+	for ( auto i : dData )
+		fNorm += i*i;
+
+	fNorm = 1.0f / ( sqrtf(fNorm) + 1e-30f );
+	for ( auto & i : dData )
+		i *= fNorm;
+}
+
 /////////////////////////////////////////////////////////////////////
 
 class ScopedFile_c

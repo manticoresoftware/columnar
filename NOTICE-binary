@@ -48,3 +48,6 @@ https://github.com/simd-everywhere/simde, which has the
 following notices:
 
 Copyright (c) 2017 Evan Nemerson <evan@nemerson.com>
+-------------------------------------------------------------------------------
+The binary distribution of this product bundles binaries of HNSW index https://github.com/manticoresoftware/hnswlib,
+which is a fork of https://github.com/nmslib/hnswlib

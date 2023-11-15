@@ -14,43 +14,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// This file is a part of the common headers (API).
-// If you make any significant changes to this file, you MUST bump the LIB_VERSION in columnar.h or secondary.h
-
 #pragma once
 
-#include <vector>
-#include <string>
+#include "knn.h"
 
-namespace common
+namespace knn
 {
 
-enum class AttrType_e : uint32_t
+class KNNIndex_i
 {
-	NONE,
-	UINT32,
-	TIMESTAMP,
-	INT64,
-	UINT64,
-	BOOLEAN,
-	FLOAT,
-	STRING,
-	UINT32SET,
-	INT64SET,
-	FLOATVEC,
-
-	TOTAL
+public:
+	virtual			~KNNIndex_i() = default;
+	virtual void	Search ( std::vector<DocDist_t> & dResults, const util::Span_T<float> & dData, int iResults ) = 0;
 };
 
-using StringHash_fn = uint64_t (*)( const uint8_t * pStr, int iLen, uint64_t uPrev );
+Iterator_i * CreateIterator ( KNNIndex_i & tIndex, const util::Span_T<float> & dData, int iResults );
 
-struct SchemaAttr_t
-{
-	std::string		m_sName;
-	AttrType_e		m_eType = AttrType_e::NONE;
-	StringHash_fn	m_fnCalcHash = nullptr;
-};
-
-using Schema_t = std::vector<SchemaAttr_t>;
-
-} // namespace common
+} // namespace knn

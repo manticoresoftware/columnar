@@ -393,6 +393,7 @@ AttributeHeader_i * CreateAttributeHeader ( AttrType_e eType, uint32_t uTotalDoc
 		return new AttributeHeader_Int_T<uint8_t> ( eType, uTotalDocs );
 
 	case AttrType_e::FLOAT:
+	case AttrType_e::FLOATVEC:
 		return new AttributeHeader_Int_T<float> ( eType, uTotalDocs );
 
 	case AttrType_e::STRING:

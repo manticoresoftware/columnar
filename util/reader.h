@@ -38,6 +38,8 @@ public:
 	int						GetFD() const			{ return m_iFD; }
 	const std::string &		GetFilename() const		{ return m_sFile; }
 	int64_t					GetFileSize();
+
+	template <typename T> void Read ( T & tValue )	{ Read ( (uint8_t *)&tValue, sizeof(tValue) ); }
 	void					Read ( uint8_t * pData, size_t tLen );
 
 	FORCE_INLINE uint8_t	Read_uint8()

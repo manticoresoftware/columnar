@@ -662,6 +662,7 @@ bool Builder_c::Setup ( const Settings_t & tSettings, const Schema_t & tSchema, 
 			break;
 
 		case AttrType_e::FLOAT:
+		case AttrType_e::FLOATVEC:
 			pWriter.reset ( new RawWriter_T<float>(tSettings) );
 			break;
 
@@ -955,10 +956,12 @@ inline void RawWriter_T<float>::SetAttr ( uint32_t tRowID, const uint8_t * pData
 	assert ( 0 && "INTERNAL ERROR: sending string to float packer" );
 }
 
+// raw floatvec writer
 template<>
 inline void RawWriter_T<float>::SetAttr ( uint32_t tRowID, const int64_t * pData, int iLength )
 {
-	assert ( 0 && "INTERNAL ERROR: sending MVA to float packer" );
+	for ( int i=0; i<iLength; i++ )
+		m_dRows.emplace_back ( RawValue_T<float> { UintToFloat ( pData[i] ), tRowID } );
 }
 
 template<typename VALUE>
@@ -968,6 +971,7 @@ SIWriter_i * RawWriter_T<VALUE>::GetWriter ( std::string & sError )
 	switch ( m_tAttr.m_eType )
 	{
 	case AttrType_e::FLOAT:
+	case AttrType_e::FLOATVEC:
 		pWriter.reset ( new SIWriter_T<float, uint32_t>(m_tSettings) );
 		break;
 
@@ -1042,7 +1046,3 @@ const char * GetSecondaryLibVersionStr()
 	return LIB_VERSION;
 }
 
-int GetSecondaryStorageVersion()
-{
-	return SI::STORAGE_VERSION;
-}

@@ -22,6 +22,12 @@
 #include "codec.h"
 #include <cassert>
 
+namespace util
+{
+	class FileReader_c;
+	class FileWriter_c;
+}
+
 namespace columnar
 {
 

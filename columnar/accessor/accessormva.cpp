@@ -182,8 +182,38 @@ static FORCE_INLINE void PrecalcSizeOffset ( const Span_T<uint32_t> & dLengths, 
 
 //////////////////////////////////////////////////////////////////////////
 
+class StoredBlock_Mva_c
+{
+public:
+						StoredBlock_Mva_c ( const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion );
+
+	FORCE_INLINE void	ReadSortedFlag ( FileReader_c & tReader );
+
+protected:
+	std::unique_ptr<IntCodec_i>	m_pCodec;
+	uint32_t					m_uVersion = 0;
+	bool						m_bValuesSortedAsc = true;
+	int64_t						m_tValuesOffset = 0;
+	int							m_iSubblockId = -1;
+};
+
+
+StoredBlock_Mva_c::StoredBlock_Mva_c ( const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion )
+	: m_pCodec ( CreateIntCodec ( sCodec32, sCodec64 ) )
+	, m_uVersion ( uVersion )
+{}
+
+
+void StoredBlock_Mva_c::ReadSortedFlag ( FileReader_c & tReader )
+{
+	if ( m_uVersion>=12 )
+		m_bValuesSortedAsc = !!tReader.Read_uint8();
+}
+
+//////////////////////////////////////////////////////////////////////////
+
 template <typename T>
-class StoredBlock_MvaConst_T
+class StoredBlock_MvaConst_T : public StoredBlock_Mva_c
 {
 public:
 							StoredBlock_MvaConst_T ( const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion );
@@ -195,8 +225,6 @@ public:
 	FORCE_INLINE int		GetValueLength() const					{ return (int)m_dValueSpan.size()*sizeof(T); }
 
 private:
-	std::unique_ptr<IntCodec_i>	m_pCodec;
-	uint32_t					m_uVersion = 0;
 	SpanResizeable_T<T>			m_dValue;
 	Span_T<T>					m_dValueSpan;
 	SpanResizeable_T<uint32_t>	m_dTmp;
@@ -204,26 +232,30 @@ private:
 
 template <typename T>
 StoredBlock_MvaConst_T<T>::StoredBlock_MvaConst_T ( const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion )
-	: m_pCodec ( CreateIntCodec ( sCodec32, sCodec64 ) )
-	, m_uVersion ( uVersion )
+	: StoredBlock_Mva_c ( sCodec32, sCodec64, uVersion )
 {}
 
 template <typename T>
 void StoredBlock_MvaConst_T<T>::ReadHeader ( FileReader_c & tReader )
 {
+	ReadSortedFlag(tReader);
+
 	if ( m_uVersion>=11 )
 		m_dValue.resize ( tReader.Unpack_uint32() );
 
 	uint32_t uSize = tReader.Unpack_uint32();
 	DecodeValues_PFOR ( m_dValue, tReader, *m_pCodec, m_dTmp, uSize );
-	ComputeInverseDeltasAsc ( m_dValue );
+
+	if ( m_bValuesSortedAsc )
+		ComputeInverseDeltasAsc ( m_dValue );
+
 	m_dValueSpan = m_dValue;
 }
 
 //////////////////////////////////////////////////////////////////////////
 
 template <typename T>
-class StoredBlock_MvaConstLen_T
+class StoredBlock_MvaConstLen_T : public StoredBlock_Mva_c
 {
 public:
 						StoredBlock_MvaConstLen_T ( const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion );
@@ -237,8 +269,6 @@ public:
 	FORCE_INLINE const std::vector<Span_T<T>> & GetAllValues() const					{ return m_dValuePtrs; }
 
 private:
-	std::unique_ptr<IntCodec_i>	m_pCodec;
-	uint32_t					m_uVersion = 0;
 	SpanResizeable_T<uint32_t>	m_dSubblockCumulativeSizes;
 	SpanResizeable_T<uint32_t>	m_dTmp;
 
@@ -246,21 +276,21 @@ private:
 	std::vector<Span_T<T>>		m_dValuePtrs;
 
 	int							m_iLength = 0;
-	int64_t						m_tValuesOffset = 0;
-	int							m_iSubblockId = -1;
 
 	FORCE_INLINE void			PrecalcSizeOffset( int iNumSubblockValues );
 };
 
 template <typename T>
 StoredBlock_MvaConstLen_T<T>::StoredBlock_MvaConstLen_T ( const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion )
-	: m_pCodec ( CreateIntCodec ( sCodec32, sCodec64 ) )
-	, m_uVersion ( uVersion )
+	: StoredBlock_Mva_c ( sCodec32, sCodec64, uVersion )
 {}
 
 template <typename T>
 void StoredBlock_MvaConstLen_T<T>::ReadHeader ( FileReader_c & tReader, int iNumSubblocks )
 {
+	if ( m_uVersion>=12 )
+		m_bValuesSortedAsc = !!tReader.Read_uint8();
+
 	m_dSubblockCumulativeSizes.resize(iNumSubblocks);
 
 	m_iLength = tReader.Unpack_uint32();
@@ -294,7 +324,9 @@ void StoredBlock_MvaConstLen_T<T>::ReadSubblock ( int iSubblockId, int iNumSubbl
 	DecodeValues_PFOR ( m_dValues, tReader, *m_pCodec, m_dTmp, uSize );
 
 	PrecalcSizeOffset(iNumSubblockValues);
-	ApplyInverseDeltas ( m_dValues, m_dValuePtrs );
+
+	if ( m_bValuesSortedAsc )
+		ApplyInverseDeltas ( m_dValues, m_dValuePtrs );
 }
 
 template <typename T>
@@ -312,7 +344,7 @@ void StoredBlock_MvaConstLen_T<T>::PrecalcSizeOffset( int iNumSubblockValues )
 //////////////////////////////////////////////////////////////////////////
 
 template <typename T>
-class StoredBlock_MvaTable_T
+class StoredBlock_MvaTable_T : public StoredBlock_Mva_c
 {
 public:
 								StoredBlock_MvaTable_T ( const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion, int iSubblockSize );
@@ -330,8 +362,6 @@ public:
 	FORCE_INLINE int			GetTableSize() const { return (int)m_dValuePtrs.size(); }
 
 private:
-	std::unique_ptr<IntCodec_i>	m_pCodec;
-	uint32_t					m_uVersion = 0;
 	SpanResizeable_T<uint32_t>	m_dTmp;
 
 	SpanResizeable_T<uint32_t>	m_dLengths;
@@ -349,8 +379,7 @@ private:
 
 template <typename T>
 StoredBlock_MvaTable_T<T>::StoredBlock_MvaTable_T ( const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion, int iSubblockSize )
-	: m_pCodec ( CreateIntCodec ( sCodec32, sCodec64 ) )
-	, m_uVersion ( uVersion )
+	: StoredBlock_Mva_c ( sCodec32, sCodec64, uVersion )
 {
 	m_dValueIndexes.resize(iSubblockSize);
 }
@@ -358,6 +387,8 @@ StoredBlock_MvaTable_T<T>::StoredBlock_MvaTable_T ( const std::string & sCodec32
 template <typename T>
 void StoredBlock_MvaTable_T<T>::ReadHeader ( FileReader_c & tReader )
 {
+	ReadSortedFlag(tReader);
+
 	if ( m_uVersion>=11 )
 		m_dLengths.resize ( tReader.Unpack_uint32() );
 
@@ -373,7 +404,9 @@ void StoredBlock_MvaTable_T<T>::ReadHeader ( FileReader_c & tReader )
 	DecodeValues_PFOR ( m_dValues, tReader, *m_pCodec, m_dTmp, uSizeOfValues );
 
 	PrecalcSizeOffset ( m_dLengths, m_dValues, m_dValuePtrs );
-	ApplyInverseDeltas ( m_dValues, m_dValuePtrs );
+
+	if ( m_bValuesSortedAsc )
+		ApplyInverseDeltas ( m_dValues, m_dValuePtrs );
 
 	m_iBits = CalcNumBits ( m_dValuePtrs.size() );
 	m_dEncoded.resize ( ( m_dValueIndexes.size() >> 5 ) * m_iBits );
@@ -401,7 +434,7 @@ void StoredBlock_MvaTable_T<T>::ReadSubblock ( int iSubblockId, int iNumValues, 
 //////////////////////////////////////////////////////////////////////////
 
 template <typename T>
-class StoredBlock_MvaPFOR_T
+class StoredBlock_MvaPFOR_T : public StoredBlock_Mva_c
 {
 public:
 							StoredBlock_MvaPFOR_T ( const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion );
@@ -415,28 +448,24 @@ public:
 	FORCE_INLINE const std::vector<Span_T<T>> & GetAllValues() const	{ return m_dValuePtrs; }
 
 private:
-	std::unique_ptr<IntCodec_i>	m_pCodec;
-	uint32_t					m_uVersion;
 	SpanResizeable_T<uint32_t>	m_dSubblockCumulativeSizes;
 	SpanResizeable_T<uint32_t>	m_dTmp;
 
 	SpanResizeable_T<uint32_t>	m_dLengths;
 	SpanResizeable_T<T>			m_dValues;
 	std::vector<Span_T<T>>		m_dValuePtrs;
-
-	int64_t						m_tValuesOffset = 0;
-	int							m_iSubblockId = -1;
 };
 
 template <typename T>
 StoredBlock_MvaPFOR_T<T>::StoredBlock_MvaPFOR_T ( const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion  )
-	: m_pCodec ( CreateIntCodec ( sCodec32, sCodec64 ) )
-	, m_uVersion ( uVersion )
+	: StoredBlock_Mva_c ( sCodec32, sCodec64, uVersion )
 {}
 
 template <typename T>
 void StoredBlock_MvaPFOR_T<T>::ReadHeader ( FileReader_c & tReader, int iNumSubblocks )
 {
+	ReadSortedFlag(tReader);
+
 	m_dSubblockCumulativeSizes.resize(iNumSubblocks);
 
 	uint32_t uSubblockSize = tReader.Unpack_uint32();
@@ -478,7 +507,9 @@ void StoredBlock_MvaPFOR_T<T>::ReadSubblock ( int iSubblockId, int iSubblockValu
 	DecodeValues_PFOR ( m_dValues, tReader, *m_pCodec, m_dTmp, uint32_t ( uSize-uSize1-iDelta ) );
 
 	PrecalcSizeOffset ( m_dLengths, m_dValues, m_dValuePtrs );
-	ApplyInverseDeltas ( m_dValues, m_dValuePtrs );
+
+	if ( m_bValuesSortedAsc )
+		ApplyInverseDeltas ( m_dValues, m_dValuePtrs );
 }
 
 template <typename T>
@@ -1085,7 +1116,7 @@ bool Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::MoveToBlock ( int iNext
 
 Iterator_i * CreateIteratorMVA ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader )
 {
-	if ( tHeader.GetType()==AttrType_e::UINT32SET )
+	if ( tHeader.GetType()==AttrType_e::UINT32SET || tHeader.GetType()==AttrType_e::FLOATVEC )
 		return new Iterator_MVA_T<uint32_t> ( tHeader, uVersion, pReader );
 
 	return new Iterator_MVA_T<uint64_t> ( tHeader, uVersion, pReader );

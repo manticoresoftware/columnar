@@ -37,5 +37,6 @@ struct Settings_t;
 
 Packer_i * CreatePackerMva32 ( const Settings_t & tSettings, const std::string & sName );
 Packer_i * CreatePackerMva64 ( const Settings_t & tSettings, const std::string & sName );
+Packer_i * CreatePackerFloatVec ( const Settings_t & tSettings, const std::string & sName );
 
 } // namespace columnar

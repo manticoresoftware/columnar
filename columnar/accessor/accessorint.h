@@ -23,6 +23,11 @@ namespace common
 	struct Filter_t;
 }
 
+namespace util
+{
+	class FileReader_c;
+}
+
 namespace columnar
 {
 

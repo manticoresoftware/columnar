@@ -132,6 +132,7 @@ bool SecondaryIndex_c::Setup ( const std::string & sFile, std::string & sError )
 				break;
 
 			case AttrType_e::FLOAT:
+			case AttrType_e::FLOATVEC:
 				m_dIdx[i].reset ( new PGM_T<float>() );
 				break;
 

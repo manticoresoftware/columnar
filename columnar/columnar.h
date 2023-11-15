@@ -25,16 +25,10 @@
 #include "common/schema.h"
 #include <functional>
 
-namespace util
-{
-	class FileReader_c;
-	class FileWriter_c;
-}
-
 namespace columnar
 {
 
-static const int LIB_VERSION = 23;
+static const int LIB_VERSION = 24;
 
 class Iterator_i
 {
@@ -107,5 +101,4 @@ extern "C"
 	DLLEXPORT void						CheckColumnarStorage ( const std::string & sFilename, uint32_t uNumRows, columnar::Reporter_fn & fnError, columnar::Reporter_fn & fnProgress );
 	DLLEXPORT int						GetColumnarLibVersion();
 	DLLEXPORT const char *				GetColumnarLibVersionStr();
-	DLLEXPORT int						GetColumnarStorageVersion();
 }

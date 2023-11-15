@@ -145,6 +145,7 @@ public:
 	void        Unlink();
 	std::string GetFilename() const { return m_sFile; }
 
+	template <typename T> void Write ( const T & tValue ) { Write ( (const uint8_t *)&tValue, sizeof(tValue) ); }
 	void        Write ( const uint8_t * pData, size_t tLength );
 	void        SeekAndWrite ( int64_t iOffset, uint64_t uValue );
 	void        Seek ( int64_t iOffset );
@@ -354,6 +355,7 @@ constexpr int Log2 ( T tValue )
 int     CalcNumBits ( uint64_t uNumber );
 bool    CopySingleFile ( const std::string & sSource, const std::string & sDest, std::string & sError, int iMode );
 bool	FloatEqual ( float fA, float fB );
+void	NormalizeVec ( Span_T<float> & dData );
 
 inline int FillWithIncreasingValues ( uint32_t *& pRowID, size_t uNumValues, uint32_t & tRowID )
 {

@@ -95,6 +95,10 @@ bool Builder_c::Setup ( const Settings_t & tSettings, const Schema_t & tSchema, 
 			dPackers.push_back ( std::shared_ptr<Packer_i> ( CreatePackerMva64 ( tSettings, i.m_sName ) ) );
 			break;
 
+		case AttrType_e::FLOATVEC:
+			dPackers.push_back ( std::shared_ptr<Packer_i> ( CreatePackerFloatVec ( tSettings, i.m_sName ) ) );
+			break;
+
 		default:
 			break;
 		}

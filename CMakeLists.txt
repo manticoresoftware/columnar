@@ -43,14 +43,19 @@ if (API_ONLY)
 	message ( STATUS "Only api will be installed" )
 	set ( SKIP_COLUMNAR ON )
 	set ( SKIP_SECONDARY ON )
+	set ( SKIP_KNN ON )
 endif()
 
 if (NOT SKIP_COLUMNAR)
 	set ( INSTALL_COLUMNAR ON )
 endif ()
 
-if (NOT API_SECONDARY)
+if (NOT SKIP_SECONDARY)
 	set ( INSTALL_SECONDARY ON )
+endif ()
+
+if (NOT SKIP_KNN)
+	set ( INSTALL_KNN ON )
 endif ()
 
 set ( CMAKE_MODULE_PATH "${columnar_SOURCE_DIR}/cmake" )
@@ -63,11 +68,13 @@ include ( rev )
 # (say, on aarch64 because of absent fastpfor). But as api target is already exposed, consumers still can use it.
 add_library ( columnar_api INTERFACE )
 add_library ( secondary_api INTERFACE )
-target_link_libraries ( secondary_api INTERFACE columnar_api ) # actually we need only common headers, so it can be changed in future
+add_library ( knn_api INTERFACE )
+target_link_libraries ( secondary_api INTERFACE columnar_api knn_api ) # actually we need only common headers, so it can be changed in future
 
 # that will be used when build for dev/testing
 add_library ( columnar::columnar_api ALIAS columnar_api )
 add_library ( columnar::secondary_api ALIAS secondary_api )
+add_library ( columnar::knn_api ALIAS knn_api )
 
 # interface property, so that consumer will fire an error on configure time if API version is not match
 file ( STRINGS columnar/columnar.h _verlist LIMIT_COUNT 2 REGEX "LIB_VERSION" )
@@ -80,10 +87,10 @@ string ( REGEX MATCH "[0-9]+" SI_API_VER "${_verlist}" )
 set_property ( TARGET secondary_api APPEND PROPERTY INTERFACE_SECONDARY_API_VERSION ${SI_API_VER} ) # must be reconfigured if version in secondary.h changes
 set_property ( TARGET secondary_api APPEND PROPERTY COMPATIBLE_INTERFACE_STRING SECONDARY_API_VERSION )
 
-# Check below is only to provide human-readable match - that is we can see that package v. X.30.Y supports API v30.
-if (NOT PROJECT_VERSION_MINOR EQUAL API_VER)
-	message ( WARNING "Minor (${PROJECT_VERSION_MINOR}) of project version ${PROJECT_VERSION} is not equal to LIB_VERSION (${API_VER}) in file columnar.h. That is not critical, but it would be nice if V of API is reflected someway in project version with human-readable way." )
-endif ()
+file ( STRINGS knn/knn.h _verlist LIMIT_COUNT 2 REGEX "LIB_VERSION" )
+string ( REGEX MATCH "[0-9]+" KNN_API_VER "${_verlist}" )
+set_property ( TARGET knn_api APPEND PROPERTY INTERFACE_KNN_API_VERSION ${KNN_API_VER} ) # must be reconfigured if version in knn.h changes
+set_property ( TARGET knn_api APPEND PROPERTY COMPATIBLE_INTERFACE_STRING KNN_API_VERSION )
 
 set (_includes include/manticore-columnar-api)
 target_include_directories ( columnar_api INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>$<INSTALL_INTERFACE:${_includes}> )
@@ -92,6 +99,7 @@ target_include_directories ( columnar_api INTERFACE $<BUILD_INTERFACE:${CMAKE_CU
 if (API_ONLY)
 	install ( TARGETS columnar_api EXPORT apiexport )
 	install ( TARGETS secondary_api EXPORT apiexport )
+	install ( TARGETS knn_api EXPORT apiexport )
 
 	# ensure ALL externally required headers are exported here
 	install ( FILES columnar/builder.h columnar/columnar.h DESTINATION ${_includes}/columnar )
@@ -100,6 +108,9 @@ if (API_ONLY)
 
 	# ensure ALL externally required headers of secondary are exported here
 	install ( FILES secondary/secondary.h secondary/builder.h secondary/iterator.h DESTINATION ${_includes}/secondary )
+
+	# ensure ALL externally required headers of knn are exported here
+	install ( FILES knn/knn.h DESTINATION ${_includes}/knn )
 
 	set ( API_CMAKE_DIR "lib/cmake/columnar" )
 	install ( EXPORT apiexport
@@ -120,14 +131,14 @@ include(\"\${CMAKE_CURRENT_LIST_DIR}/columnar-targets.cmake\")" )
 			"${CMAKE_CURRENT_BINARY_DIR}/columnar-config.cmake" INSTALL_DESTINATION "${API_CMAKE_DIR}" )
 	install ( FILES "${CMAKE_CURRENT_BINARY_DIR}/columnar-config.cmake" DESTINATION "${API_CMAKE_DIR}" )
 
-	write_basic_package_version_file ( "columnar-config-version.cmake" VERSION "${API_VER}.${SI_API_VER}" COMPATIBILITY ExactVersion ARCH_INDEPENDENT )
+	write_basic_package_version_file ( "columnar-config-version.cmake" VERSION "${API_VER}.${SI_API_VER}.${KNN_API_VER}" COMPATIBILITY ExactVersion ARCH_INDEPENDENT )
 	install ( FILES "${CMAKE_CURRENT_BINARY_DIR}/columnar-config-version.cmake" DESTINATION "${API_CMAKE_DIR}" )
 
 	# finish configuration, as it is API_ONLY
 	return()
 endif ()
 
-# here we came in case of full build (i.e. columnar and/or secondary)
+# here we came in case of full build (i.e. columnar and/or secondary and/or knn)
 
 set ( CMAKE_CXX_STANDARD 17 )
 
@@ -209,6 +220,12 @@ if (INSTALL_SECONDARY)
 	add_subdirectory ( secondary )
 	install ( TARGETS secondary_index RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT secondary )
 	install ( FILES "$<TARGET_FILE_DIR:secondary_index>/lib_manticore_secondary.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
+endif ()
+
+if (INSTALL_KNN)
+	add_subdirectory ( knn )
+	install ( TARGETS knn_lib RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT knn )
+	install ( FILES "$<TARGET_FILE_DIR:knn_lib>/lib_manticore_knn.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
 endif ()
 
 include ( CPack )

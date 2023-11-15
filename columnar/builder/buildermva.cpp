@@ -71,7 +71,6 @@ struct HashFunc_Vec_T
 	}
 };
 
-
 template <typename T, typename HEADER_T>
 class Packer_MVA_T : public PackerTraits_T<AttributeHeaderBuilder_MVA_T<HEADER_T>>
 {
@@ -112,6 +111,7 @@ private:
 	std::unordered_map<std::vector<T>, int, HashFunc_Vec_T<T>> m_hUnique;
 	int				m_iUniques = 0;
 	int				m_iConstLength = -1;
+	bool			m_bValuesSortedAsc = true;
 
 	void			WritePacked_Const();
 	void			WritePacked_ConstLen();
@@ -168,6 +168,20 @@ void Packer_MVA_T<T,HEADER_T>::AnalyzeCollected ( const int64_t * pData, int iLe
 			m_iUniques++;
 		}
 	}
+
+	if ( iLength>1 && m_bValuesSortedAsc )
+	{
+		T tPrev = (T)pData[0];
+		for ( int i=1; i < iLength; i++ )
+		{
+			T tValue = (T)pData[i];
+			if ( tValue < tPrev )
+			{
+				m_bValuesSortedAsc = false;
+				break;
+			}
+		}
+	}
 }
 
 template <typename T, typename HEADER_T>
@@ -201,12 +215,14 @@ void Packer_MVA_T<T,HEADER_T>::Flush()
 	m_iConstLength = -1;
 	m_iUniques = 0;
 	m_hUnique.clear();
+	m_bValuesSortedAsc = true;
 }
 
 template <typename T, typename HEADER_T>
 void Packer_MVA_T<T,HEADER_T>::WriteToFile ( MvaPacking_e ePacking )
 {
 	BASE::m_tWriter.Pack_uint32 ( to_underlying(ePacking) );
+	BASE::m_tWriter.Write_uint8 ( m_bValuesSortedAsc ? 1 : 0 );
 
 	switch ( ePacking )
 	{
@@ -239,7 +255,9 @@ void Packer_MVA_T<T,HEADER_T>::WritePacked_Const()
 
 	Span_T<uint32_t> dLengths ( m_dCollectedLengths.data(), 1 );
 	Span_T<T> dValues ( m_dCollectedValues.data(), dLengths[0] );
-	PrepareValues ( dValues, dLengths );
+	if ( m_bValuesSortedAsc )
+		PrepareValues ( dValues, dLengths );
+
 	BASE::m_tWriter.Pack_uint32 ( dValues.size() );
 	WriteValues_PFOR ( dValues, m_dUncompressed, m_dCompressed, BASE::m_tWriter, m_pCodec.get(), true );
 }
@@ -281,7 +299,10 @@ void Packer_MVA_T<T,HEADER_T>::WritePacked_Table()
 	WriteValues_PFOR ( Span_T<uint32_t>(m_dTableLengths), m_dUncompressed32, m_dCompressed, BASE::m_tWriter, m_pCodec.get(), true );
 
 	Span_T<T> dTableValues ( m_dTableValues );
-	PrepareValues ( dTableValues, m_dTableLengths );
+
+	if ( m_bValuesSortedAsc )
+		PrepareValues ( dTableValues, m_dTableLengths );
+
 	WriteValues_PFOR ( dTableValues, m_dUncompressed, m_dCompressed, BASE::m_tWriter, m_pCodec.get(), true );
 
 	// write the ordinals
@@ -354,7 +375,9 @@ void Packer_MVA_T<T,HEADER_T>::WritePacked_DeltaPFOR ( bool bWriteLengths )
 
 		// write bodies	
 		Span_T<T> dValuesToWrite ( &m_dCollectedValues[uTotalValues], uNumValues );
-		PrepareValues ( dValuesToWrite, dLengths );
+		if ( m_bValuesSortedAsc )
+			PrepareValues ( dValuesToWrite, dLengths );
+
 		WriteValues_PFOR ( dValuesToWrite, m_dUncompressed, m_dCompressed, tMemWriter, m_pCodec.get(), false );
 
 		m_dSubblockSizes[iBlock] = uint32_t ( tMemWriter.GetPos()-tSubblockStart );
@@ -408,6 +431,12 @@ Packer_i * CreatePackerMva32 ( const Settings_t & tSettings, const std::string &
 Packer_i * CreatePackerMva64 ( const Settings_t & tSettings, const std::string & sName )
 {
 	return new Packer_MVA_T<uint64_t,int64_t> ( tSettings, sName, AttrType_e::INT64SET );
+}
+
+
+Packer_i * CreatePackerFloatVec ( const Settings_t & tSettings, const std::string & sName )
+{
+	return new Packer_MVA_T<uint32_t,float> ( tSettings, sName, AttrType_e::FLOATVEC );
 }
 
 } // namespace columnar
