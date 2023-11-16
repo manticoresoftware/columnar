@@ -5,8 +5,9 @@
 autotag() {
   API_VER=$(grep -Po 'LIB_VERSION.* \K\d+' columnar/columnar.h)
   SI_API_VER=$(grep -Po 'LIB_VERSION.* \K\d+' secondary/secondary.h)
-  AUTO_TAG="c$API_VER-s$SI_API_VER"
-  NUMS=2
+  KNN_API_VER=$(grep -Po 'LIB_VERSION.* \K\d+' knn/knn.h)
+  AUTO_TAG="c$API_VER-s$SI_API_VER-k$KNN_API_VER"
+  NUMS=3
 
   # check whether all the numbers are available
   if [[ $(echo $AUTO_TAG | grep -Po '[0-9]+' | wc -l) = $NUMS ]]; then
