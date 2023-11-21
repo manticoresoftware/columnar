@@ -33,32 +33,3 @@ jobs:
           GIT_SSH_COMMAND='ssh -i /tmp/ssh.key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -F /dev/null' git fetch gitlab
           GIT_SSH_COMMAND='ssh -i /tmp/ssh.key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -F /dev/null' git push -u gitlab ${{ github.ref }}
         shell: bash
-      - name: Sync tags to Gitlab
-        run: |
-          git checkout ${{ github.ref }}
-          
-          API_VER=$(grep -Po 'LIB_VERSION.* \K\d+' columnar/columnar.h)
-          SI_API_VER=$(grep -Po 'LIB_VERSION.* \K\d+' secondary/secondary.h)
-          KNN_API_VER=$(grep -Po 'LIB_VERSION.* \K\d+' knn/knn.h)
-          AUTO_TAG="c$API_VER-s$SI_API_VER-k$KNN_API_VER"
-          NUMS=3
-        
-          # check whether all the numbers are available
-          if [[ $(echo $AUTO_TAG | grep -Po '[0-9]+' | wc -l) = $NUMS ]]; then
-            # tag is correct
-          
-          echo ">> git ls-remote gitlab | grep $AUTO_TAG" 
-          
-            if [[ ! $(git ls-remote gitlab | grep $AUTO_TAG) ]]; then
-          echo "Tag $AUTO_TAG not exist in gitlab remote"
-              git tag "$AUTO_TAG"
-              git push gitlab "$AUTO_TAG"
-              git status
-            else
-              echo "repo gitlab already has tag $AUTO_TAG, exiting..."
-            fi
-          else
-            echo "generated tag $AUTO_TAG is not valid, do nothing"
-          fi
-
-        shell: bash
