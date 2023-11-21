@@ -47,10 +47,13 @@ jobs:
           if [[ $(echo $AUTO_TAG | grep -Po '[0-9]+' | wc -l) = $NUMS ]]; then
             # tag is correct
           
-            if [[ ! $(GIT_SSH_COMMAND='ssh -i /tmp/ssh.key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -F /dev/null' git ls-remote gitlab | grep $AUTO_TAG) ]]; then
-              GIT_SSH_COMMAND='ssh -i /tmp/ssh.key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -F /dev/null' git tag "$AUTO_TAG"
-              GIT_SSH_COMMAND='ssh -i /tmp/ssh.key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -F /dev/null' git push gitlab "$AUTO_TAG"
-              GIT_SSH_COMMAND='ssh -i /tmp/ssh.key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -F /dev/null' git status
+          echo ">> git ls-remote gitlab | grep $AUTO_TAG" 
+          
+            if [[ ! $(git ls-remote gitlab | grep $AUTO_TAG) ]]; then
+          echo "Tag $AUTO_TAG not exist in gitlab remote"
+              git tag "$AUTO_TAG"
+              git push gitlab "$AUTO_TAG"
+              git status
             else
               echo "repo gitlab already has tag $AUTO_TAG, exiting..."
             fi
