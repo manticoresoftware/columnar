@@ -7,6 +7,7 @@ on:
       - master
       - maintenance-release
       - 'columnar-*'
+      - tags-mirror-job
 
 # waits until the previous workflow run to finish when a new one appears
 concurrency:
