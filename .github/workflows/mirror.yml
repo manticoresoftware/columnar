@@ -35,9 +35,6 @@ jobs:
         shell: bash
       - name: Sync tags to Gitlab
         run: |
-          echo "${{ secrets.GITLAB_SSH_KEY }}" > /tmp/ssh.key
-          chmod 600 /tmp/ssh.key
-          git remote add gitlab git@gitlab.com:manticoresearch/columnar.git
           git checkout ${{ github.ref }}
           
           API_VER=$(grep -Po 'LIB_VERSION.* \K\d+' columnar/columnar.h)
