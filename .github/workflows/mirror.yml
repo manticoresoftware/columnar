@@ -23,7 +23,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
-      - name: Sync to Gitlab
+      - name: Sync files to Gitlab
         run: |
           echo "${{ secrets.GITLAB_SSH_KEY }}" > /tmp/ssh.key
           chmod 600 /tmp/ssh.key
@@ -31,4 +31,34 @@ jobs:
           git checkout ${{ github.ref }}
           GIT_SSH_COMMAND='ssh -i /tmp/ssh.key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -F /dev/null' git fetch gitlab
           GIT_SSH_COMMAND='ssh -i /tmp/ssh.key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -F /dev/null' git push -u gitlab ${{ github.ref }}
+        shell: bash
+      - name: Sync tags to Gitlab
+        run: |
+          echo "${{ secrets.GITLAB_SSH_KEY }}" > /tmp/ssh.key
+          chmod 600 /tmp/ssh.key
+          git remote add gitlab git@gitlab.com:manticoresearch/columnar.git
+          git checkout ${{ github.ref }}
+          
+          API_VER=$(grep -Po 'LIB_VERSION.* \K\d+' columnar/columnar.h)
+          SI_API_VER=$(grep -Po 'LIB_VERSION.* \K\d+' secondary/secondary.h)
+          KNN_API_VER=$(grep -Po 'LIB_VERSION.* \K\d+' knn/knn.h)
+          AUTO_TAG="c$API_VER-s$SI_API_VER-k$KNN_API_VER"
+          NUMS=3
+        
+          # check whether all the numbers are available
+          if [[ $(echo $AUTO_TAG | grep -Po '[0-9]+' | wc -l) = $NUMS ]]; then
+            # tag is correct
+          
+            export GIT_SSH_COMMAND='ssh -i /tmp/ssh.key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -F /dev/null'
+            if [[ ! $(git ls-remote gitlab | grep $AUTO_TAG) ]]; then
+              git tag "$AUTO_TAG"
+              git push gitlab "$AUTO_TAG"
+              git status
+            else
+              echo "repo gitlab already has tag $AUTO_TAG, exiting..."
+            fi
+          else
+            echo "generated tag $AUTO_TAG is not valid, do nothing"
+          fi
+
         shell: bash
