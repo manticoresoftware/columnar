@@ -38,13 +38,13 @@ jobs:
           NUMS=3
           
           if [[ ! $(git tag | grep $AUTO_TAG) ]]; then
-            echo "git tag $AUTO_TAG"
             git tag "$AUTO_TAG"
+            git push origin --tags
             git status
           else
             echo "repo gitlab already has tag $AUTO_TAG, exiting..."
           fi
           
           GIT_SSH_COMMAND='ssh -i /tmp/ssh.key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -F /dev/null' git fetch gitlab
-          GIT_SSH_COMMAND='ssh -i /tmp/ssh.key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -F /dev/null' git push -u gitlab ${{ github.ref }}
+          GIT_SSH_COMMAND='ssh -i /tmp/ssh.key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -F /dev/null' git push -u gitlab ${{ github.ref }} --tags
         shell: bash
