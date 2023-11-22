@@ -74,7 +74,7 @@ struct AttrInfo_t
 {
 	int					m_iId = -1;
 	common::AttrType_e	m_eType = common::AttrType_e::NONE;
-	float				m_fComplexity = 0.0f;
+	float				m_fComplexity = 0.0f; 
 };
 
 
