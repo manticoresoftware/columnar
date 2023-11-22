@@ -7,7 +7,6 @@ on:
       - master
       - maintenance-release
       - 'columnar-*'
-      - tags-mirror-job
 
 # waits until the previous workflow run to finish when a new one appears
 concurrency:
@@ -24,7 +23,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
-      - name: Sync files to Gitlab
+      - name: Sync to Gitlab
         run: |
           echo "${{ secrets.GITLAB_SSH_KEY }}" > /tmp/ssh.key
           chmod 600 /tmp/ssh.key
