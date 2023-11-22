@@ -38,6 +38,7 @@ jobs:
           NUMS=3
           
           if [[ ! $(git tag | grep $AUTO_TAG) ]]; then
+            echo "git tag $AUTO_TAG"
             git tag "$AUTO_TAG"
             git status
           else
