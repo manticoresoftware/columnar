@@ -41,7 +41,7 @@ jobs:
             git push origin --tags
             git status
           else
-            echo "repo gitlab already has tag $AUTO_TAG, exiting..."
+            echo "Tag $AUTO_TAG already exists"
           fi
           
           GIT_SSH_COMMAND='ssh -i /tmp/ssh.key -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -F /dev/null' git fetch gitlab
