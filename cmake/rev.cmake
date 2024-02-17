@@ -108,5 +108,4 @@ if (NOT GIT_COMMIT_ID)
 endif ()
 
 # configure packaging
-set ( ENV{SOURCE_DATE_EPOCH} "${SOURCE_DATE_EPOCH}" ) # that makes builds reproducable
 configure_file ( "${columnar_SOURCE_DIR}/cmake/CPackOptions.cmake.in" "${columnar_BINARY_DIR}/config/CPackOptions.cmake" @ONLY )
