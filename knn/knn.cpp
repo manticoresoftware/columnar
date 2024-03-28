@@ -74,9 +74,9 @@ hnswlib::SpaceInterface<float> * HNSWDist_c::GetSpaceInterface()
 {
 	switch ( m_eSimilarity )
 	{
-	case HNSWSimilarity_e::IP:		return &m_tSpaceIP;
-	case HNSWSimilarity_e::L2:
-	case HNSWSimilarity_e::COSINE:	return &m_tSpaceL2;
+	case HNSWSimilarity_e::IP:
+	case HNSWSimilarity_e::COSINE:  return &m_tSpaceIP;
+	case HNSWSimilarity_e::L2:		return &m_tSpaceL2;
 	default:
 		assert ( 0 && "Unknown similarity" );
 		return nullptr;
