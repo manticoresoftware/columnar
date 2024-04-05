@@ -253,37 +253,6 @@ inline void RawWriter_T<float>::SetAttr ( uint32_t tRowID, const int64_t * pData
 		m_dRows.emplace_back ( RawValue_T<float> { UintToFloat ( pData[i] ), tRowID } );
 }
 
-template<typename VALUE>
-SIWriter_i * RawWriter_T<VALUE>::GetWriter ( std::string & sError )
-{
-	std::unique_ptr<SIWriter_i> pWriter { nullptr };
-	switch ( m_tAttr.m_eType )
-	{
-	case AttrType_e::FLOAT:
-	case AttrType_e::FLOATVEC:
-		pWriter.reset ( new SIWriter_T<float, uint32_t>(m_tSettings) );
-		break;
-
-	case AttrType_e::STRING:
-		pWriter.reset ( new SIWriter_T<uint64_t, uint64_t>(m_tSettings) );
-		break;
-
-	case AttrType_e::INT64:
-	case AttrType_e::INT64SET:
-		pWriter.reset ( new SIWriter_T<int64_t, uint64_t>(m_tSettings) );
-		break;
-
-	default:
-		pWriter.reset ( new SIWriter_T<uint32_t, uint32_t>(m_tSettings) );
-		break;
-	}
-
-	if ( !pWriter->Setup ( m_tFile.GetFilename(), m_iFileSize, m_dOffset, sError ) )
-		return nullptr;
-
-	return pWriter.release();
-}
-
 /////////////////////////////////////////////////////////////////////
 
 template<typename VEC>
@@ -712,6 +681,39 @@ bool SIWriter_T<SRC_VALUE, DST_VALUE>::Process ( FileWriter_c & tDstFile, FileWr
 #endif
 
 	return true;
+}
+
+/////////////////////////////////////////////////////////////////////
+
+template<typename VALUE>
+SIWriter_i * RawWriter_T<VALUE>::GetWriter ( std::string & sError )
+{
+	std::unique_ptr<SIWriter_i> pWriter { nullptr };
+	switch ( m_tAttr.m_eType )
+	{
+	case AttrType_e::FLOAT:
+	case AttrType_e::FLOATVEC:
+		pWriter.reset ( new SIWriter_T<float, uint32_t>(m_tSettings) );
+		break;
+
+	case AttrType_e::STRING:
+		pWriter.reset ( new SIWriter_T<uint64_t, uint64_t>(m_tSettings) );
+		break;
+
+	case AttrType_e::INT64:
+	case AttrType_e::INT64SET:
+		pWriter.reset ( new SIWriter_T<int64_t, uint64_t>(m_tSettings) );
+		break;
+
+	default:
+		pWriter.reset ( new SIWriter_T<uint32_t, uint32_t>(m_tSettings) );
+		break;
+	}
+
+	if ( !pWriter->Setup ( m_tFile.GetFilename(), m_iFileSize, m_dOffset, sError ) )
+		return nullptr;
+
+	return pWriter.release();
 }
 
 /////////////////////////////////////////////////////////////////////
