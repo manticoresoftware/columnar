@@ -101,10 +101,9 @@ bool ScopedFile_c::Open ( std::string & sError )
 
 /////////////////////////////////////////////////////////////////////
 
-bool CopySingleFile ( const std::string & sSource, const std::string & sDest, std::string & sError, int iMode )
+bool CopySingleFile ( const std::string & sSource, const std::string & sDest, std::string & sError, int iMode, size_t tBufferSize )
 {
-	const int BUFFER_SIZE = 1048576;
-	std::unique_ptr<uint8_t[]> pData = std::unique_ptr<uint8_t[]>( new uint8_t[BUFFER_SIZE] );
+	std::unique_ptr<uint8_t[]> pData = std::unique_ptr<uint8_t[]>( new uint8_t[tBufferSize] );
 
 	ScopedFile_c tSrc ( sSource, O_RDONLY | O_BINARY );
 	ScopedFile_c tDst ( sDest, O_CREAT | O_RDWR | O_APPEND | O_BINARY );
@@ -113,7 +112,7 @@ bool CopySingleFile ( const std::string & sSource, const std::string & sDest, st
 	if ( !tDst.Open(sError) ) return false;
 
 	int64_t iRead = 0;
-	while ( ( iRead = ::read ( tSrc.GetFD(), pData.get(), BUFFER_SIZE ) ) > 0 )
+	while ( ( iRead = ::read ( tSrc.GetFD(), pData.get(), tBufferSize ) ) > 0 )
 		if ( ::write ( tDst.GetFD(), pData.get(), (uint32_t)iRead )<0 )
 		{
 			iRead = -1;
@@ -141,16 +140,35 @@ static void Seek ( int iFD, int64_t iOffset )
 
 /////////////////////////////////////////////////////////////////////
 
+int FileWriterTraits_c::GetFileFlags ( bool bNewFile, bool bAppend ) const
+{
+	int iFlags = O_CREAT | O_RDWR | O_BINARY;
+	if ( bAppend )
+		iFlags |= O_APPEND;
+
+	if ( bNewFile )
+		iFlags |= O_TRUNC;
+
+	return iFlags;
+}
+
+/////////////////////////////////////////////////////////////////////
+
+FileWriter_c::~FileWriter_c()
+{
+	if ( m_bTemporary )
+		Unlink();
+
+	Close();
+}
+
+
 bool FileWriter_c::Open ( const std::string & sFile, bool bNewFile, bool bAppend, bool bTmp, std::string & sError )
 {
 	assert ( m_iFD<0 );
 	assert ( !m_pData );
 
-	int iFlags = O_CREAT | O_RDWR | O_BINARY;
-	if ( bAppend )
-		iFlags |= O_APPEND;
-	if ( bNewFile )
-		iFlags |= O_TRUNC;
+	int iFlags = GetFileFlags ( bNewFile, bAppend );
 
 	m_sFile = sFile;
 	m_pData = std::unique_ptr<uint8_t[]> ( new uint8_t[m_tSize] );
@@ -208,6 +226,13 @@ void FileWriter_c::Unlink()
 {
 	Close();
 	::unlink ( m_sFile.c_str() );
+}
+
+
+void FileWriter_c::SetBufferSize ( size_t tBufferSize )
+{
+	assert(!m_pData);
+	m_tSize = tBufferSize;
 }
 
 
@@ -276,12 +301,76 @@ void FileWriter_c::Flush()
 	m_tUsed = 0;
 }
 
-FileWriter_c::~FileWriter_c()
+/////////////////////////////////////////////////////////////////////
+
+FileWriterNonBuffered_c::~FileWriterNonBuffered_c()
 {
 	if ( m_bTemporary )
 		Unlink();
 
 	Close();
+}
+
+
+bool FileWriterNonBuffered_c::Open ( const std::string & sFile, bool bNewFile, bool bAppend, bool bTmp, std::string & sError )
+{
+	assert ( m_iFD<0 );
+
+	int iFlags = GetFileFlags ( bNewFile, bAppend );
+
+	m_sFile = sFile;
+	m_iFD = ::open ( sFile.c_str(), iFlags, 0644 );
+	if ( m_iFD<0 )
+	{
+		sError = FormatStr ( "error creating '%s': %s", sFile.c_str(), strerror(errno) );
+		return false;
+	}
+
+	m_iFilePos = 0;
+	m_bError = false;
+	m_sError = "";
+	m_bTemporary = bTmp;
+
+	return true;
+}
+
+
+void FileWriterNonBuffered_c::Close()
+{
+	if ( m_iFD<0 )
+		return;
+
+	::close(m_iFD);
+	m_iFD = -1;
+}
+
+
+void FileWriterNonBuffered_c::Unlink()
+{
+	Close();
+	::unlink ( m_sFile.c_str() );
+}
+
+
+void FileWriterNonBuffered_c::Write ( const uint8_t * pData, size_t tLength )
+{
+	assert ( m_iFD>=0 );
+
+	int iRes = ::write ( m_iFD, pData, (uint32_t)tLength );
+	if ( iRes<0 )
+	{
+		m_sError = FormatStr ( "write error in '%s': %d (%s)", m_sFile.c_str(), errno, strerror(errno) );
+		m_bError = true;
+	}
+
+	m_iFilePos += tLength;
+}
+
+
+void FileWriterNonBuffered_c::Seek ( int64_t iOffset )
+{
+	util::Seek ( m_iFD, iOffset );
+	m_iFilePos = iOffset;
 }
 
 /////////////////////////////////////////////////////////////////////

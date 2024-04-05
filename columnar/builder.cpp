@@ -34,7 +34,7 @@ using namespace common;
 class Builder_c final : public Builder_i
 {
 public:
-	bool	Setup ( const Settings_t & tSettings, const Schema_t & tSchema, const std::string & sFile, std::string & sError );
+	bool	Setup ( const Settings_t & tSettings, const Schema_t & tSchema, const std::string & sFile, size_t tBufferSize, std::string & sError );
 	void	SetAttr ( int iAttr, int64_t tAttr ) final;
 	void	SetAttr ( int iAttr, const uint8_t * pData, int iLength ) final;
 	void	SetAttr ( int iAttr, const int64_t * pData, int iLength ) final;
@@ -51,7 +51,7 @@ private:
 };
 
 
-bool Builder_c::Setup ( const Settings_t & tSettings, const Schema_t & tSchema, const std::string & sFile, std::string & sError )
+bool Builder_c::Setup ( const Settings_t & tSettings, const Schema_t & tSchema, const std::string & sFile, size_t tBufferSize, std::string & sError )
 {
 	m_sFile = sFile;
 
@@ -108,7 +108,7 @@ bool Builder_c::Setup ( const Settings_t & tSettings, const Schema_t & tSchema, 
 			for ( auto & i : dPackers )
 			{
 				std::string sFilename = FormatStr ( "%s.%d", sFile.c_str(), iPackers++ );
-				if ( !i->Setup ( sFilename, sError ) )
+				if ( !i->Setup ( sFilename, tBufferSize, sError ) )
 					return false;
 			}
 
@@ -233,14 +233,14 @@ bool CheckSubblockSize ( int iSubblockSize, std::string & sError )
 } // namespace columnar
 
 
-columnar::Builder_i * CreateColumnarBuilder ( const columnar::Schema_t & tSchema, const std::string & sFile, std::string & sError )
+columnar::Builder_i * CreateColumnarBuilder ( const columnar::Schema_t & tSchema, const std::string & sFile, size_t tBufferSize, std::string & sError )
 {
 	columnar::Settings_t tSettings;
 	if ( !columnar::CheckSubblockSize ( tSettings.m_iSubblockSize, sError ) )
 		return nullptr;
 
 	std::unique_ptr<columnar::Builder_c> pBuilder ( new columnar::Builder_c );
-	if ( !pBuilder->Setup ( tSettings, tSchema, sFile, sError ) )
+	if ( !pBuilder->Setup ( tSettings, tSchema, sFile, tBufferSize, sError ) )
 		return nullptr;
 
 	return pBuilder.release();

@@ -42,5 +42,5 @@ public:
 
 extern "C"
 {
-	DLLEXPORT columnar::Builder_i * CreateColumnarBuilder ( const common::Schema_t & tSchema, const std::string & sFile, std::string & sError );
+	DLLEXPORT columnar::Builder_i * CreateColumnarBuilder ( const common::Schema_t & tSchema, const std::string & sFile, size_t tBufferSize, std::string & sError );
 }

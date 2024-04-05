@@ -311,7 +311,7 @@ public:
 	HNSWBuilder_c ( const Schema_t & tSchema, int64_t iNumElements );
 
 	bool	SetAttr ( int iAttr, const util::Span_T<float> & dData ) override		{ return m_dIndexes[iAttr]->AddDoc ( dData, m_sError ); }
-	bool	Save ( const std::string & sFilename, std::string & sError ) override;
+	bool	Save ( const std::string & sFilename, size_t tBufferSize, std::string & sError ) override;
 	const std::string & GetError() const override									{ return m_sError; }
 
 private:
@@ -327,9 +327,10 @@ HNSWBuilder_c::HNSWBuilder_c ( const Schema_t & tSchema, int64_t iNumElements )
 }
 
 
-bool HNSWBuilder_c::Save ( const std::string & sFilename, std::string & sError )
+bool HNSWBuilder_c::Save ( const std::string & sFilename, size_t tBufferSize, std::string & sError )
 {
 	FileWriter_c tWriter;
+	tWriter.SetBufferSize(tBufferSize);
 	if ( !tWriter.Open ( sFilename, sError ) )
 		return false;
 

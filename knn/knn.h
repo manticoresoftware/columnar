@@ -26,7 +26,7 @@
 namespace knn
 {
 
-static const int LIB_VERSION = 1;
+static const int LIB_VERSION = 2;
 static const uint32_t STORAGE_VERSION = 1;
 
 enum class HNSWSimilarity_e
@@ -82,7 +82,7 @@ public:
 	virtual			~Builder_i() = default;
 
 	virtual bool	SetAttr ( int iAttr, const util::Span_T<float> & dData ) = 0;
-	virtual bool	Save ( const std::string & sFilename, std::string & sError ) = 0;
+	virtual bool	Save ( const std::string & sFilename, size_t tBufferSize, std::string & sError ) = 0;
 	virtual const std::string & GetError() const = 0;
 };
 

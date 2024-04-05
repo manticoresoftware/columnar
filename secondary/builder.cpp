@@ -110,65 +110,179 @@ bool RawValueCmp< RawValue_T<float> > ( const RawValue_T<float> & tA, const RawV
 }
 
 template<typename VALUE>
-struct RawWriter_T : public RawWriter_i
+class RawWriter_T : public RawWriter_i
 {
-	typedef RawValue_T<VALUE> RawValue_t;
-	std::vector< RawValue_t > m_dRows; // value, rowid
+	using RawValue_t = RawValue_T<VALUE>;
 
-	FileWriter_c m_tFile;
-	std::vector<uint64_t> m_dOffset;
-	uint64_t m_iFileSize = 0;
-	SchemaAttr_t m_tAttr;
+public:
+			RawWriter_T ( const Settings_t & tSettings ) : m_tSettings(tSettings) {}
 
-	RawWriter_T ( const Settings_t & tSettings )
-		: m_tSettings(tSettings)
-	{}
-
-	bool Setup ( const std::string & sFile, const SchemaAttr_t & tAttr, int iAttr, std::string & sError ) final
-	{
-		m_tAttr = tAttr;
-		std::string sFilename = FormatStr ( "%s.%d.tmp", sFile.c_str(), iAttr );
-		return m_tFile.Open ( sFilename, true, true, false, sError );
-	}
-
-	int GetItemSize () const final { return sizeof ( m_dRows[0] ); }
-	void SetItemsCount ( int iSize ) final { m_dRows.reserve ( iSize ); }
-
-	void Flush () final
-	{
-		size_t iBytesLen = sizeof( m_dRows[0] ) * m_dRows.size();
-		if ( !iBytesLen )
-			return;
-
-		std::sort ( m_dRows.begin(), m_dRows.end(), RawValueCmp<RawValue_t> );
-
-		m_dOffset.emplace_back ( m_tFile.GetPos() );
-		m_tFile.Write ( (const uint8_t *)m_dRows.data(), iBytesLen );
-
-		m_dRows.resize ( 0 ); 
-	}
-
-	void Done() final
-	{
-		Flush();
-		m_iFileSize = m_tFile.GetPos();
-		m_tFile.Close();
-		VectorReset ( m_dRows );
-	}
-
+	bool	Setup ( const std::string & sFile, const SchemaAttr_t & tAttr, int iAttr, std::string & sError ) final;
+	int		GetItemSize() const final { return sizeof ( m_dRows[0] ); }
+	void	SetItemsCount ( int iSize ) final { m_dRows.reserve ( iSize ); }
+	void	Flush() final;
+	void	Done() final;
 	void	SetAttr ( uint32_t tRowID, int64_t tAttr ) final;
 	void	SetAttr ( uint32_t tRowID, const uint8_t * pData, int iLength ) final;
 	void	SetAttr ( uint32_t tRowID, const int64_t * pData, int iLength ) final;
 
-	SIWriter_i * GetWriter ( std::string & sError ) final;
-	std::string GetFilename() const final
-	{
-		return m_tFile.GetFilename();
-	}
+	SIWriter_i *	GetWriter ( std::string & sError ) final;
+	std::string		GetFilename() const final { return m_tFile.GetFilename(); }
 
 private:
-	Settings_t	m_tSettings;
+	Settings_t				m_tSettings;
+	std::vector<RawValue_t>	m_dRows; // value, rowid
+	std::vector<uint64_t>	m_dOffset;
+	FileWriterNonBuffered_c	m_tFile;
+	SchemaAttr_t			m_tAttr;
+	uint64_t				m_iFileSize = 0;
 };
+
+template<typename VALUE>
+bool RawWriter_T<VALUE>::Setup ( const std::string & sFile, const SchemaAttr_t & tAttr, int iAttr, std::string & sError )
+{
+	m_tAttr = tAttr;
+	std::string sFilename = FormatStr ( "%s.%d.tmp", sFile.c_str(), iAttr );
+	return m_tFile.Open ( sFilename, true, true, false, sError );
+}
+
+template<typename VALUE>
+void RawWriter_T<VALUE>::Flush()
+{
+	size_t iBytesLen = sizeof( m_dRows[0] ) * m_dRows.size();
+	if ( !iBytesLen )
+		return;
+
+	std::sort ( m_dRows.begin(), m_dRows.end(), RawValueCmp<RawValue_t> );
+
+	m_dOffset.emplace_back ( m_tFile.GetPos() );
+	m_tFile.Write ( (const uint8_t *)m_dRows.data(), iBytesLen );
+
+	m_dRows.resize ( 0 ); 
+}
+
+template<typename VALUE>
+void RawWriter_T<VALUE>::Done()
+{
+	Flush();
+	m_iFileSize = m_tFile.GetPos();
+	m_tFile.Close();
+	VectorReset ( m_dRows );
+}
+
+// raw int writer
+template<>
+inline void RawWriter_T<uint32_t>::SetAttr ( uint32_t tRowID, int64_t tAttr )
+{
+	m_dRows.emplace_back ( RawValue_T<uint32_t> { (uint32_t)tAttr, tRowID } );
+}
+
+template<>
+inline void RawWriter_T<uint32_t>::SetAttr ( uint32_t tRowID, const uint8_t * pData, int iLength )
+{
+	assert ( 0 && "INTERNAL ERROR: sending string to int packer" );
+}
+
+template<>
+inline void RawWriter_T<int64_t>::SetAttr ( uint32_t tRowID, const uint8_t * pData, int iLength )
+{
+	assert ( 0 && "INTERNAL ERROR: sending string to int packer" );
+}
+
+// raw int64 writer
+template<>
+inline void RawWriter_T<int64_t>::SetAttr ( uint32_t tRowID, int64_t tAttr )
+{
+	m_dRows.emplace_back ( RawValue_T<int64_t> { (int64_t)tAttr, tRowID } );
+}
+
+// raw string writer
+template<>
+inline void RawWriter_T<uint64_t>::SetAttr ( uint32_t tRowID, const uint8_t * pData, int iLength )
+{
+	assert ( m_tAttr.m_fnCalcHash );
+	m_dRows.emplace_back ( RawValue_T<uint64_t> { ( iLength ? m_tAttr.m_fnCalcHash ( pData, iLength, STR_HASH_SEED ) : 0 ), tRowID } );
+}
+
+template<>
+inline void RawWriter_T<uint64_t>::SetAttr ( uint32_t tRowID, int64_t tAttr )
+{
+	assert ( 0 && "INTERNAL ERROR: sending string to int packer" );
+}
+
+template<>
+inline void RawWriter_T<uint64_t>::SetAttr ( uint32_t tRowID, const int64_t * pData, int iLength )
+{
+	assert ( 0 && "INTERNAL ERROR: sending string to int packer" );
+}
+
+// raw MVA32 writer
+template<>
+inline void RawWriter_T<uint32_t>::SetAttr ( uint32_t tRowID, const int64_t * pData, int iLength )
+{
+	for ( int i=0; i<iLength; i++ )
+		m_dRows.emplace_back ( RawValue_T<uint32_t> { (uint32_t)pData[i], tRowID } );
+}
+
+// raw MVA64 writer
+template<>
+inline void RawWriter_T<int64_t>::SetAttr ( uint32_t tRowID, const int64_t * pData, int iLength )
+{
+	for ( int i=0; i<iLength; i++ )
+		m_dRows.emplace_back ( RawValue_T<int64_t> { pData[i], tRowID } );
+}
+
+// raw float writer
+template<>
+inline void RawWriter_T<float>::SetAttr ( uint32_t tRowID, int64_t tAttr )
+{
+	m_dRows.emplace_back ( RawValue_T<float> { UintToFloat ( tAttr ), tRowID } );
+}
+
+template<>
+inline void RawWriter_T<float>::SetAttr ( uint32_t tRowID, const uint8_t * pData, int iLength )
+{
+	assert ( 0 && "INTERNAL ERROR: sending string to float packer" );
+}
+
+// raw floatvec writer
+template<>
+inline void RawWriter_T<float>::SetAttr ( uint32_t tRowID, const int64_t * pData, int iLength )
+{
+	for ( int i=0; i<iLength; i++ )
+		m_dRows.emplace_back ( RawValue_T<float> { UintToFloat ( pData[i] ), tRowID } );
+}
+
+template<typename VALUE>
+SIWriter_i * RawWriter_T<VALUE>::GetWriter ( std::string & sError )
+{
+	std::unique_ptr<SIWriter_i> pWriter { nullptr };
+	switch ( m_tAttr.m_eType )
+	{
+	case AttrType_e::FLOAT:
+	case AttrType_e::FLOATVEC:
+		pWriter.reset ( new SIWriter_T<float, uint32_t>(m_tSettings) );
+		break;
+
+	case AttrType_e::STRING:
+		pWriter.reset ( new SIWriter_T<uint64_t, uint64_t>(m_tSettings) );
+		break;
+
+	case AttrType_e::INT64:
+	case AttrType_e::INT64SET:
+		pWriter.reset ( new SIWriter_T<int64_t, uint64_t>(m_tSettings) );
+		break;
+
+	default:
+		pWriter.reset ( new SIWriter_T<uint32_t, uint32_t>(m_tSettings) );
+		break;
+	}
+
+	if ( !pWriter->Setup ( m_tFile.GetFilename(), m_iFileSize, m_dOffset, sError ) )
+		return nullptr;
+
+	return pWriter.release();
+}
 
 /////////////////////////////////////////////////////////////////////
 
@@ -620,7 +734,7 @@ struct ScopedFilesRemoval_t
 class Builder_c final : public Builder_i
 {
 public:
-	bool	Setup ( const Settings_t & tSettings, const Schema_t & tSchema, int iMemoryLimit, const std::string & sFile, std::string & sError );
+	bool	Setup ( const Settings_t & tSettings, const Schema_t & tSchema, int iMemoryLimit, const std::string & sFile, size_t tBufferSize, std::string & sError );
 
 	void	SetRowID ( uint32_t tRowID ) final;
 	void	SetAttr ( int iAttr, int64_t tAttr ) final;
@@ -629,9 +743,10 @@ public:
 	bool	Done ( std::string & sError ) final;
 
 private:
-	std::string m_sFile;
-	uint32_t m_tRowID = 0;
-	uint32_t m_iMaxRows = 0;
+	std::string	m_sFile;
+	size_t		m_tBufferSize = 0;
+	uint32_t	m_tRowID = 0;
+	uint32_t	m_iMaxRows = 0;
 
 	std::vector<std::shared_ptr<RawWriter_i>>	m_dRawWriter;
 	std::vector<std::shared_ptr<SIWriter_i>>	m_dCidWriter;
@@ -644,9 +759,11 @@ private:
 };
 
 
-bool Builder_c::Setup ( const Settings_t & tSettings, const Schema_t & tSchema, int iMemoryLimit, const std::string & sFile, std::string & sError )
+bool Builder_c::Setup ( const Settings_t & tSettings, const Schema_t & tSchema, int iMemoryLimit, const std::string & sFile, size_t tBufferSize, std::string & sError )
 {
 	m_sFile = sFile;
+	m_tBufferSize = tBufferSize;
+
 	int iAttr = 0;
 
 	for ( const auto & tSrcAttr : tSchema )
@@ -688,6 +805,7 @@ bool Builder_c::Setup ( const Settings_t & tSettings, const Schema_t & tSchema, 
 		bool bOpened = pWriter->Setup ( sFile, tSrcAttr, iAttr++, sError );
 		if ( pWriter ) // should track files and remove all tmp file on any error
 			m_tCleanup.m_dFiles.push_back ( pWriter->GetFilename() );
+
 		if ( !bOpened )
 			return false;
 
@@ -703,7 +821,7 @@ bool Builder_c::Setup ( const Settings_t & tSettings, const Schema_t & tSchema, 
 		if ( pWriter )
 			iRowSize += pWriter->GetItemSize();
 
-	m_iMaxRows = std::max ( 1000, iMemoryLimit / 3 / iRowSize );
+	m_iMaxRows = std::max ( 1000, iMemoryLimit / iRowSize );
 
 	for ( auto & pWriter : m_dRawWriter )
 	{
@@ -756,7 +874,7 @@ bool Builder_c::Done ( std::string & sError )
 	{
 		if ( pWriter )
 		{
-			SIWriter_i * pCidx = pWriter->GetWriter ( sError );
+			SIWriter_i * pCidx = pWriter->GetWriter(sError);
 			if ( !pCidx )
 				return false;
 			m_dCidWriter.emplace_back ( pCidx );
@@ -768,6 +886,7 @@ bool Builder_c::Done ( std::string & sError )
 
 	// pack values into lists
 	FileWriter_c tDstFile;
+	tDstFile.SetBufferSize(m_tBufferSize);
 	if ( !tDstFile.Open ( m_sFile, true, true, false, sError ) )
 		return false;
 
@@ -881,125 +1000,12 @@ void Builder_c::Flush()
 	}
 }
 
-// raw int writer
-template<>
-inline void RawWriter_T<uint32_t>::SetAttr ( uint32_t tRowID, int64_t tAttr )
-{
-	m_dRows.emplace_back ( RawValue_T<uint32_t> { (uint32_t)tAttr, tRowID } );
-}
-
-template<>
-inline void RawWriter_T<uint32_t>::SetAttr ( uint32_t tRowID, const uint8_t * pData, int iLength )
-{
-	assert ( 0 && "INTERNAL ERROR: sending string to int packer" );
-}
-
-template<>
-inline void RawWriter_T<int64_t>::SetAttr ( uint32_t tRowID, const uint8_t * pData, int iLength )
-{
-	assert ( 0 && "INTERNAL ERROR: sending string to int packer" );
-}
-
-// raw int64 writer
-template<>
-inline void RawWriter_T<int64_t>::SetAttr ( uint32_t tRowID, int64_t tAttr )
-{
-	m_dRows.emplace_back ( RawValue_T<int64_t> { (int64_t)tAttr, tRowID } );
-}
-
-// raw string writer
-template<>
-inline void RawWriter_T<uint64_t>::SetAttr ( uint32_t tRowID, const uint8_t * pData, int iLength )
-{
-	assert ( m_tAttr.m_fnCalcHash );
-	m_dRows.emplace_back ( RawValue_T<uint64_t> { ( iLength ? m_tAttr.m_fnCalcHash ( pData, iLength, STR_HASH_SEED ) : 0 ), tRowID } );
-}
-
-template<>
-inline void RawWriter_T<uint64_t>::SetAttr ( uint32_t tRowID, int64_t tAttr )
-{
-	assert ( 0 && "INTERNAL ERROR: sending string to int packer" );
-}
-
-template<>
-inline void RawWriter_T<uint64_t>::SetAttr ( uint32_t tRowID, const int64_t * pData, int iLength )
-{
-	assert ( 0 && "INTERNAL ERROR: sending string to int packer" );
-}
-
-// raw MVA32 writer
-template<>
-inline void RawWriter_T<uint32_t>::SetAttr ( uint32_t tRowID, const int64_t * pData, int iLength )
-{
-	for ( int i=0; i<iLength; i++ )
-		m_dRows.emplace_back ( RawValue_T<uint32_t> { (uint32_t)pData[i], tRowID } );
-}
-
-// raw MVA64 writer
-template<>
-inline void RawWriter_T<int64_t>::SetAttr ( uint32_t tRowID, const int64_t * pData, int iLength )
-{
-	for ( int i=0; i<iLength; i++ )
-		m_dRows.emplace_back ( RawValue_T<int64_t> { pData[i], tRowID } );
-}
-
-// raw float writer
-template<>
-inline void RawWriter_T<float>::SetAttr ( uint32_t tRowID, int64_t tAttr )
-{
-	m_dRows.emplace_back ( RawValue_T<float> { UintToFloat ( tAttr ), tRowID } );
-}
-
-template<>
-inline void RawWriter_T<float>::SetAttr ( uint32_t tRowID, const uint8_t * pData, int iLength )
-{
-	assert ( 0 && "INTERNAL ERROR: sending string to float packer" );
-}
-
-// raw floatvec writer
-template<>
-inline void RawWriter_T<float>::SetAttr ( uint32_t tRowID, const int64_t * pData, int iLength )
-{
-	for ( int i=0; i<iLength; i++ )
-		m_dRows.emplace_back ( RawValue_T<float> { UintToFloat ( pData[i] ), tRowID } );
-}
-
-template<typename VALUE>
-SIWriter_i * RawWriter_T<VALUE>::GetWriter ( std::string & sError )
-{
-	std::unique_ptr<SIWriter_i> pWriter { nullptr };
-	switch ( m_tAttr.m_eType )
-	{
-	case AttrType_e::FLOAT:
-	case AttrType_e::FLOATVEC:
-		pWriter.reset ( new SIWriter_T<float, uint32_t>(m_tSettings) );
-		break;
-
-	case AttrType_e::STRING:
-		pWriter.reset ( new SIWriter_T<uint64_t, uint64_t>(m_tSettings) );
-		break;
-
-	case AttrType_e::INT64:
-	case AttrType_e::INT64SET:
-		pWriter.reset ( new SIWriter_T<int64_t, uint64_t>(m_tSettings) );
-		break;
-
-	default:
-		pWriter.reset ( new SIWriter_T<uint32_t, uint32_t>(m_tSettings) );
-		break;
-	}
-
-	if ( !pWriter->Setup ( m_tFile.GetFilename(), m_iFileSize, m_dOffset, sError ) )
-		return nullptr;
-
-	return pWriter.release();
-}
-
 
 RawValue_T<uint32_t> Convert ( const BinValue_T<uint32_t> & tSrc )
 {
 	return tSrc;
 }
+
 
 RawValue_T<uint32_t> Convert ( const BinValue_T<float> & tSrc )
 {
@@ -1009,6 +1015,7 @@ RawValue_T<uint32_t> Convert ( const BinValue_T<float> & tSrc )
 	return tRes;
 }
 
+
 RawValue_T<uint64_t> Convert ( const BinValue_T<int64_t> & tSrc )
 {
 	RawValue_T<uint64_t> tRes;
@@ -1016,6 +1023,7 @@ RawValue_T<uint64_t> Convert ( const BinValue_T<int64_t> & tSrc )
 	tRes.m_tRowid = tSrc.m_tRowid;
 	return tRes;
 }
+
 
 RawValue_T<uint64_t> Convert ( const BinValue_T<uint64_t> & tSrc )
 {
@@ -1025,11 +1033,11 @@ RawValue_T<uint64_t> Convert ( const BinValue_T<uint64_t> & tSrc )
 } // namespace SI
 
 
-SI::Builder_i * CreateBuilder ( const Schema_t & tSchema, int iMemoryLimit, const std::string & sFile, std::string & sError )
+SI::Builder_i * CreateBuilder ( const Schema_t & tSchema, int iMemoryLimit, const std::string & sFile, size_t tBufferSize, std::string & sError )
 {
 	std::unique_ptr<SI::Builder_c> pBuilder ( new SI::Builder_c );
 	SI::Settings_t tSettings;
-	if ( !pBuilder->Setup ( tSettings, tSchema, iMemoryLimit, sFile, sError ) )
+	if ( !pBuilder->Setup ( tSettings, tSchema, iMemoryLimit, sFile, tBufferSize, sError ) )
 		return nullptr;
 
 	return pBuilder.release();

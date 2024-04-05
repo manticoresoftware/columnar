@@ -134,16 +134,37 @@ private:
 };
 
 
-class FileWriter_c
+class FileWriterTraits_c
 {
 public:
-	~FileWriter_c();
+	std::string GetFilename() const { return m_sFile; }
+
+	bool        IsError() const		{ return m_bError; }
+	std::string GetError() const	{ return m_sError; }
+
+protected:
+	int         m_iFD = -1;
+	int64_t     m_iFilePos = 0;
+	bool		m_bTemporary = false; // whatever to unlink file at writer destructor
+
+	std::string	m_sFile;
+	bool        m_bError = false;
+	std::string m_sError;
+
+	int			GetFileFlags ( bool bNewFile, bool bAppend ) const;
+};
+
+
+class FileWriter_c : public FileWriterTraits_c
+{
+public:
+				~FileWriter_c();
 
 	bool        Open ( const std::string & sFile, bool bNewFile, bool bAppend, bool bTmp, std::string & sError );
 	bool        Open ( const std::string & sFile, std::string & sError );
 	void        Close();
 	void        Unlink();
-	std::string GetFilename() const { return m_sFile; }
+	void		SetBufferSize ( size_t tBufferSize );
 
 	template <typename T> void Write ( const T & tValue ) { Write ( (const uint8_t *)&tValue, sizeof(tValue) ); }
 	void        Write ( const uint8_t * pData, size_t tLength );
@@ -159,25 +180,14 @@ public:
 	void        Pack_uint64 ( uint64_t uValue ) { PackValue(uValue); }
 
 	int64_t     GetPos() const { return m_iFilePos + (int64_t)m_tUsed; }
-	bool        IsError() const { return m_bError; }
-	std::string GetError() const { return m_sError; }
 
 private:
 	static const size_t DEFAULT_SIZE = 1048576;
-
-	int         m_iFD = -1;
-	std::string m_sFile;
 
 	std::unique_ptr<uint8_t[]> m_pData;
 
 	size_t      m_tSize = DEFAULT_SIZE;
 	size_t      m_tUsed = 0;
-
-	int64_t     m_iFilePos = 0;
-
-	bool        m_bError = false;
-	bool		m_bTemporary = false; // whatever to unlink file at writer destructor
-	std::string m_sError;
 
 	void        Flush();
 
@@ -189,6 +199,21 @@ private:
 		int iPackedLen = ByteCodec_c::EncodeValue ( pOut, uValue );
 		Write ( dPacked, iPackedLen );
 	}
+};
+
+
+class FileWriterNonBuffered_c : public FileWriterTraits_c
+{
+public:
+				~FileWriterNonBuffered_c();
+
+	bool        Open ( const std::string & sFile, bool bNewFile, bool bAppend, bool bTmp, std::string & sError );
+	void        Close();
+	void        Unlink();
+
+	void        Write ( const uint8_t * pData, size_t tLength );
+	void        Seek ( int64_t iOffset );
+	int64_t     GetPos() const { return m_iFilePos; }
 };
 
 
@@ -353,7 +378,7 @@ constexpr int Log2 ( T tValue )
 }
 
 int     CalcNumBits ( uint64_t uNumber );
-bool    CopySingleFile ( const std::string & sSource, const std::string & sDest, std::string & sError, int iMode );
+bool    CopySingleFile ( const std::string & sSource, const std::string & sDest, std::string & sError, int iMode, size_t tBufferSize=1048576 );
 bool	FloatEqual ( float fA, float fB );
 void	NormalizeVec ( Span_T<float> & dData );
 

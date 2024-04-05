@@ -69,7 +69,7 @@ class Packer_i
 public:
 	virtual				~Packer_i(){}
 
-	virtual bool		Setup ( const std::string & sFilename, std::string & sError ) = 0;
+	virtual bool		Setup ( const std::string & sFilename, size_t tBufferSize, std::string & sError ) = 0;
 	virtual void		AddDoc ( int64_t tAttr ) = 0;
 	virtual void		AddDoc ( const uint8_t * pData, int iLength ) = 0;
 	virtual void		AddDoc ( const int64_t * pData, int iLength ) = 0;
@@ -88,7 +88,7 @@ class PackerTraits_T : public Packer_i
 public:
 					PackerTraits_T ( const Settings_t & tSettings, const std::string & sName, common::AttrType_e eType );
 
-	bool			Setup ( const std::string & sFilename, std::string & sError ) override;
+	bool			Setup ( const std::string & sFilename, size_t tBufferSize, std::string & sError ) override;
 	void			CorrectOffset ( util::FileWriter_c & tWriter, int64_t tBodyOffset ) override;
 	int64_t			GetBodySize() const override { return m_iBodySize; }
 	void			Done() override;
@@ -102,6 +102,7 @@ protected:
 	util::FileWriter_c	m_tWriter;
 	int64_t				m_iBaseOffset = 0;
 	int64_t				m_iBodySize = 0;
+	size_t				m_tBufferSize = 0;
 
 	HEADER				m_tHeader;
 };
@@ -112,8 +113,10 @@ PackerTraits_T<HEADER>::PackerTraits_T ( const Settings_t & tSettings, const std
 {}
 
 template <typename HEADER>
-bool PackerTraits_T<HEADER>::Setup ( const std::string & sFilename, std::string & sError )
+bool PackerTraits_T<HEADER>::Setup ( const std::string & sFilename, size_t tBufferSize, std::string & sError )
 {
+	m_tBufferSize = tBufferSize;
+	m_tWriter.SetBufferSize(tBufferSize);
 	return m_tWriter.Open ( sFilename, sError );
 }
 
@@ -141,7 +144,7 @@ bool PackerTraits_T<HEADER>::WriteHeader ( util::FileWriter_c & tWriter, std::st
 template <typename HEADER>
 bool PackerTraits_T<HEADER>::WriteBody ( const std::string & sDest, std::string & sError ) const
 {
-	return util::CopySingleFile ( m_tWriter.GetFilename(), sDest, sError, O_CREAT | O_RDWR | O_APPEND | O_BINARY );
+	return util::CopySingleFile ( m_tWriter.GetFilename(), sDest, sError, O_CREAT | O_RDWR | O_APPEND | O_BINARY, m_tBufferSize );
 }
 
 template <typename HEADER>
