@@ -26,7 +26,7 @@
 namespace knn
 {
 
-static const int LIB_VERSION = 2;
+static const int LIB_VERSION = 3;
 static const uint32_t STORAGE_VERSION = 1;
 
 enum class HNSWSimilarity_e
@@ -73,7 +73,7 @@ public:
 	virtual			~KNN_i() = default;
 
 	virtual bool	Load ( const std::string & sFilename, std::string & sError ) = 0;
-	virtual Iterator_i * CreateIterator ( const std::string & sName, const util::Span_T<float> & dData, int iResults, std::string & sError ) = 0;
+	virtual Iterator_i * CreateIterator ( const std::string & sName, const util::Span_T<float> & dData, int iResults, int iEf, std::string & sError ) = 0;
 };
 
 class Builder_i

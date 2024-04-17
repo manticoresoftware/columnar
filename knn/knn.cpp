@@ -125,7 +125,7 @@ public:
 	bool	Load ( FileReader_c & tReader, std::string & sError )	{ return m_pAlg->loadIndex ( tReader, GetSpaceInterface(), sError ); }
 	const std::string &	GetName() const								{ return m_sName; }
 	const knn::IndexSettings_t & GetSettings() const				{ return m_tSettings; }
-	void	Search ( std::vector<DocDist_t> & dResults, const Span_T<float> & dData, int iResults ) override;
+	void	Search ( std::vector<DocDist_t> & dResults, const Span_T<float> & dData, int iResults, int iEf ) const override;
 
 private:
 	std::string				m_sName;
@@ -167,9 +167,10 @@ bool HNSWIndex_c::AddDoc ( const Span_T<float> & dData, std::string & sError )
 }
 
 
-void HNSWIndex_c::Search ( std::vector<DocDist_t> & dResults, const Span_T<float> & dData, int iResults )
+void HNSWIndex_c::Search ( std::vector<DocDist_t> & dResults, const Span_T<float> & dData, int iResults, int iEf ) const
 {
-	auto tPQ = m_pAlg->searchKnn ( dData.begin(), iResults );
+	size_t iSearchEf = iEf;
+	auto tPQ = m_pAlg->searchKnn ( dData.begin(), iResults, nullptr, &iSearchEf );
 	dResults.resize(0);
 	dResults.reserve ( tPQ.size() );
 	while ( !tPQ.empty() )
@@ -185,7 +186,7 @@ class KNN_c : public KNN_i
 {
 public:
 	bool			Load ( const std::string & sFilename, std::string & sError ) override;
-	Iterator_i *	CreateIterator ( const std::string & sName, const Span_T<float> & dData, int iResults, std::string & sError ) override;
+	Iterator_i *	CreateIterator ( const std::string & sName, const Span_T<float> & dData, int iResults, int iEf, std::string & sError ) override;
 
 private:
 	std::vector<std::unique_ptr<HNSWIndex_c>>		m_dIndexes;
@@ -229,7 +230,7 @@ bool KNN_c::Load ( const std::string & sFilename, std::string & sError )
 }
 
 
-Iterator_i * KNN_c::CreateIterator ( const std::string & sName, const Span_T<float> & dData, int iResults, std::string & sError )
+Iterator_i * KNN_c::CreateIterator ( const std::string & sName, const Span_T<float> & dData, int iResults, int iEf , std::string & sError )
 {
 	HNSWIndex_c * pIndex = GetIndex(sName);
 	if ( !pIndex )
@@ -238,7 +239,7 @@ Iterator_i * KNN_c::CreateIterator ( const std::string & sName, const Span_T<flo
 		return nullptr;
 	}
 
-	return knn::CreateIterator ( *pIndex, dData, iResults );
+	return knn::CreateIterator ( *pIndex, dData, iResults, iEf );
 }
 
 

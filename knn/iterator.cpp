@@ -27,7 +27,7 @@ using namespace util;
 class RowidIteratorKNN_c : public Iterator_i
 {
 public:
-			RowidIteratorKNN_c ( KNNIndex_i & tIndex, const Span_T<float> & dData, int iResults );
+			RowidIteratorKNN_c ( KNNIndex_i & tIndex, const Span_T<float> & dData, int iResults, int iEf );
 
 	bool	HintRowID ( uint32_t tRowID ) override;
 	bool	GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBlock ) override;
@@ -47,9 +47,9 @@ private:
 };
 
 
-RowidIteratorKNN_c::RowidIteratorKNN_c ( KNNIndex_i & tIndex, const Span_T<float> & dData, int iResults )
+RowidIteratorKNN_c::RowidIteratorKNN_c ( KNNIndex_i & tIndex, const Span_T<float> & dData, int iResults, int iEf )
 {
-	tIndex.Search ( m_dCollected, dData, iResults );
+	tIndex.Search ( m_dCollected, dData, iResults, iEf );
 	std::sort ( m_dCollected.begin(), m_dCollected.end(), []( const auto & a, const auto & b ) { return a.m_tRowID<b.m_tRowID; } );
 	m_dRowIDs.resize(DOCS_PER_CHUNK);
 }
@@ -98,9 +98,9 @@ bool RowidIteratorKNN_c::GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBlock )
 
 /////////////////////////////////////////////////////////////////////
 
-Iterator_i * CreateIterator ( KNNIndex_i & tIndex, const util::Span_T<float> & dData, int iResults )
+Iterator_i * CreateIterator ( KNNIndex_i & tIndex, const util::Span_T<float> & dData, int iResults, int iEf )
 {
-	return new RowidIteratorKNN_c ( tIndex, dData, iResults );
+	return new RowidIteratorKNN_c ( tIndex, dData, iResults, iEf );
 }
 
 } // namespace knn
