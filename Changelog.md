@@ -1,5 +1,12 @@
 # Changelog
 
+# Version 2.3.0
+
+* [Commit f104](https://github.com/manticoresoftware/columnar/commit/f104a4709bbb144140d09a09bc0fc1db1895e331) Vector search support
+* [Commit 2169](https://github.com/manticoresoftware/columnar/commit/216953beef6676f7e34c9f6f1a30c5980d746710) Fixed cleanup of temporary files during the interrupted setup of the secondary index build. This resolves the issue where the daemon exceeded the open files limit when creating `tmp.spidx` files
+* [Commit 709b](https://github.com/manticoresoftware/columnar/commit/709b9acaaac97d9a1ca8796892f9ad432021c785) Use separate streamvbyte library for columnar and SI
+* [Commit e87f](https://github.com/manticoresoftware/columnar/commit/e87f088b458d4c5b1b6159fc72ed0d57b786891a) Fixed SI iterator being hinted at an already processed block
+
 # Version 2.2.4
 
 ### Minor changes
