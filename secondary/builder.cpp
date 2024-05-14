@@ -66,7 +66,7 @@ public:
 
 	virtual bool	Setup ( const std::string & sFile, const SchemaAttr_t & tAttr, int iAttr, std::string & sError ) = 0;
 	virtual int		GetItemSize () const = 0;
-	virtual void	SetItemsCount ( int iSize ) = 0;
+	virtual void	SetItemsCount ( size_t tSize ) = 0;
 
 	virtual void	SetAttr ( uint32_t tRowID, int64_t tAttr ) = 0;
 	virtual void	SetAttr ( uint32_t tRowID, const uint8_t * pData, int iLength ) = 0;
@@ -119,7 +119,7 @@ public:
 
 	bool	Setup ( const std::string & sFile, const SchemaAttr_t & tAttr, int iAttr, std::string & sError ) final;
 	int		GetItemSize() const final { return sizeof ( m_dRows[0] ); }
-	void	SetItemsCount ( int iSize ) final { m_dRows.reserve ( iSize ); }
+	void	SetItemsCount ( size_t tSize ) final { m_dRows.reserve(tSize); }
 	void	Flush() final;
 	void	Done() final;
 	void	SetAttr ( uint32_t tRowID, int64_t tAttr ) final;
@@ -736,7 +736,7 @@ struct ScopedFilesRemoval_t
 class Builder_c final : public Builder_i
 {
 public:
-	bool	Setup ( const Settings_t & tSettings, const Schema_t & tSchema, int iMemoryLimit, const std::string & sFile, size_t tBufferSize, std::string & sError );
+	bool	Setup ( const Settings_t & tSettings, const Schema_t & tSchema, size_t tMemoryLimit, const std::string & sFile, size_t tBufferSize, std::string & sError );
 
 	void	SetRowID ( uint32_t tRowID ) final;
 	void	SetAttr ( int iAttr, int64_t tAttr ) final;
@@ -748,7 +748,7 @@ private:
 	std::string	m_sFile;
 	size_t		m_tBufferSize = 0;
 	uint32_t	m_tRowID = 0;
-	uint32_t	m_iMaxRows = 0;
+	uint32_t	m_uMaxRows = 0;
 
 	std::vector<std::shared_ptr<RawWriter_i>>	m_dRawWriter;
 	std::vector<std::shared_ptr<SIWriter_i>>	m_dCidWriter;
@@ -761,7 +761,7 @@ private:
 };
 
 
-bool Builder_c::Setup ( const Settings_t & tSettings, const Schema_t & tSchema, int iMemoryLimit, const std::string & sFile, size_t tBufferSize, std::string & sError )
+bool Builder_c::Setup ( const Settings_t & tSettings, const Schema_t & tSchema, size_t tMemoryLimit, const std::string & sFile, size_t tBufferSize, std::string & sError )
 {
 	m_sFile = sFile;
 	m_tBufferSize = tBufferSize;
@@ -823,14 +823,14 @@ bool Builder_c::Setup ( const Settings_t & tSettings, const Schema_t & tSchema, 
 		if ( pWriter )
 			iRowSize += pWriter->GetItemSize();
 
-	m_iMaxRows = std::max ( 1000, iMemoryLimit / iRowSize );
+	m_uMaxRows = std::min ( std::max ( size_t(10000), tMemoryLimit / iRowSize ), size_t(UINT32_MAX) );
 
 	for ( auto & pWriter : m_dRawWriter )
 	{
 		if ( !pWriter )
 			continue;
 
-		pWriter->SetItemsCount ( m_iMaxRows );
+		pWriter->SetItemsCount ( m_uMaxRows );
 	}
 
 	return true;
@@ -840,7 +840,7 @@ void Builder_c::SetRowID ( uint32_t tRowID )
 {
 	m_tRowID = tRowID;
 
-	if ( ( m_tRowID % m_iMaxRows )==0 )
+	if ( ( m_tRowID % m_uMaxRows )==0 )
 		Flush();
 }
 
@@ -1035,11 +1035,11 @@ RawValue_T<uint64_t> Convert ( const BinValue_T<uint64_t> & tSrc )
 } // namespace SI
 
 
-SI::Builder_i * CreateBuilder ( const Schema_t & tSchema, int iMemoryLimit, const std::string & sFile, size_t tBufferSize, std::string & sError )
+SI::Builder_i * CreateBuilder ( const Schema_t & tSchema, size_t tMemoryLimit, const std::string & sFile, size_t tBufferSize, std::string & sError )
 {
 	std::unique_ptr<SI::Builder_c> pBuilder ( new SI::Builder_c );
 	SI::Settings_t tSettings;
-	if ( !pBuilder->Setup ( tSettings, tSchema, iMemoryLimit, sFile, tBufferSize, sError ) )
+	if ( !pBuilder->Setup ( tSettings, tSchema, tMemoryLimit, sFile, tBufferSize, sError ) )
 		return nullptr;
 
 	return pBuilder.release();

@@ -43,5 +43,5 @@ public:
 
 extern "C"
 {
-	DLLEXPORT SI::Builder_i * CreateBuilder ( const common::Schema_t & tSchema, int iMemoryLimit, const std::string & sFile, size_t tBufferSize, std::string & sError );
+	DLLEXPORT SI::Builder_i * CreateBuilder ( const common::Schema_t & tSchema, size_t tMemoryLimit, const std::string & sFile, size_t tBufferSize, std::string & sError );
 }
