@@ -1,5 +1,5 @@
 name: 🔬 Test
-run-name: 🔬 Test ${{ github.event.schedule == '00 20 * * *' && echo 'master branch in daemon + ' || echo 'commit' }} ${{ github.sha }}
+run-name: "🔬 Test ${{ github.event.schedule == '00 20 * * *' && echo 'master branch in daemon + ' || echo 'commit' }} ${{ github.sha }}"
 
 #on: workflow_call
 
