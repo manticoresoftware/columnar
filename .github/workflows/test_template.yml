@@ -62,7 +62,7 @@ jobs:
       - name: Download build artifacts
         uses: manticoresoftware/download_artifact_with_retries@v2
         with:
-          name: build_bionic_${{ inputs.CTEST_CONFIGURATION_TYPE }}_x86_64
+          name: build_jammy_${{ inputs.CTEST_CONFIGURATION_TYPE }}_x86_64
           path: .
 
       - name: Check out main cache before building
