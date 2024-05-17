@@ -226,7 +226,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Update deps
-        uses: manticoresoftware/manticoresearch/actions/update-deps
+        uses: manticoresoftware/manticoresearch/actions/update-deps@master
         with:
           name: columnar
           version: "${{ needs.vars.outputs.app_version }} ${{ needs.vars.outputs.app_date }} ${{ needs.vars.outputs.app_commit }}"
