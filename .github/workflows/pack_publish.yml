@@ -220,14 +220,14 @@ jobs:
           echo "app_date=$date" >> $GITHUB_OUTPUT
           echo "app_commit=$commit" >> $GITHUB_OUTPUT
 
-  update-manticoresearch-deps:
-    needs:
-      - vars
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Update deps
-        uses: manticoresoftware/manticoresearch/actions/update-deps
-        with:
-          name: columnar
-          version: "${{ needs.vars.outputs.app_version }} ${{ needs.vars.outputs.app_date }} ${{ needs.vars.outputs.app_commit }}"
-          token: ${{ secrets.PR_TOKEN }}
+#  update-manticoresearch-deps:
+#    needs:
+#      - vars
+#    runs-on: ubuntu-22.04
+#    steps:
+#      - name: Update deps
+#        uses: manticoresoftware/manticoresearch/actions/update-deps
+#        with:
+#          name: columnar
+#          version: "${{ needs.vars.outputs.app_version }} ${{ needs.vars.outputs.app_date }} ${{ needs.vars.outputs.app_commit }}"
+#          token: ${{ secrets.PR_TOKEN }}
