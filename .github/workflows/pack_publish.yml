@@ -213,7 +213,7 @@ jobs:
       - id: vars
         run: |
           version=$( cat CMakeLists.txt | grep 'columnar VERSION' | cut -d' ' -f5  )
-          date=$( git log -1 --date=short --format=%cd | cut -c3- | tr -d '-' )
+          date=$( git log -1 --date=format-local:"%y%m%d%H" --format=%cd )
           commit=${GITHUB_SHA:0:7}
 
           echo "app_version=$version" >> $GITHUB_OUTPUT
@@ -228,6 +228,6 @@ jobs:
       - name: Update deps
         uses: manticoresoftware/manticoresearch/actions/update-deps@master
         with:
-          name: columnar
+          name: mcl
           version: "${{ needs.vars.outputs.app_version }} ${{ needs.vars.outputs.app_date }} ${{ needs.vars.outputs.app_commit }}"
           token: ${{ secrets.PR_TOKEN }}
