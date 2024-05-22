@@ -11,6 +11,10 @@ function ( guess_from_git )
 		return ()
 	endif ()
 
+	# without this in some environments you can get error "detected dubious ownership in repository"
+	# `git config --global --add safe.directory '*'` in the docker image it runs in may not help. TODO: check why
+  execute_process ( COMMAND "${GIT_EXECUTABLE}" config --global --add safe.directory "${columnar_SOURCE_DIR}")
+
 	# extract short hash as GIT_COMMIT_ID
 	execute_process ( COMMAND "${GIT_EXECUTABLE}" log -1 --format=%h
 			WORKING_DIRECTORY "${columnar_SOURCE_DIR}"
@@ -21,16 +25,14 @@ function ( guess_from_git )
 	set ( GIT_COMMIT_ID "${GIT_COMMIT_ID}" PARENT_SCOPE )
 
 	# extract timestamp and make number YYMMDD from it
-	# it would be --date=format:%y%m%d, but old git on centos doesn't understand it
-	execute_process ( COMMAND "${GIT_EXECUTABLE}" log -1 --date=short --format=%cd
+	execute_process ( COMMAND "${GIT_EXECUTABLE}" log -1 --date=format-local:"%y%m%d%H" --format=%cd
 			WORKING_DIRECTORY "${columnar_SOURCE_DIR}"
 			RESULT_VARIABLE res
 			OUTPUT_VARIABLE GIT_TIMESTAMP_ID
-			ERROR_QUIET
 			OUTPUT_STRIP_TRAILING_WHITESPACE )
-	string ( REPLACE "-" "" GIT_TIMESTAMP_ID "${GIT_TIMESTAMP_ID}" )
-	string ( SUBSTRING "${GIT_TIMESTAMP_ID}" 2 -1 GIT_TIMESTAMP_ID )
-	set ( GIT_TIMESTAMP_ID "${GIT_TIMESTAMP_ID}" PARENT_SCOPE )
+
+	string ( SUBSTRING "${GIT_TIMESTAMP_ID}" 1 8 GIT_TIMESTAMP_ID )
+	set ( GIT_TIMESTAMP_ID ${GIT_TIMESTAMP_ID} PARENT_SCOPE )
 
 	# timestamp for reproducable packages
 	execute_process ( COMMAND "${GIT_EXECUTABLE}" log -1 --pretty=%ct

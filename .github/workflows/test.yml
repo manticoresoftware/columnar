@@ -1,5 +1,5 @@
 name: 🔬 Test
-run-name: 🔬 Test ${{ github.sha }}
+run-name: "🔬 Test ${{ github.event.schedule == '00 20 * * *' && 'master HEAD in daemon + ' || 'commit' }} ${{ github.sha }}"
 
 #on: workflow_call
 
@@ -58,7 +58,6 @@ jobs:
         run: |
           wget https://repo.manticoresearch.com/repository/ci/boost_1_75_0.tgz
           tar -xf boost_1_75_0.tgz
-
   build_linux_release:
     name: Linux release build
     uses: ./.github/workflows/build_template.yml

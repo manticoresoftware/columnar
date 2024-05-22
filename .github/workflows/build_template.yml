@@ -10,7 +10,7 @@ on:
       DISTR:
         required: false
         type: string
-        default: bionic
+        default: jammy
       CTEST_CMAKE_GENERATOR:
         required: false
         type: string
