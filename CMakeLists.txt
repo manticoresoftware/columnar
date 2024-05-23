@@ -27,7 +27,7 @@ set ( _CMAKE_BUILD_TYPE ${CMAKE_BUILD_TYPE} )
 
 # IMPORTANT: the below version should be in format x.y.z.
 # NOTE, if "z" is even the CI will release the package. It should be made odd if the version is still under development.
-project ( columnar VERSION 2.2.5 )
+project ( columnar VERSION 2.3.1 )
 
 # sometimes CMAKE_BUILD_TYPE became set after PROJECT statement, undo it.
 if (NOT _CMAKE_BUILD_TYPE AND CMAKE_BUILD_TYPE)
