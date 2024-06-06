@@ -290,8 +290,10 @@ int64_t SecondaryIndex_c::GetValsRows ( std::vector<BlockIterator_i *> * pIterat
 
 	ReaderFactory_c tReaderFactory = { .m_tCol = tCol, .m_tSettings = m_tSettings, .m_tRsetInfo = tRsetInfo, .m_iFD = m_tReader.GetFD(), .m_uVersion = m_uVersion, .m_uBlockBaseOff = uBlockBaseOff, .m_uBlocksCount = uBlocksCount, .m_uValuesPerBlock = m_uValuesPerBlock, .m_uRowidsPerBlock = m_uRowidsPerBlock, .m_pBounds = pBounds, .m_iCutoff = iCutoff };
 	std::unique_ptr<BlockReader_i> pBlockReader { tReaderFactory.CreateBlockReader() };
-	pBlockReader->CreateBlocksIterator ( dBlocksIt, *pIterators );
+	if ( !pBlockReader )
+		return 0;
 
+	pBlockReader->CreateBlocksIterator ( dBlocksIt, *pIterators );
 	return iNumIterators;
 }
 
@@ -309,6 +311,9 @@ uint32_t SecondaryIndex_c::CalcValsRows ( const Filter_t & tFilter ) const
 
 	ReaderFactory_c tReaderFactory = { .m_tCol = tCol, .m_tSettings = m_tSettings, .m_iFD = m_tReader.GetFD(), .m_uVersion = m_uVersion, .m_uBlockBaseOff = uBlockBaseOff, .m_uBlocksCount = uBlocksCount, .m_uValuesPerBlock = m_uValuesPerBlock, .m_uRowidsPerBlock = m_uRowidsPerBlock };
 	std::unique_ptr<BlockReader_i> pBlockReader { tReaderFactory.CreateBlockReader() };
+	if ( !pBlockReader )
+		return 0;
+
 	return pBlockReader->CalcValueCount(dBlocksIt);
 }
 
@@ -378,6 +383,9 @@ int64_t SecondaryIndex_c::GetRangeRows ( std::vector<BlockIterator_i *> * pItera
 
 	ReaderFactory_c tReaderFactory = { .m_tCol = tCol, .m_tSettings = m_tSettings, .m_tRsetInfo = tRsetInfo, .m_iFD = m_tReader.GetFD(), .m_uVersion = m_uVersion, .m_uBlockBaseOff = uBlockBaseOff, .m_uBlocksCount = uBlocksCount, .m_uValuesPerBlock = m_uValuesPerBlock, .m_uRowidsPerBlock = m_uRowidsPerBlock, .m_pBounds = pBounds, .m_iCutoff = iCutoff };
 	std::unique_ptr<BlockReader_i> pReader { tReaderFactory.CreateRangeReader() };
+	if ( !pReader )
+		return 0;
+
 	pReader->CreateBlocksIterator ( tPosIt, tFilter, *pIterators );
 
 	return iNumIterators;
@@ -398,6 +406,9 @@ uint32_t SecondaryIndex_c::CalcRangeRows ( const Filter_t & tFilter ) const
 
 	ReaderFactory_c tReaderFactory = { .m_tCol = tCol, .m_tSettings = m_tSettings, .m_iFD = m_tReader.GetFD(), .m_uVersion = m_uVersion, .m_uBlockBaseOff = uBlockBaseOff, .m_uBlocksCount = uBlocksCount, .m_uValuesPerBlock = m_uValuesPerBlock, .m_uRowidsPerBlock = m_uRowidsPerBlock };
 	std::unique_ptr<BlockReader_i> pReader { tReaderFactory.CreateRangeReader() };
+	if ( !pReader )
+		return 0;
+
 	return pReader->CalcValueCount ( tPosIt, tFilter );
 }
 
