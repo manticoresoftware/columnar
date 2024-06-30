@@ -47,6 +47,18 @@ public:
 		m_dData [ iBit>>SHIFT ] |= ( (T)1 )<<( iBit&MASK );
 	}
 
+	void Invert()
+	{
+		for ( auto & i : m_dData )
+			i = ~i;
+
+		if ( m_iSize!=m_iDataLen << SHIFT )
+		{
+			int iFirstBit = (m_iDataLen-1) << SHIFT;
+			m_dData.back() &= (T(1) << ( m_iSize-iFirstBit )) - 1;
+		}
+	}
+
 	template <typename RESULT>
 	void Fetch ( int & iIterator, int iBase, RESULT * & pRes, RESULT * pMax )
 	{

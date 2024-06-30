@@ -31,7 +31,8 @@ enum class FilterType_e
 	VALUES,
 	RANGE,
 	FLOATRANGE,
-	STRINGS
+	STRINGS,
+	NOTNULL
 };
 
 

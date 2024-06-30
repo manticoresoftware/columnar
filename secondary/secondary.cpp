@@ -335,8 +335,18 @@ bool SecondaryIndex_c::PrepareBlocksRange ( const Filter_t & tFilter, ApproxPos_
 
 	const bool bFloat = tCol.m_eType==AttrType_e::FLOAT;
 
-	tPos = { 0, 0, ( uBlocksCount - 1 ) * m_uValuesPerBlock };
-	if ( tFilter.m_bRightUnbounded )
+	tPos = { 0, 0, ( uBlocksCount - 1 )*m_uValuesPerBlock };
+
+	if ( ( tFilter.m_bLeftUnbounded && tFilter.m_bRightUnbounded ) || (!tFilter.m_bLeftUnbounded && !tFilter.m_bRightUnbounded ) )
+	{
+		ApproxPos_t tFoundMin =  ( bFloat ? m_dIdx[iCol]->Search ( FloatToUint ( tFilter.m_fMinValue ) ) : m_dIdx[iCol]->Search ( tFilter.m_iMinValue ) );
+		ApproxPos_t tFoundMax =  ( bFloat ? m_dIdx[iCol]->Search ( FloatToUint ( tFilter.m_fMaxValue ) ) : m_dIdx[iCol]->Search ( tFilter.m_iMaxValue ) );
+		tPos.m_iLo = std::min ( tFoundMin.m_iLo, tFoundMax.m_iLo );
+		tPos.m_iPos = std::min ( tFoundMin.m_iPos, tFoundMax.m_iPos );
+		tPos.m_iHi = std::max ( tFoundMin.m_iHi, tFoundMax.m_iHi );
+		iNumIterators = tFoundMax.m_iPos-tFoundMin.m_iPos+1;
+	}
+	else if ( tFilter.m_bRightUnbounded )
 	{
 		ApproxPos_t tFound =  ( bFloat ? m_dIdx[iCol]->Search ( FloatToUint ( tFilter.m_fMinValue ) ) : m_dIdx[iCol]->Search ( tFilter.m_iMinValue ) );
 		tPos.m_iPos = tFound.m_iPos;
@@ -349,15 +359,6 @@ bool SecondaryIndex_c::PrepareBlocksRange ( const Filter_t & tFilter, ApproxPos_
 		tPos.m_iPos = tFound.m_iPos;
 		tPos.m_iHi = tFound.m_iHi;
 		iNumIterators = tPos.m_iPos-tPos.m_iLo;
-	}
-	else
-	{
-		ApproxPos_t tFoundMin =  ( bFloat ? m_dIdx[iCol]->Search ( FloatToUint ( tFilter.m_fMinValue ) ) : m_dIdx[iCol]->Search ( tFilter.m_iMinValue ) );
-		ApproxPos_t tFoundMax =  ( bFloat ? m_dIdx[iCol]->Search ( FloatToUint ( tFilter.m_fMaxValue ) ) : m_dIdx[iCol]->Search ( tFilter.m_iMaxValue ) );
-		tPos.m_iLo = std::min ( tFoundMin.m_iLo, tFoundMax.m_iLo );
-		tPos.m_iPos = std::min ( tFoundMin.m_iPos, tFoundMax.m_iPos );
-		tPos.m_iHi = std::max ( tFoundMin.m_iHi, tFoundMax.m_iHi );
-		iNumIterators = tFoundMax.m_iPos-tFoundMin.m_iPos+1;
 	}
 
 	iNumIterators = std::max ( iNumIterators, int64_t(0) );
@@ -438,12 +439,22 @@ const ColumnInfo_t * SecondaryIndex_c::GetAttr ( const Filter_t & tFilter, std::
 {
 	tFixedFilter = tFilter;
 	FixupFilterSettings ( tFixedFilter, tCol.m_eType );
-	if ( tFixedFilter.m_eType==FilterType_e::STRINGS )
+	switch ( tFixedFilter.m_eType )
 	{
+	case FilterType_e::STRINGS:
 		if ( !tFixedFilter.m_fnCalcStrHash )
 			return false;
 
 		tFixedFilter = StringFilterToHashFilter ( tFixedFilter, false );
+		break;
+
+	case FilterType_e::NOTNULL:
+		tFixedFilter.m_bLeftUnbounded = true;
+		tFixedFilter.m_bRightUnbounded = true;
+		break;
+
+	default:
+		break;
 	}
 
 	return true;
@@ -468,6 +479,7 @@ bool SecondaryIndex_c::CreateIterators ( std::vector<BlockIterator_i *> & dItera
 
 	case FilterType_e::RANGE:
 	case FilterType_e::FLOATRANGE:
+	case FilterType_e::NOTNULL:
 		GetRangeRows ( &dIterators, tFixedFilter, pBounds, uMaxValues, iRsetSize, iCutoff );
 		return true;
 
@@ -506,6 +518,7 @@ bool SecondaryIndex_c::CalcCount ( uint32_t & uCount, const common::Filter_t & t
 
 	case FilterType_e::RANGE:
 	case FilterType_e::FLOATRANGE:
+	case FilterType_e::NOTNULL:
 		uCount = CalcRangeRows ( tFixedFilter );
 		if ( bExclude )
 			uCount = uMaxValues - uCount;
@@ -536,6 +549,7 @@ uint32_t SecondaryIndex_c::GetNumIterators ( const common::Filter_t & tFilter ) 
 
 	case FilterType_e::RANGE:
 	case FilterType_e::FLOATRANGE:
+	case FilterType_e::NOTNULL:
 		return GetRangeRows ( nullptr, tFixedFilter, nullptr, 0, 0, INT_MAX );
 
 	default:

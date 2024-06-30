@@ -28,7 +28,7 @@
 namespace columnar
 {
 
-static const int LIB_VERSION = 25;
+static const int LIB_VERSION = 26;
 
 class Iterator_i
 {

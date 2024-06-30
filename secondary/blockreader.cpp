@@ -97,6 +97,8 @@ public:
 	FORCE_INLINE int	Scan ( int iStart );
 	FORCE_INLINE int	GetLength() const { return m_iSize; }
 
+	void				Invert() { assert ( 0 && "Unsupported by SplitBitmap_c" ); }
+
 	template <typename RESULT>
 	void				Fetch ( int & iIterator, int iBase, RESULT * & pRes, RESULT * pMax );
 
@@ -201,6 +203,7 @@ class BitmapIterator_i : public BlockIterator_i
 {
 public:
 	virtual void Add ( BlockIterator_i * pIterator ) = 0;
+	virtual void Invert() = 0;
 };
 
 template <typename BITMAP, bool ROWID_RANGE>
@@ -218,6 +221,7 @@ public:
 	bool		WasCutoffHit() const override		{ return !m_iRowsLeft; }
 
 	void		Add ( BlockIterator_i * pIterator ) override;
+	void		Invert() override					{ m_tBitmap.Invert(); }
 
 private:
 	static const int			RESULT_BLOCK_SIZE = 1024;
@@ -403,7 +407,7 @@ protected:
 	int							m_iCutoff = 0;
 
 	bool				NeedBitmapIterator() const;
-	BitmapIterator_i *	SpawnBitmapIterator ( const RowidRange_t * pBounds = nullptr ) const;
+	BitmapIterator_i *	SpawnBitmapIterator ( const RowidRange_t * pBounds = nullptr, const Filter_t * pRange = nullptr ) const;
 	void				LoadValueBlockData ( bool bOnlyCount, FileReader_c & tReader );
 	uint32_t			CalcNumBlockValues ( int iBlock ) const;
 };
@@ -436,8 +440,17 @@ bool ReaderTraits_c::NeedBitmapIterator() const
 }
 
 
-BitmapIterator_i * ReaderTraits_c::SpawnBitmapIterator ( const RowidRange_t * pBounds ) const
+BitmapIterator_i * ReaderTraits_c::SpawnBitmapIterator ( const RowidRange_t * pBounds, const Filter_t * pRange ) const
 {
+	// force bitmap iterator for IS NULL queries
+	if ( pRange && pRange->m_eType==common::FilterType_e::NOTNULL && pRange->m_bExclude )
+	{
+		if ( pBounds )
+			return new BitmapIterator_T<BitVec_T<uint64_t>, true> ( m_sAttr, m_tRsetInfo.m_uRowsCount, pBounds );
+		else
+			return new BitmapIterator_T<BitVec_T<uint64_t>, false> ( m_sAttr, m_tRsetInfo.m_uRowsCount );
+	}
+
 	if ( !NeedBitmapIterator() )
 		return nullptr;
 
@@ -785,8 +798,11 @@ FindValueResult_t BlockReader_T<uint32_t, float>::FindValue ( uint64_t uRefVal )
 /////////////////////////////////////////////////////////////////////
 
 template<typename T>
-int CmpRange ( T tStart, T tEnd, const Filter_t & tRange )
+static int CmpRange ( T tStart, T tEnd, const Filter_t & tRange )
 {
+	if ( tRange.m_bLeftUnbounded && tRange.m_bRightUnbounded )
+		return 0;
+
 	Interval_T<T> tIntBlock ( tStart, tEnd );
 
 	Interval_T<T> tIntRange;
@@ -1005,12 +1021,18 @@ void RangeReader_c::CreateBlocksIterator ( const BlockIter_t & tIt, const Filter
 {
 	// add bitmap iterator as 1st element of dRes on exit
 	std::function<void( BitmapIterator_i * pIterator )> fnDeleter = [&]( BitmapIterator_i * pIterator ){ if ( pIterator ) { assert(dRes.empty()); dRes.push_back(pIterator); } };
-	std::unique_ptr<BitmapIterator_i, decltype(fnDeleter)> pBitmapIterator ( SpawnBitmapIterator ( m_bHaveBounds ? &m_tBounds : nullptr ), fnDeleter );
+	std::unique_ptr<BitmapIterator_i, decltype(fnDeleter)> pBitmapIterator ( SpawnBitmapIterator ( m_bHaveBounds ? &m_tBounds : nullptr, &tRange ), fnDeleter );
 	if ( pBitmapIterator && m_iCutoff>=0 )
 		pBitmapIterator->SetCutoff(m_iCutoff);
 
 	std::unique_ptr<BlockIteratorWithSetup_i> pCommonIterator;
 	CreateBlocksIterator ( tIt, tRange, [this, &dRes, &pBitmapIterator, &pCommonIterator]( int iValCur, bool bLoad ){ return AddIterator ( iValCur, bLoad, dRes, pBitmapIterator.get(), pCommonIterator ); } );
+
+	if ( tRange.m_eType==common::FilterType_e::NOTNULL && tRange.m_bExclude )
+	{
+		assert(pBitmapIterator);
+		pBitmapIterator->Invert();
+	}
 }
 
 
@@ -1068,6 +1090,9 @@ private:
 
 	bool EvalRangeValue ( int iItem, const Filter_t & tRange ) const override
 	{
+		if ( tRange.m_bLeftUnbounded && tRange.m_bRightUnbounded )
+			return true;
+
 		if ( std::is_floating_point<DST_VALUE>::value )
 			return ValueInInterval<float> ( UintToFloat ( m_dValues[iItem] ), tRange );
 		else
@@ -1133,6 +1158,9 @@ BlockReader_i * ReaderFactory_c::CreateRangeReader()
 
 	case AttrType_e::FLOAT:
 		return new RangeReader_T<uint32_t, float> ( *this, pCodec );
+
+	case AttrType_e::STRING:
+		return new RangeReader_T<uint64_t, uint64_t> ( *this, pCodec );
 
 	case AttrType_e::INT64:
 	case AttrType_e::INT64SET:
