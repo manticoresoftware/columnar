@@ -26,7 +26,7 @@
 namespace knn
 {
 
-static const int LIB_VERSION = 3;
+static const int LIB_VERSION = 4;
 static const uint32_t STORAGE_VERSION = 1;
 
 enum class HNSWSimilarity_e
@@ -36,12 +36,29 @@ enum class HNSWSimilarity_e
 	COSINE
 };
 
+enum class KNNType_e
+{
+	HNSW,
+	ANNOY
+};
+
+enum class AnnoyMetric_e
+{
+	ANGULAR,
+	EUCLIDEAN,
+	MANHATTAN,
+	DOT
+};
+
 struct IndexSettings_t
 {
 	int					m_iDims = 0;
 	HNSWSimilarity_e	m_eHNSWSimilarity = HNSWSimilarity_e::L2;
 	int					m_iHNSWM = 16;
 	int					m_iHNSWEFConstruction = 200;
+	int					m_iAnnoyNTrees = 10;
+	KNNType_e   m_eKnnType = KNNType_e::HNSW;
+	AnnoyMetric_e m_eAnnoyMetric = AnnoyMetric_e::EUCLIDEAN;
 };
 
 struct AttrWithSettings_t : public common::SchemaAttr_t, public IndexSettings_t {};
