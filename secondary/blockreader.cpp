@@ -97,7 +97,7 @@ public:
 	FORCE_INLINE int	Scan ( int iStart );
 	FORCE_INLINE int	GetLength() const { return m_iSize; }
 
-	void				Invert() { assert ( 0 && "Unsupported by SplitBitmap_c" ); }
+	void				Invert ( int iMinBit=-1, int iMaxBit=-1 ) { assert ( 0 && "Unsupported by SplitBitmap_c" ); }
 
 	template <typename RESULT>
 	void				Fetch ( int & iIterator, int iBase, RESULT * & pRes, RESULT * pMax );
@@ -203,7 +203,7 @@ class BitmapIterator_i : public BlockIterator_i
 {
 public:
 	virtual void Add ( BlockIterator_i * pIterator ) = 0;
-	virtual void Invert() = 0;
+	virtual void Invert ( RowidRange_t * pBounds ) = 0;
 };
 
 template <typename BITMAP, bool ROWID_RANGE>
@@ -221,7 +221,7 @@ public:
 	bool		WasCutoffHit() const override		{ return !m_iRowsLeft; }
 
 	void		Add ( BlockIterator_i * pIterator ) override;
-	void		Invert() override					{ m_tBitmap.Invert(); }
+	void		Invert ( RowidRange_t * pBounds ) override	{ m_tBitmap.Invert ( pBounds ? pBounds->m_uMin : -1, pBounds ? pBounds->m_uMax : -1 ); }
 
 private:
 	static const int			RESULT_BLOCK_SIZE = 1024;
@@ -407,7 +407,7 @@ protected:
 	int							m_iCutoff = 0;
 
 	bool				NeedBitmapIterator() const;
-	BitmapIterator_i *	SpawnBitmapIterator ( const RowidRange_t * pBounds = nullptr, const Filter_t * pRange = nullptr ) const;
+	BitmapIterator_i *	SpawnBitmapIterator ( const RowidRange_t * pBounds, bool bExclude ) const;
 	void				LoadValueBlockData ( bool bOnlyCount, FileReader_c & tReader );
 	uint32_t			CalcNumBlockValues ( int iBlock ) const;
 };
@@ -440,10 +440,11 @@ bool ReaderTraits_c::NeedBitmapIterator() const
 }
 
 
-BitmapIterator_i * ReaderTraits_c::SpawnBitmapIterator ( const RowidRange_t * pBounds, const Filter_t * pRange ) const
+BitmapIterator_i * ReaderTraits_c::SpawnBitmapIterator ( const RowidRange_t * pBounds, bool bExclude ) const
 {
-	// force bitmap iterator for IS NULL queries
-	if ( pRange && pRange->m_eType==common::FilterType_e::NOTNULL && pRange->m_bExclude )
+	// force bitmap iterator for exclude filters
+	// FIXME! make invertable split bitmaps
+	if ( bExclude )
 	{
 		if ( pBounds )
 			return new BitmapIterator_T<BitVec_T<uint64_t>, true> ( m_sAttr, m_tRsetInfo.m_uRowsCount, pBounds );
@@ -517,8 +518,8 @@ class BlockReader_c : public ReaderTraits_c
 public:
 				BlockReader_c ( const ReaderFactory_c & tCtx, std::shared_ptr<IntCodec_i> & pCodec );
 
-	void		CreateBlocksIterator ( const std::vector<BlockIter_t> & dIt, std::vector<BlockIterator_i *> & dRes ) override;
-	void		CreateBlocksIterator ( const BlockIter_t & tIt, const Filter_t & tVal, std::vector<BlockIterator_i *> & dRes ) override { assert ( 0 && "Requesting range iterators from block reader" ); }
+	void		CreateBlocksIterator ( const std::vector<BlockIter_t> & dIt, const Filter_t & tFilter, std::vector<BlockIterator_i *> & dRes ) override;
+	void		CreateBlocksIterator ( const BlockIter_t & tIt, const Filter_t & tFilter, std::vector<BlockIterator_i *> & dRes ) override { assert ( 0 && "Requesting range iterators from block reader" ); }
 	uint32_t	CalcValueCount ( const std::vector<BlockIter_t> & dIt ) override;
 	uint32_t	CalcValueCount ( const BlockIter_t & tIt, const common::Filter_t & tVal ) override { assert ( 0 && "Requesting range iterators from block reader" ); return 0; }
 
@@ -639,17 +640,21 @@ void BlockReader_c::CreateBlocksIterator ( const BlockIter_t & tIt, ADDITERATOR 
 }
 
 
-void BlockReader_c::CreateBlocksIterator ( const std::vector<BlockIter_t> & dIt, std::vector<BlockIterator_i *> & dRes )
+void BlockReader_c::CreateBlocksIterator ( const std::vector<BlockIter_t> & dIt, const Filter_t & tFilter, std::vector<BlockIterator_i *> & dRes )
 {
 	// add bitmap iterator as 1st element of dRes on exit
 	std::function<void( BitmapIterator_i * pIterator )> fnDeleter = [&]( BitmapIterator_i * pIterator ){ if ( pIterator ) { assert(dRes.empty()); dRes.push_back(pIterator); } };
-	std::unique_ptr<BitmapIterator_i, decltype(fnDeleter)> pBitmapIterator ( SpawnBitmapIterator(), fnDeleter );
+	RowidRange_t * pBounds = m_bHaveBounds ? &m_tBounds : nullptr;
+	std::unique_ptr<BitmapIterator_i, decltype(fnDeleter)> pBitmapIterator ( SpawnBitmapIterator ( pBounds, tFilter.m_bExclude ), fnDeleter );
 	if ( pBitmapIterator && m_iCutoff>=0 )
 		pBitmapIterator->SetCutoff(m_iCutoff);
 
 	std::unique_ptr<BlockIteratorWithSetup_i> pCommonIterator;
 	for ( auto & i : dIt )
 		CreateBlocksIterator ( i, [this, &dRes, &pBitmapIterator, &pCommonIterator]( int iItem ){ AddIterator ( iItem, dRes, pBitmapIterator.get(), pCommonIterator ); } );
+
+	if ( tFilter.m_bExclude )
+		pBitmapIterator->Invert(pBounds);
 }
 
 
@@ -829,8 +834,8 @@ class RangeReader_c : public ReaderTraits_c
 public:
 				RangeReader_c ( const ReaderFactory_c & tCtx, std::shared_ptr<IntCodec_i> & pCodec );
 
-	void		CreateBlocksIterator ( const std::vector<BlockIter_t> & dIt, std::vector<BlockIterator_i *> & dRes ) override { assert ( 0 && "Requesting block iterators from range reader" ); }
-	void		CreateBlocksIterator ( const BlockIter_t & tIt, const Filter_t & tRange, std::vector<BlockIterator_i *> & dRes ) override;
+	void		CreateBlocksIterator ( const std::vector<BlockIter_t> & dIt, const Filter_t & tFilter, std::vector<BlockIterator_i *> & dRes ) override { assert ( 0 && "Requesting block iterators from range reader" ); }
+	void		CreateBlocksIterator ( const BlockIter_t & tIt, const Filter_t & tFilter, std::vector<BlockIterator_i *> & dRes ) override;
 	uint32_t	CalcValueCount ( const std::vector<BlockIter_t> & dIt ) override { assert ( 0 && "Requesting block iterators from range reader" ); return 0; }
 	uint32_t	CalcValueCount ( const BlockIter_t & tIt, const common::Filter_t & tRange ) override;
 
@@ -1017,22 +1022,20 @@ void RangeReader_c::CreateBlocksIterator ( const BlockIter_t & tIt, const Filter
 }
 
 
-void RangeReader_c::CreateBlocksIterator ( const BlockIter_t & tIt, const Filter_t & tRange, std::vector<BlockIterator_i *> & dRes )
+void RangeReader_c::CreateBlocksIterator ( const BlockIter_t & tIt, const Filter_t & tFilter, std::vector<BlockIterator_i *> & dRes )
 {
 	// add bitmap iterator as 1st element of dRes on exit
 	std::function<void( BitmapIterator_i * pIterator )> fnDeleter = [&]( BitmapIterator_i * pIterator ){ if ( pIterator ) { assert(dRes.empty()); dRes.push_back(pIterator); } };
-	std::unique_ptr<BitmapIterator_i, decltype(fnDeleter)> pBitmapIterator ( SpawnBitmapIterator ( m_bHaveBounds ? &m_tBounds : nullptr, &tRange ), fnDeleter );
+	RowidRange_t * pBounds = m_bHaveBounds ? &m_tBounds : nullptr;
+	std::unique_ptr<BitmapIterator_i, decltype(fnDeleter)> pBitmapIterator ( SpawnBitmapIterator ( pBounds, tFilter.m_bExclude ), fnDeleter );
 	if ( pBitmapIterator && m_iCutoff>=0 )
 		pBitmapIterator->SetCutoff(m_iCutoff);
 
 	std::unique_ptr<BlockIteratorWithSetup_i> pCommonIterator;
-	CreateBlocksIterator ( tIt, tRange, [this, &dRes, &pBitmapIterator, &pCommonIterator]( int iValCur, bool bLoad ){ return AddIterator ( iValCur, bLoad, dRes, pBitmapIterator.get(), pCommonIterator ); } );
+	CreateBlocksIterator ( tIt, tFilter, [this, &dRes, &pBitmapIterator, &pCommonIterator]( int iValCur, bool bLoad ){ return AddIterator ( iValCur, bLoad, dRes, pBitmapIterator.get(), pCommonIterator ); } );
 
-	if ( tRange.m_eType==common::FilterType_e::NOTNULL && tRange.m_bExclude )
-	{
-		assert(pBitmapIterator);
-		pBitmapIterator->Invert();
-	}
+	if ( tFilter.m_bExclude )
+		pBitmapIterator->Invert(pBounds);
 }
 
 

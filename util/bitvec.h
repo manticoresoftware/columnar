@@ -47,15 +47,29 @@ public:
 		m_dData [ iBit>>SHIFT ] |= ( (T)1 )<<( iBit&MASK );
 	}
 
-	void Invert()
+	void Invert ( int iMinBit=-1, int iMaxBit=-1 )
 	{
-		for ( auto & i : m_dData )
-			i = ~i;
+		if ( iMinBit<0 )
+			iMinBit = 0;
 
-		if ( m_iSize!=m_iDataLen << SHIFT )
+		if ( iMaxBit<0 )
+			iMaxBit = m_iSize;
+
+		int iMinId = iMinBit>>SHIFT;
+		int iMaxId = (iMaxBit+SIZEBITS-1)>>SHIFT;
+		for ( int i = iMinId; i<iMaxId; i++ )
+			m_dData[i] = ~m_dData[i];
+
+		if ( ( iMinId<<SHIFT ) != iMinBit )
 		{
-			int iFirstBit = (m_iDataLen-1) << SHIFT;
-			m_dData.back() &= (T(1) << ( m_iSize-iFirstBit )) - 1;
+			int iFirstBit = iMinId << SHIFT;
+			m_dData[iMinId] &= ~((T(1) << ( iMinBit-iFirstBit )) - 1);
+		}
+
+		if ( ( iMaxId<<SHIFT ) != iMaxBit )
+		{
+			int iFirstBit = (iMaxId-1) << SHIFT;
+			m_dData[iMaxId-1] &= (T(1) << ( iMaxBit-iFirstBit )) - 1;
 		}
 	}
 

@@ -338,7 +338,7 @@ int64_t SecondaryIndex_c::GetValsRows ( std::vector<BlockIterator_i *> * pIterat
 	if ( !pBlockReader )
 		return 0;
 
-	pBlockReader->CreateBlocksIterator ( dBlocksIt, *pIterators );
+	pBlockReader->CreateBlocksIterator ( dBlocksIt, tFilter, *pIterators );
 	return iNumIterators;
 }
 
