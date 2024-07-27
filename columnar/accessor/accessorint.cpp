@@ -542,7 +542,7 @@ public:
 	FORCE_INLINE bool	SetupNextBlock ( const StoredBlock_Int_Table_T<T> & tBlock, bool bEq );
 
 	template <typename T>
-	FORCE_INLINE bool	AllPassFilter ( const StoredBlock_Int_Table_T<T> & tBlock ) const;
+	FORCE_INLINE bool	AllPassFilter ( const StoredBlock_Int_Table_T<T> & tBlock, bool bEq ) const;
 
 private:
 	int							m_iTableValueId = -1;
@@ -714,19 +714,19 @@ bool AnalyzerBlock_Int_Table_c::SetupNextBlock ( const StoredBlock_Int_Table_T<T
 }
 
 template <typename T>
-bool AnalyzerBlock_Int_Table_c::AllPassFilter ( const StoredBlock_Int_Table_T<T> & tBlock ) const
+bool AnalyzerBlock_Int_Table_c::AllPassFilter ( const StoredBlock_Int_Table_T<T> & tBlock, bool bEq ) const
 {
 	switch ( m_eType )
 	{
 		case FilterType_e::VALUES:
 			if ( m_dValues.size()==1 )
 			{
-				if ( tBlock.GetTableSize()==1 && m_iTableValueId!=-1 )
+				if ( tBlock.GetTableSize()==1 && ( ( m_iTableValueId!=-1 ) ^ ( !bEq ) ) )
 					return true;
 			}
 			else
 			{
-				if ( m_dTableValues.size()==tBlock.GetTableSize() )
+				if ( m_dTableValues.size()==tBlock.GetTableSize() && bEq )
 					return true;
 			}
 			break;
@@ -1167,7 +1167,7 @@ bool Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::Mov
 
 		case IntPacking_e::TABLE:
 			bProcessBlock = m_tBlockTable.SetupNextBlock<ACCESSOR_VALUES,RANGE_EVAL> ( ACCESSOR::m_tBlockTable, !m_tSettings.m_bExclude );
-			if ( bProcessBlock && m_tBlockTable.AllPassFilter ( ACCESSOR::m_tBlockTable ) )
+			if ( bProcessBlock && m_tBlockTable.AllPassFilter ( ACCESSOR::m_tBlockTable, !m_tSettings.m_bExclude ) )
 				ePackingForProcessingFunc = IntPacking_e::CONST;
 			break;
 
@@ -1241,6 +1241,9 @@ static Analyzer_i * CreateAnalyzerInt ( const AttributeHeader_i & tHeader, uint3
 Analyzer_i * CreateAnalyzerInt ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader, const Filter_t & tSettings, bool bHaveMatchingBlocks )
 {
 	if ( tSettings.m_eType!=FilterType_e::VALUES && tSettings.m_eType!=FilterType_e::RANGE && tSettings.m_eType!=FilterType_e::FLOATRANGE )
+		return nullptr;
+
+	if ( ( tSettings.m_eType==FilterType_e::RANGE || tSettings.m_eType==FilterType_e::FLOATRANGE ) && tSettings.m_bExclude )
 		return nullptr;
 
 	int iIndex = bHaveMatchingBlocks*16 + tSettings.m_bLeftClosed*8 + tSettings.m_bRightClosed*4 + tSettings.m_bLeftUnbounded*2 + tSettings.m_bRightUnbounded;
