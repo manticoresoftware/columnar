@@ -30,6 +30,51 @@ namespace SI
 using namespace util;
 using namespace common;
 
+template <typename T>
+static void LoadTypeLimits ( PGM_i * pPGM, ApproxPos_t & tFoundMin, ApproxPos_t & tFoundMax )
+{
+	assert(pPGM);
+	tFoundMin = pPGM->Search ( std::numeric_limits<T>::min() );
+	tFoundMax = pPGM->Search ( std::numeric_limits<T>::max() );
+}
+
+template <>
+void LoadTypeLimits<float> ( PGM_i * pPGM, ApproxPos_t & tFoundMin, ApproxPos_t & tFoundMax )
+{
+	assert(pPGM);
+	tFoundMin = pPGM->Search ( FloatToUint ( std::numeric_limits<float>::min() ) );
+	tFoundMax = pPGM->Search ( FloatToUint ( std::numeric_limits<float>::max() ) );
+}
+
+
+static void SetupFullscanLimits ( AttrType_e eType, PGM_i * pPGM, ApproxPos_t & tFoundMin, ApproxPos_t & tFoundMax )
+{
+	assert(pPGM);
+
+	switch ( eType )
+	{
+	case AttrType_e::FLOAT:
+	case AttrType_e::FLOATVEC:
+		LoadTypeLimits<float> ( pPGM, tFoundMin, tFoundMax );
+		break;
+
+	case AttrType_e::STRING:
+		LoadTypeLimits<uint64_t> ( pPGM, tFoundMin, tFoundMax );
+		break;
+
+	case AttrType_e::INT64:
+	case AttrType_e::INT64SET:
+		LoadTypeLimits<int64_t> ( pPGM, tFoundMin, tFoundMax );
+		break;
+
+	default:
+		LoadTypeLimits<uint32_t> ( pPGM, tFoundMin, tFoundMax );
+		break;
+	}
+}
+
+////////////////////////////////////////////////////////////////////
+
 class SecondaryIndex_c : public Index_i
 {
 public:
@@ -337,10 +382,19 @@ bool SecondaryIndex_c::PrepareBlocksRange ( const Filter_t & tFilter, ApproxPos_
 
 	tPos = { 0, 0, ( uBlocksCount - 1 )*m_uValuesPerBlock };
 
-	if ( ( tFilter.m_bLeftUnbounded && tFilter.m_bRightUnbounded ) || (!tFilter.m_bLeftUnbounded && !tFilter.m_bRightUnbounded ) )
+	bool bFullscan = tFilter.m_bLeftUnbounded && tFilter.m_bRightUnbounded;
+	if ( bFullscan || (!tFilter.m_bLeftUnbounded && !tFilter.m_bRightUnbounded ) )
 	{
-		ApproxPos_t tFoundMin =  ( bFloat ? m_dIdx[iCol]->Search ( FloatToUint ( tFilter.m_fMinValue ) ) : m_dIdx[iCol]->Search ( tFilter.m_iMinValue ) );
-		ApproxPos_t tFoundMax =  ( bFloat ? m_dIdx[iCol]->Search ( FloatToUint ( tFilter.m_fMaxValue ) ) : m_dIdx[iCol]->Search ( tFilter.m_iMaxValue ) );
+		ApproxPos_t tFoundMin, tFoundMax;
+
+		if ( bFullscan )
+			SetupFullscanLimits ( tCol.m_eType, m_dIdx[iCol].get(), tFoundMin, tFoundMax );
+		else
+		{
+			tFoundMin = ( bFloat ? m_dIdx[iCol]->Search ( FloatToUint ( tFilter.m_fMinValue ) ) : m_dIdx[iCol]->Search ( tFilter.m_iMinValue ) );
+			tFoundMax = ( bFloat ? m_dIdx[iCol]->Search ( FloatToUint ( tFilter.m_fMaxValue ) ) : m_dIdx[iCol]->Search ( tFilter.m_iMaxValue ) );
+		}
+		
 		tPos.m_iLo = std::min ( tFoundMin.m_iLo, tFoundMax.m_iLo );
 		tPos.m_iPos = std::min ( tFoundMin.m_iPos, tFoundMax.m_iPos );
 		tPos.m_iHi = std::max ( tFoundMin.m_iHi, tFoundMax.m_iHi );
