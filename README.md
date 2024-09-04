@@ -86,3 +86,4 @@ https://db-benchmarks.com/test-taxi/#manticore-search-vs-clickhouse
 
 ![taxi_ms_ch](https://db-benchmarks.com/test-taxi/ms_ch.png)
 
+
