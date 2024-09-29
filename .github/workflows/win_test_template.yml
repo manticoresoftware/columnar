@@ -91,8 +91,6 @@ jobs:
           extensions: mysqli
       - name: Download Jieba files
         run: |
-#             Get-ChildItem -Recurse -Path "D:\a\columnar\columnar\build\_deps\manticore-src\misc" | Select-Object Name, Length, LastWriteTime
-#             mkdir D:\a\columnar\columnar\build\_deps\manticore-src\misc\jieba
              New-Item -ItemType Directory -Path D:\a\columnar\columnar\build\_deps\manticore-src\misc\jieba -Force
              $files = @("hmm_model", "idf", "jieba.dict", "stop_words", "user.dict")
              foreach ($name in $files) {
