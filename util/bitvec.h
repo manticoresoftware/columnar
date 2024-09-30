@@ -56,7 +56,7 @@ public:
 			iMaxBit = m_iSize;
 
 		int iMinId = iMinBit>>SHIFT;
-		int iMaxId = (iMaxBit+SIZEBITS-1)>>SHIFT;
+		int iMaxId = (iMaxBit+SIZEBITS)>>SHIFT;
 		for ( int i = iMinId; i<iMaxId; i++ )
 			m_dData[i] = ~m_dData[i];
 
