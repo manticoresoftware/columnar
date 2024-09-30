@@ -40,7 +40,7 @@ jobs:
       run:
         shell: bash
     container:
-      image: manticoresearch/ubertests_ctest:3263_mar_2024
+      image: manticoresearch/ubertests_ctest:3263_20240920
       env:
         DIAGNOSTIC: 1
         CACHEB: ../cache
@@ -48,6 +48,7 @@ jobs:
         CTEST_START: ${{ inputs.CTEST_START }}
         CTEST_END: ${{ inputs.CTEST_END }}
         MANTICORE_LOCATOR: ${{ inputs.MANTICORE_LOCATOR }}
+        JIEBA_DATA_DIR: /usr/share/manticore/jieba/
         # The following is useful to test a specific test, just uncomment it, no need to disable CTEST_START/END
         # CTEST_REGEX: test_234
     steps:
