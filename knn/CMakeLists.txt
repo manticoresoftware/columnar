@@ -18,7 +18,7 @@ cmake_minimum_required ( VERSION 3.17 )
 
 include ( GetHNSW )
 
-add_library ( knn_lib MODULE knn.cpp knn.h iterator.cpp iterator.h )
+add_library ( knn_lib MODULE knn.cpp knn.h iterator.cpp iterator.h embeddings.cpp embeddings.h manticoresearch_text_embeddings.h )
 
 if (CMAKE_SYSTEM_PROCESSOR STREQUAL x86_64 OR CMAKE_SYSTEM_PROCESSOR STREQUAL amd64)
 	message ( STATUS "Add sse 4.1 to compiler flags for ${CMAKE_SYSTEM_PROCESSOR} arch" )
