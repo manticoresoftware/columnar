@@ -72,7 +72,7 @@ public:
 		if ( ( iMaxId<<SHIFT ) != iMaxBit )
 		{
 			int iFirstBit = (iMaxId-1) << SHIFT;
-			m_dData[iMaxId-1] &= (T(1) << ( iMaxBit-iFirstBit )) - 1;
+			m_dData[iMaxId-1] &= (T(1) << ( iMaxBit-iFirstBit+1 )) - 1;
 		}
 	}
 
