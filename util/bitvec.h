@@ -49,11 +49,14 @@ public:
 
 	void Invert ( int iMinBit=-1, int iMaxBit=-1 )
 	{
+		if ( !m_iSize )
+			return;
+
 		if ( iMinBit<0 )
 			iMinBit = 0;
 
 		if ( iMaxBit<0 )
-			iMaxBit = m_iSize;
+			iMaxBit = m_iSize-1;
 
 		int iMinId = iMinBit>>SHIFT;
 		int iMaxId = (iMaxBit+SIZEBITS)>>SHIFT;
