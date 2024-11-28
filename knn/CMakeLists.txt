@@ -18,6 +18,8 @@ cmake_minimum_required ( VERSION 3.17 )
 
 include ( GetHNSW )
 
+include ( GetAnnoy )
+
 add_library ( knn_lib MODULE knn.cpp knn.h iterator.cpp iterator.h )
 
 if (CMAKE_SYSTEM_PROCESSOR STREQUAL x86_64 OR CMAKE_SYSTEM_PROCESSOR STREQUAL amd64)
@@ -25,5 +27,5 @@ if (CMAKE_SYSTEM_PROCESSOR STREQUAL x86_64 OR CMAKE_SYSTEM_PROCESSOR STREQUAL am
 	target_compile_options ( knn_lib PUBLIC $<${GNUC_CXX}:-msse4.1> )
 endif ()
 
-target_link_libraries ( knn_lib PRIVATE hnswlib::hnswlib columnar_root util common )
+target_link_libraries ( knn_lib PRIVATE hnswlib::hnswlib Annoy::Annoy columnar_root util common )
 set_target_properties( knn_lib PROPERTIES PREFIX "" OUTPUT_NAME lib_manticore_knn )
