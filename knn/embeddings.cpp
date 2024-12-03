@@ -159,7 +159,7 @@ public:
 			TextToEmbeddings_c ( const ModelSettings_t & tSettings ) : m_tSettings ( tSettings ) {}
 
 	bool	Initialize ( const std::string & sLibPath, std::string & sError );
-	bool	Convert ( std::string_view sText, std::vector<float> & dEmbedding, std::string & sError ) const override;
+	bool	Convert ( const std::vector<std::string_view> & dTexts, std::vector<std::vector<float>> & dEmbeddings, std::string & sError ) const override;
 	int		GetDims() const override;
 
 private:
@@ -196,11 +196,15 @@ bool TextToEmbeddings_c::Initialize ( const std::string & sLibPath, std::string 
 }
 
 
-bool TextToEmbeddings_c::Convert ( std::string_view sText, std::vector<float> & dEmbedding, std::string & sError ) const
+bool TextToEmbeddings_c::Convert ( const std::vector<std::string_view> & dTexts, std::vector<std::vector<float>> & dEmbeddings, std::string & sError ) const
 {
 	assert(g_pLibFuncs);
 
-	FloatVecResult tVecResult = g_pLibFuncs->make_vect_embeddings ( &m_pModel, sText.data(), sText.length() );
+	std::vector<StringItem> dStringItems;
+	for ( const auto & i : dTexts )
+		dStringItems.push_back ( { i.data(), i.length() } );
+
+	FloatVecResult tVecResult = g_pLibFuncs->make_vect_embeddings ( &m_pModel, dStringItems.data(), dStringItems.size() );
 	if ( tVecResult.m_szError )
 	{
 		sError = tVecResult.m_szError;
@@ -208,9 +212,14 @@ bool TextToEmbeddings_c::Convert ( std::string_view sText, std::vector<float> & 
 		return false;
 	}
 
-	size_t tLen = tVecResult.m_tEmbedding.len;
-	dEmbedding.resize(tLen);
-	memcpy ( dEmbedding.data(), tVecResult.m_tEmbedding.ptr, sizeof(float)*tLen );
+	dEmbeddings.resize ( tVecResult.len );
+	for ( size_t i = 0; i < tVecResult.len; i++ )
+	{
+		const FloatVec & tVec = tVecResult.m_tEmbedding[i];
+		dEmbeddings[i].resize ( tVec.len );
+		memcpy ( dEmbeddings[i].data(), tVec.ptr, sizeof(float)*tVec.len );
+	}
+
 	g_pLibFuncs->free_vec_result(tVecResult);
 
 	return true;

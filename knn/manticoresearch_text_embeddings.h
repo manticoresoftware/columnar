@@ -31,13 +31,20 @@ struct FloatVec {
 };
 
 struct FloatVecResult {
-  FloatVec m_tEmbedding;
   char *m_szError;
+  const FloatVec *m_tEmbedding;
+  uintptr_t len;
+  uintptr_t cap;
 };
 
 using TextModelWrapper = void*;
 
-using MakeVectEmbeddingsFn = FloatVecResult(*)(const TextModelWrapper*, const char*, uintptr_t);
+struct StringItem {
+  const char *ptr;
+  uintptr_t len;
+};
+
+using MakeVectEmbeddingsFn = FloatVecResult(*)(const TextModelWrapper*, const StringItem*, uintptr_t);
 
 using FreeVecResultFn = void(*)(FloatVecResult);
 
