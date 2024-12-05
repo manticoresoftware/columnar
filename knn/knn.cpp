@@ -370,9 +370,9 @@ knn::Builder_i * CreateKNNBuilder ( const knn::Schema_t & tSchema, int64_t iNumE
 }
 
 
-knn::TextToEmbeddings_i * CreateTextToEmbeddings ( const std::string & sLibPath, const knn::ModelSettings_t & tSettings, std::string & sError )
+knn::EmbeddingsLib_i * LoadEmbeddingsLib ( const std::string & sLibPath, std::string & sError )
 {
-	return knn::CreateTextToEmbeddings ( sLibPath, tSettings, sError );
+	return knn::LoadEmbeddingsLib ( sLibPath, sError );
 }
 
 

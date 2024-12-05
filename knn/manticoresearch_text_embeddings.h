@@ -52,6 +52,7 @@ using GetLenFn = uintptr_t(*)(const TextModelWrapper*);
 
 struct EmbedLib {
   uintptr_t version;
+  const char *version_str;
   LoadModelFn load_model;
   FreeModelResultFn free_model_result;
   MakeVectEmbeddingsFn make_vect_embeddings;

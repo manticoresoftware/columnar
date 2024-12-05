@@ -21,6 +21,6 @@
 namespace knn
 {
 
-knn::TextToEmbeddings_i * CreateTextToEmbeddings ( const std::string & sLibPath, const ModelSettings_t & tSettings, std::string & sError );
+knn::EmbeddingsLib_i * LoadEmbeddingsLib ( const std::string & sLibPath, std::string & sError );
 
 } // namespace knn

@@ -71,36 +71,62 @@ bool LoadFunc ( T & pFunc, void * pHandle, const char * szFunc, const std::strin
 ///////////////////////////////////////////////////////////////////////////////
 
 using GetLibFuncs_fn = const EmbedLib * (*)();
-const EmbedLib *			g_pLibFuncs = nullptr;
 
 class LoadedLib_c
 {
 public:
-						LoadedLib_c ( void * pHandle ) : m_pHandle(pHandle) {}
+						LoadedLib_c ( const std::string sLibPath ) : m_sLibPath(sLibPath) {}
 						~LoadedLib_c();
 
-	void *				Handle() { return m_pHandle; }
+	bool				Initialize ( std::string & sError );
+
 	void				AddModel ( const std::string & sKey, TextModelWrapper pModel ) { m_hModels.insert ( { sKey, pModel } ); }
 	TextModelWrapper	GetModel ( const std::string & sKey ) const;
-	static std::weak_ptr<LoadedLib_c> Get();
+	const EmbedLib *	GetLibFuncs() const { return m_pLibFuncs; }
 
 private:
-	void *	m_pHandle = nullptr;
+	std::string			m_sLibPath;
+	void *				m_pHandle = nullptr;
 	std::unordered_map<std::string, TextModelWrapper> m_hModels;
+	const EmbedLib *	m_pLibFuncs = nullptr;
 };
 
+
+bool LoadedLib_c::Initialize ( std::string & sError )
+{
+	m_pHandle = dlopen ( m_sLibPath.c_str(), RTLD_LAZY | RTLD_LOCAL );
+	if ( !m_pHandle )
+	{
+		const char * szDlError = dlerror();
+		sError = util::FormatStr ( "dlopen() failed: %s", szDlError ? szDlError : "(null)" );
+		return false;
+	}
+
+	GetLibFuncs_fn fnGetLibFuncs;
+	if ( !LoadFunc ( fnGetLibFuncs, m_pHandle, "GetLibFuncs", m_sLibPath.c_str(), sError ) )
+		return false;
+
+	m_pLibFuncs = fnGetLibFuncs();
+	if ( !m_pLibFuncs )
+	{
+		sError = "Error initializing embeddings library";
+		return false;
+	}
+
+	return true;
+}
 
 LoadedLib_c::~LoadedLib_c()
 {
 	if ( !m_pHandle )
 		return;
 
-	assert(g_pLibFuncs);
-	for ( auto i : m_hModels )
-	{
-		TextModelResult	tResult = { i.second };
-		g_pLibFuncs->free_model_result(tResult);
-	}
+	if ( m_pLibFuncs )
+		for ( auto i : m_hModels )
+		{
+			TextModelResult	tResult = { i.second };
+			m_pLibFuncs->free_model_result(tResult);
+		}
 
 	dlclose(m_pHandle);
 }
@@ -112,36 +138,39 @@ TextModelWrapper LoadedLib_c::GetModel ( const std::string & sKey ) const
 	return tFound==m_hModels.end() ? nullptr : tFound->second;
 }
 
+///////////////////////////////////////////////////////////////////////////////
 
-std::weak_ptr<LoadedLib_c> g_pLoadedLib;
-
-std::shared_ptr<LoadedLib_c> LoadEmbeddingsLib ( const std::string & sLibPath, std::string & sError )
+class EmbeddingsLib_c : public EmbeddingsLib_i
 {
-	std::shared_ptr<LoadedLib_c> pSharedLib = g_pLoadedLib.lock();
-	if ( pSharedLib )
-		return pSharedLib;
+public:
+			EmbeddingsLib_c ( const std::string & sLibPath ) : m_sLibPath ( sLibPath ) {}
 
-	pSharedLib = std::make_shared<LoadedLib_c> ( dlopen ( sLibPath.c_str(), RTLD_LAZY | RTLD_LOCAL ) );
-	if ( !pSharedLib->Handle() )
-	{
-		const char * szDlError = dlerror();
-		sError = util::FormatStr ( "dlopen() failed: %s", szDlError ? szDlError : "(null)" );
-		return nullptr;		// if dlopen fails, don't report an error
-	}
+	bool	Load ( std::string & sError );
 
-	GetLibFuncs_fn fnGetLibFuncs;
-	if ( !LoadFunc ( fnGetLibFuncs, pSharedLib->Handle(), "GetLibFuncs", sLibPath.c_str(), sError ) )
-		return nullptr;
+	TextToEmbeddings_i * CreateTextToEmbeddings ( const knn::ModelSettings_t & tSettings, std::string & sError ) const override;
+	const std::string &	GetVersionStr() const override	{ return m_sVersion; }
+	int		GetVersion() const override					{ return m_iVersion; }
 
-	g_pLibFuncs = fnGetLibFuncs();
-	if ( !g_pLibFuncs)
-	{
-		sError = "Error initializing embeddings library";
-		return nullptr;
-	}
+private:
+	std::shared_ptr<LoadedLib_c> m_pLib;
+	std::string			m_sLibPath;
+	int					m_iVersion = 0;
+	std::string			m_sVersion;
+};
 
-	g_pLoadedLib = pSharedLib;
-	return pSharedLib;
+
+bool EmbeddingsLib_c::Load ( std::string & sError )
+{
+	m_pLib = std::make_shared<LoadedLib_c>(m_sLibPath);
+	if ( !m_pLib->Initialize(sError) )
+		return false;
+
+	auto * pFuncs = m_pLib->GetLibFuncs();
+	assert(pFuncs);
+
+	m_iVersion = int(pFuncs->version);
+	m_sVersion = pFuncs->version_str;
+	return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -158,7 +187,7 @@ class TextToEmbeddings_c : public TextToEmbeddings_i
 public:
 			TextToEmbeddings_c ( const ModelSettings_t & tSettings ) : m_tSettings ( tSettings ) {}
 
-	bool	Initialize ( const std::string & sLibPath, std::string & sError );
+	bool	Initialize ( std::shared_ptr<LoadedLib_c> pLib, std::string & sError );
 	bool	Convert ( const std::vector<std::string_view> & dTexts, std::vector<std::vector<float>> & dEmbeddings, std::string & sError ) const override;
 	int		GetDims() const override;
 
@@ -169,24 +198,23 @@ private:
 };
 
 
-bool TextToEmbeddings_c::Initialize ( const std::string & sLibPath, std::string & sError )
+bool TextToEmbeddings_c::Initialize ( std::shared_ptr<LoadedLib_c> pLib, std::string & sError )
 {
-	assert(!m_pModel);
+	assert ( !m_pModel && pLib );
 
-	m_pLib = LoadEmbeddingsLib ( sLibPath, sError );
-	if ( !m_pLib )
-		return false;
-
+	m_pLib = pLib;
 	m_pModel = m_pLib->GetModel ( ToKey(m_tSettings) );
 	if ( m_pModel )
 		return true;
 
-	assert(g_pLibFuncs);
-	TextModelResult tResult = g_pLibFuncs->load_model ( m_tSettings.m_sModelName.c_str(), m_tSettings.m_sModelName.length(), m_tSettings.m_sCachePath.c_str(), m_tSettings.m_sCachePath.length(), m_tSettings.m_sAPIKey.c_str(), m_tSettings.m_sAPIKey.length(), m_tSettings.m_bUseGPU );
+	auto * pFuncs = m_pLib->GetLibFuncs();
+	assert(pFuncs);
+
+	TextModelResult tResult = pFuncs->load_model ( m_tSettings.m_sModelName.c_str(), m_tSettings.m_sModelName.length(), m_tSettings.m_sCachePath.c_str(), m_tSettings.m_sCachePath.length(), m_tSettings.m_sAPIKey.c_str(), m_tSettings.m_sAPIKey.length(), m_tSettings.m_bUseGPU );
 	if ( tResult.m_szError )
 	{
 		sError = tResult.m_szError;
-		g_pLibFuncs->free_model_result(tResult);
+		pFuncs->free_model_result(tResult);
 		return false;
 	}
 
@@ -198,17 +226,18 @@ bool TextToEmbeddings_c::Initialize ( const std::string & sLibPath, std::string 
 
 bool TextToEmbeddings_c::Convert ( const std::vector<std::string_view> & dTexts, std::vector<std::vector<float>> & dEmbeddings, std::string & sError ) const
 {
-	assert(g_pLibFuncs);
-
 	std::vector<StringItem> dStringItems;
 	for ( const auto & i : dTexts )
 		dStringItems.push_back ( { i.data(), i.length() } );
 
-	FloatVecResult tVecResult = g_pLibFuncs->make_vect_embeddings ( &m_pModel, dStringItems.data(), dStringItems.size() );
+	auto * pFuncs = m_pLib->GetLibFuncs();
+	assert(pFuncs);
+
+	FloatVecResult tVecResult = pFuncs->make_vect_embeddings ( &m_pModel, dStringItems.data(), dStringItems.size() );
 	if ( tVecResult.m_szError )
 	{
 		sError = tVecResult.m_szError;
-		g_pLibFuncs->free_vec_result(tVecResult);
+		pFuncs->free_vec_result(tVecResult);
 		return false;
 	}
 
@@ -220,7 +249,7 @@ bool TextToEmbeddings_c::Convert ( const std::vector<std::string_view> & dTexts,
 		memcpy ( dEmbeddings[i].data(), tVec.ptr, sizeof(float)*tVec.len );
 	}
 
-	g_pLibFuncs->free_vec_result(tVecResult);
+	pFuncs->free_vec_result(tVecResult);
 
 	return true;
 }
@@ -228,18 +257,37 @@ bool TextToEmbeddings_c::Convert ( const std::vector<std::string_view> & dTexts,
 
 int	TextToEmbeddings_c::GetDims() const
 {
-	assert(g_pLibFuncs);
-	return g_pLibFuncs->get_hidden_size ( &m_pModel );
+	auto * pFuncs = m_pLib->GetLibFuncs();
+	assert(pFuncs);
+	return pFuncs->get_hidden_size ( &m_pModel );
 }
 
 
-knn::TextToEmbeddings_i * CreateTextToEmbeddings ( const std::string & sLibPath, const ModelSettings_t & tSettings, std::string & sError )
+TextToEmbeddings_i * EmbeddingsLib_c::CreateTextToEmbeddings ( const knn::ModelSettings_t & tSettings, std::string & sError ) const
 {
 	std::unique_ptr<TextToEmbeddings_c> pBuilder = std::make_unique<TextToEmbeddings_c>(tSettings);
-	if ( !pBuilder->Initialize ( sLibPath, sError ) )
+	if ( !pBuilder->Initialize ( m_pLib, sError ) )
 		pBuilder.reset();
 
 	return pBuilder.release();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+knn::EmbeddingsLib_i * LoadEmbeddingsLib ( const std::string & sLibPath, std::string & sError )
+{
+	std::unique_ptr<EmbeddingsLib_c> pLib = std::make_unique<EmbeddingsLib_c>(sLibPath);
+	if ( !pLib->Load(sError) )
+		return nullptr;
+
+	const int SUPPORTED_EMBEDDINGS_LIB_VER = 1;
+	if ( pLib->GetVersion()!=SUPPORTED_EMBEDDINGS_LIB_VER )
+	{
+		sError = util::FormatStr ( "Unsupported embeddings library version %d (expected %d)", pLib->GetVersion(), SUPPORTED_EMBEDDINGS_LIB_VER );
+		return nullptr;
+	}
+
+	return pLib.release();
 }
 
 } // namespace knn

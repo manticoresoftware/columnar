@@ -103,15 +103,24 @@ public:
 	virtual int		GetDims() const = 0;
 };
 
-} // namespace knn
+class EmbeddingsLib_i
+{
+public:
+	virtual			~EmbeddingsLib_i() = default;
 
+	virtual TextToEmbeddings_i * CreateTextToEmbeddings ( const knn::ModelSettings_t & tSettings, std::string & sError ) const = 0;
+	virtual const std::string &	GetVersionStr() const = 0;
+	virtual int		GetVersion() const = 0;
+};
+
+} // namespace knn
 
 extern "C"
 {
 	DLLEXPORT knn::Distance_i *			CreateDistanceCalc ( const knn::IndexSettings_t & tSettings );
 	DLLEXPORT knn::KNN_i *				CreateKNN();
 	DLLEXPORT knn::Builder_i *			CreateKNNBuilder ( const knn::Schema_t & tSchema, int64_t iNumElements );
-	DLLEXPORT knn::TextToEmbeddings_i * CreateTextToEmbeddings ( const std::string & sLibPath, const knn::ModelSettings_t & tSettings, std::string & sError );
+	DLLEXPORT knn::EmbeddingsLib_i *	LoadEmbeddingsLib ( const std::string & sLibPath, std::string & sError );
 	DLLEXPORT int						GetKNNLibVersion();
 	DLLEXPORT const char *				GetKNNLibVersionStr();
 }
