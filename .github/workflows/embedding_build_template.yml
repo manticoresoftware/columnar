@@ -1,0 +1,74 @@
+name: Build Template
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        required: false
+        type: string
+        default: "ubuntu-22.04"
+      arch:
+        required: true
+        type: string
+      image:
+        required: true
+        type: string
+      artifact_list:
+        required: false
+        type: string
+        default: "target/release/lib*.so"
+
+jobs:
+  build:
+    runs-on: ${{ inputs.runner }}
+    defaults:
+      run:
+        shell: bash
+    timeout-minutes: 30
+    container:
+      image: ${{ inputs.image }}
+    steps:
+      - name: Check distribution type
+        id: vars
+        run: |
+          declare -A dist_map=(
+            [bionic]="unknown-linux-gnu"
+            [focal]="unknown-linux-gnu"
+            [jammy]="unknown-linux-gnu"
+            [buster]="unknown-linux-gnu"
+            [bullseye]="unknown-linux-gnu"
+            [bookworm]="unknown-linux-gnu"
+            [rhel7]="unknown-linux-gnu"
+            [rhel8]="unknown-linux-gnu"
+            [rhel9]="unknown-linux-gnu"
+            [macos]="apple-darwin-gcc"
+            [windows]="pc-windows-msvc"
+          )
+
+          if [[ -n "${dist_map[${{ inputs.distr }}]}" ]]; then
+            echo "target=${{ inputs.arch }}-${dist_map[${{ inputs.distr }}]}" >> $GITHUB_OUTPUT
+          else
+            echo "Unsupported distribution type: ${{ inputs.distr }}"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v3
+      - run: |
+          cd columnar
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ steps.vars.outputs.target }}
+          override: true
+      - uses: actions-rs/cargo@v1
+        with:
+          use-cross: true
+          command: build
+          args: --target ${{ steps.vars.outputs.target }} --release
+
+      - name: Upload build artifacts
+        if: success()
+        uses: manticoresoftware/upload_artifact_with_retries@v2
+        with:
+          name: build_${{ inputs.distr }}_${{ inputs.CTEST_CONFIGURATION_TYPE }}_${{ inputs.arch }}
+          path: ${{ inputs.artifact_list }}

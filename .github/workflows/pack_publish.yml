@@ -31,6 +31,19 @@ jobs:
     steps:
       - run: echo "All set to build packages"
 
+  embedding_pack:
+    uses: ./.github/workflows/embedding_build_template.yml
+    needs: pack
+    strategy:
+      fail-fast: false
+      matrix:
+        distr: [bionic, focal, jammy, buster, bullseye, bookworm]
+        arch: [x86_64, aarch64]
+    name: ${{ matrix.distr }} ${{ matrix.arch }} embedding packing
+    with:
+      distr: ${{ matrix.distr }}
+      arch: ${{ matrix.arch }}
+
   pack_debian_ubuntu:
     uses: ./.github/workflows/build_template.yml
     needs: pack
