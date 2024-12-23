@@ -80,6 +80,7 @@ struct ColumnInfo_t
 {
 	common::AttrType_e m_eType = common::AttrType_e::NONE;
 	std::string m_sName;
+	std::string m_sJsonParentName;
 	uint32_t	m_uCountDistinct = 0;
 	bool		m_bEnabled = true;
 

@@ -36,6 +36,10 @@ void ColumnInfo_t::Load ( util::FileReader_c & tReader )
 	m_sName = tReader.Read_string();
 	m_eType = (AttrType_e)tReader.Unpack_uint32();
 	m_uCountDistinct = tReader.Unpack_uint32();
+
+	auto iJsonFieldPos = m_sName.find ( "['" );
+	if ( iJsonFieldPos!=std::string::npos )
+		m_sJsonParentName = m_sName.substr ( 0, iJsonFieldPos );
 }
 
 
