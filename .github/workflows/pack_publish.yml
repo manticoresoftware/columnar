@@ -78,7 +78,7 @@ jobs:
         cmake --build . --target package
       cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
       artifact_list: "build/manticore*deb"
-      embeddings_artifact: build_linux_${{ matrix.arch }}
+      embeddings_artifact: embeddings_linux_${{ matrix.arch }}
 
   pack_rhel:
     uses: ./.github/workflows/build_template.yml
@@ -102,7 +102,7 @@ jobs:
         cmake --build . --target package
       cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
       artifact_list: "build/manticore*rpm"
-      embeddings_artifact: build_linux_${{ matrix.arch }}
+      embeddings_artifact: embeddings_linux_${{ matrix.arch }}
 
 
   pack_macos:
@@ -125,7 +125,7 @@ jobs:
         cmake --build . --target package
       cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
       artifact_list: "build/manticore*tar.gz"
-      embeddings_artifact: build_macos_${{ matrix.arch == 'arm64' && 'aarch64' || matrix.arch }}
+      embeddings_artifact: embeddings_macos_${{ matrix.arch == 'arm64' && 'aarch64' || matrix.arch }}
 
   pack_windows:
     name: Windows x64 package
@@ -141,7 +141,7 @@ jobs:
         cmake --build . --target package
       cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
       artifact_list: "build/manticore*exe build/manticore*zip"
-      embeddings_artifact: build_windows_x86_64
+      embeddings_artifact: embeddings_windows_x86_64
 
   # virtual job to simplify the CI
   # This job depends on all the package preparation jobs that have to pass before we can start publishing packages
