@@ -100,10 +100,11 @@ jobs:
           lib_dir="${{ steps.vars.outputs.lib_dir }}"
           ls -la $lib_dir/*
           find $lib_dir -type f \( -name "libmanticoresearch*.a" -o -name "manticoresearch*.lib" \) -ls -exec mv {} ./build \;
+          cd build
 
       - name: Upload build artifacts
         if: success()
         uses: manticoresoftware/upload_artifact_with_retries@v2
         with:
           name: build_${{ inputs.distr }}_${{ inputs.arch }}
-          path: ./build/*
+          path: ./*
