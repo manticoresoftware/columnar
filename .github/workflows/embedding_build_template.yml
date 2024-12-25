@@ -1,4 +1,4 @@
-name: Build Template
+name: Embeddings Build Template
 
 on:
   workflow_call:
@@ -7,16 +7,20 @@ on:
         required: false
         type: string
         default: "ubuntu-22.04"
-      arch:
+      distr:
         required: true
         type: string
-      image:
+      arch:
         required: true
         type: string
       artifact_list:
         required: false
         type: string
         default: "target/release/lib*.so"
+      setup:
+        required: false
+        type: string
+        default: ""
 
 jobs:
   build:
@@ -25,50 +29,81 @@ jobs:
       run:
         shell: bash
     timeout-minutes: 30
-    container:
-      image: ${{ inputs.image }}
     steps:
+      - name: Setup
+        if: ${{ inputs.setup }}
+        run: |
+          ${{ inputs.setup }}
+
       - name: Check distribution type
         id: vars
         run: |
-          declare -A dist_map=(
-            [bionic]="unknown-linux-gnu"
-            [focal]="unknown-linux-gnu"
-            [jammy]="unknown-linux-gnu"
-            [buster]="unknown-linux-gnu"
-            [bullseye]="unknown-linux-gnu"
-            [bookworm]="unknown-linux-gnu"
-            [rhel7]="unknown-linux-gnu"
-            [rhel8]="unknown-linux-gnu"
-            [rhel9]="unknown-linux-gnu"
-            [macos]="apple-darwin-gcc"
+          declare -A target_map=(
+            [linux]="unknown-linux-musl"
+            [macos]="apple-darwin"
             [windows]="pc-windows-msvc"
           )
 
-          if [[ -n "${dist_map[${{ inputs.distr }}]}" ]]; then
-            echo "target=${{ inputs.arch }}-${dist_map[${{ inputs.distr }}]}" >> $GITHUB_OUTPUT
+          if [[ -n "${target_map[${{ inputs.distr }}]}" ]]; then
+            target="${{ inputs.arch }}-${target_map[${{ inputs.distr }}]}"
+            echo "target=${target}" >> $GITHUB_OUTPUT
           else
             echo "Unsupported distribution type: ${{ inputs.distr }}"
             exit 1
           fi
 
+          lib_dir="./embeddings/target/${target}/release"
+          echo "lib_dir=${lib_dir}" >> $GITHUB_OUTPUT
+
       - uses: actions/checkout@v3
-      - run: |
-          cd columnar
-      - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           target: ${{ steps.vars.outputs.target }}
           override: true
-      - uses: actions-rs/cargo@v1
-        with:
-          use-cross: true
-          command: build
-          args: --target ${{ steps.vars.outputs.target }} --release
+      - name: Prepare build args
+        id: params
+        run: |
+          args=(
+            "--target" 
+            "${{ steps.vars.outputs.target }}" 
+            "--lib"
+            "--release" 
+            "--manifest-path" 
+            "./embeddings/Cargo.toml"
+          )
+          echo "args=${args[@]}" >> $GITHUB_OUTPUT
+
+      - name: Build
+        if: ${{ inputs.distr == 'linux' || inputs.distr == 'macos' }}
+        run: |
+          if [[ "${{ inputs.distr }}" == "macos" ]]; then
+            export CC=o64-clang
+            export CXX=o64-clang++
+          fi
+          docker run --rm \
+            -e CC -e CXX \
+            -v $(pwd):/src \
+            -w /src \
+            joseluisq/rust-linux-darwin-builder:1.83.0 \
+            sh -c "cargo build ${{ steps.params.outputs.args }}"
+
+          sudo chown -hR $(id -u):$(id -g) ${{ steps.vars.outputs.lib_dir }}
+
+      - name: Build
+        if: ${{ inputs.distr == 'windows' }}
+        run: |
+          rustup target add ${{ steps.vars.outputs.target }}
+          cargo build ${{ steps.params.outputs.args }}
+
+      - run: | 
+          mkdir build
+          lib_dir="${{ steps.vars.outputs.lib_dir }}"
+          ls -la $lib_dir/*
+          find $lib_dir -type f \( -name "libmanticoresearch*.a" -o -name "manticoresearch*.lib" \) -ls -exec mv {} ./build \;
 
       - name: Upload build artifacts
         if: success()
         uses: manticoresoftware/upload_artifact_with_retries@v2
         with:
-          name: build_${{ inputs.distr }}_${{ inputs.CTEST_CONFIGURATION_TYPE }}_${{ inputs.arch }}
-          path: ${{ inputs.artifact_list }}
+          name: build_${{ inputs.distr }}__${{ inputs.arch }}
+          path: ./build/*

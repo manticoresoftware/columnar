@@ -31,22 +31,37 @@ jobs:
     steps:
       - run: echo "All set to build packages"
 
-  embedding_pack:
-    uses: ./.github/workflows/embedding_build_template.yml
+  embedding_linux_osx_pack:
     needs: pack
+    uses: ./.github/workflows/embedding_build_template.yml
     strategy:
       fail-fast: false
       matrix:
-        distr: [bionic, focal, jammy, buster, bullseye, bookworm]
+        distr: [linux, macos]
         arch: [x86_64, aarch64]
     name: ${{ matrix.distr }} ${{ matrix.arch }} embedding packing
     with:
+      runner: ubuntu-22.04
+      distr: ${{ matrix.distr }}
+      arch: ${{ matrix.arch }}
+
+  embedding_windows_pack:
+    needs: pack
+    uses: ./.github/workflows/embedding_build_template.yml
+    strategy:
+      fail-fast: false
+      matrix:
+        distr: [windows]
+        arch: [x86_64, aarch64]
+    name: ${{ matrix.distr }} ${{ matrix.arch }} embedding packing
+    with:
+      runner: windows-2022
       distr: ${{ matrix.distr }}
       arch: ${{ matrix.arch }}
 
   pack_debian_ubuntu:
     uses: ./.github/workflows/build_template.yml
-    needs: pack
+    needs: embedding_linux_osx_pack
     strategy:
       fail-fast: false
       matrix:
@@ -63,10 +78,11 @@ jobs:
         cmake --build . --target package
       cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
       artifact_list: "build/manticore*deb"
+      embeddings_artifact: build_linux_${{ matrix.arch }}
 
   pack_rhel:
     uses: ./.github/workflows/build_template.yml
-    needs: pack
+    needs: embedding_linux_osx_pack
     strategy:
       fail-fast: false
       matrix:
@@ -86,10 +102,12 @@ jobs:
         cmake --build . --target package
       cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
       artifact_list: "build/manticore*rpm"
+      embeddings_artifact: build_linux_${{ matrix.arch }}
+
 
   pack_macos:
     uses: ./.github/workflows/build_template.yml
-    needs: pack
+    needs: embedding_linux_osx_pack
     strategy:
       fail-fast: false
       matrix:
@@ -107,11 +125,12 @@ jobs:
         cmake --build . --target package
       cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
       artifact_list: "build/manticore*tar.gz"
+      embeddings_artifact: build_macos_${{ matrix.arch == 'arm64' && 'aarch64' || matrix.arch }}
 
   pack_windows:
     name: Windows x64 package
     uses: ./.github/workflows/build_template.yml
-    needs: pack
+    needs: embedding_windows_pack
     with:
       DISTR: windows
       arch: x64
@@ -122,6 +141,7 @@ jobs:
         cmake --build . --target package
       cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
       artifact_list: "build/manticore*exe build/manticore*zip"
+      embeddings_artifact: build_windows_x86_64
 
   # virtual job to simplify the CI
   # This job depends on all the package preparation jobs that have to pass before we can start publishing packages
