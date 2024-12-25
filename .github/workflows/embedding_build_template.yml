@@ -97,10 +97,9 @@ jobs:
 
       - run: | 
           mkdir build
-
           lib_dir="${{ steps.vars.outputs.lib_dir }}"
           ls -la $lib_dir/*
-          find $lib_dir -type f \( -name "libmanticoresearch.a" -o -name "manticoresearch*.lib" \) -ls -exec mv {} ./build \;
+          find $lib_dir -type f \( -name "libmanticoresearch*.a" -o -name "manticoresearch*.lib" \) -ls -exec mv {} ./build \;
 
       - name: Upload build artifacts
         if: success()
