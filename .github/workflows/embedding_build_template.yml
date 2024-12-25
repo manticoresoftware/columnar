@@ -105,5 +105,5 @@ jobs:
         if: success()
         uses: manticoresoftware/upload_artifact_with_retries@v2
         with:
-          name: build_${{ inputs.distr }}__${{ inputs.arch }}
+          name: build_${{ inputs.distr }}_${{ inputs.arch }}
           path: ./build/*
