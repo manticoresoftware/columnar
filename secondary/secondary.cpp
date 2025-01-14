@@ -87,6 +87,7 @@ public:
 	int64_t		GetCountDistinct ( const std::string & sName ) const override;
 	bool		SaveMeta ( std::string & sError ) override;
 	void		ColumnUpdated ( const char * sName ) override;
+	void		GetAttrInfo ( std::vector<IndexAttrInfo_t> & dAttrs ) const override;
 
 private:
 	Settings_t	m_tSettings;
@@ -296,6 +297,13 @@ void SecondaryIndex_c::ColumnUpdated ( const char * sName )
 				tSibling.m_bEnabled = false;
 		}
 	}
+}
+
+
+void SecondaryIndex_c::GetAttrInfo ( std::vector<IndexAttrInfo_t> & dAttrs ) const
+{
+	for ( const auto & i : m_dAttrs )
+		dAttrs.push_back ( { i.m_sName, i.m_eType, i.m_bEnabled } );
 }
 
 
