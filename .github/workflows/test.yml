@@ -80,7 +80,7 @@ jobs:
       CTEST_CMAKE_GENERATOR: "Ninja Multi-Config"
       CTEST_CONFIGURATION_TYPE: Debug
       cache_key: build_windows_x64
-      artifact_list: "build/columnar/Debug/lib_manticore_columnar.dll build/secondary/Debug/lib_manticore_secondary.dll build/secondary/Debug/lib_manticore_knn.dll build/_deps/manticore-build/src/Debug/indexer.exe build/_deps/manticore-build/src/Debug/searchd.exe" #
+      artifact_list: "build/columnar/Debug/lib_manticore_columnar.dll build/secondary/Debug/lib_manticore_secondary.dll build/knn/Debug/lib_manticore_knn.dll build/_deps/manticore-build/src/Debug/indexer.exe build/_deps/manticore-build/src/Debug/searchd.exe" #
       MANTICORE_LOCATOR: ${{ github.event.schedule == '00 20 * * *' && 'GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG master' || '' }}
 
   test_linux_debug:
