@@ -43,3 +43,17 @@
 ### Bugfixes
 
 * [Issue #1054](https://github.com/manticoresoftware/manticoresearch/issues/1054) Bug on empty string condition
+
+# Version 2.7.0
+
+- [Commit 89ed74a3](https://github.com/manticoresoftware/columnar/commit/89ed74a3d767a4a9dfdfe20d7c954fbc36c5ab72) - Fixed a crash caused by mismatched filter and secondary index types.
+- [Commit 4223c525](https://github.com/manticoresoftware/columnar/commit/4223c525aed2cfb704ae9a0b439e5fac034913d0) - Implemented the NOTNULL filter type for secondary indexes.
+- [Commit 020c82ed](https://github.com/manticoresoftware/columnar/commit/020c82ede0903f898a685cae0b5d8fcb19027771) - Fixed exclude filter handling in columnar accessor for table encoding.
+- [Commit 3fb88e65](https://github.com/manticoresoftware/columnar/commit/3fb88e65fa6575a40d80cbf96b45ad3383b39c46) - Fixed issues with full-scan (NOTNULL) filters on strings.
+- [Commit b707d5b0](https://github.com/manticoresoftware/columnar/commit/b707d5b0eec0383cdae12730d36eb8a25bc26ce2) - Added native exclude filter handling using bitmaps.
+- [Commit bd59d083](https://github.com/manticoresoftware/columnar/commit/bd59d083eec5f6debcf190b69cedc303683553da) - Fixed issues with bitmap inversion.
+- [Commit ba9e283b](https://github.com/manticoresoftware/columnar/commit/ba9e283b2f0e8a60756af69b0a0d8c21e2263099) - Switched to the hnsw library to fix issues when loading multiple KNN indexes.
+- [Commit 89120fa7](https://github.com/manticoresoftware/columnar/commit/89120fa7ead9b2770f7ddc3912807e6e6bcca1f3) - Resolved another bitmap inversion issue.
+- [Commit edadc694](https://github.com/manticoresoftware/columnar/commit/edadc694c68d6022bdd13134263667430a42cc1d) - Addressed additional issues with bitmap inversion.
+- [Commit 3ff21a80](https://github.com/manticoresoftware/columnar/commit/3ff21a80357dcca80b021b4827524d9ba63f11e6) - Fixed incorrectly enabled secondary indexes for JSON attribute fields affected by updates.
+- [Commit 47da6760](https://github.com/manticoresoftware/columnar/commit/47da6760aa8b32b2ef9d82f3a55666e7d0dbdf30) - Added support for fetching index metadata.
