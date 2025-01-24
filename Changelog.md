@@ -44,7 +44,7 @@
 
 * [Issue #1054](https://github.com/manticoresoftware/manticoresearch/issues/1054) Bug on empty string condition
 
-# Version 2.7.0
+# Version 4.0.0
 
 - [Commit 89ed74a3](https://github.com/manticoresoftware/columnar/commit/89ed74a3d767a4a9dfdfe20d7c954fbc36c5ab72) - Fixed a crash caused by mismatched filter and secondary index types.
 - [Commit 4223c525](https://github.com/manticoresoftware/columnar/commit/4223c525aed2cfb704ae9a0b439e5fac034913d0) - Implemented the NOTNULL filter type for secondary indexes.
