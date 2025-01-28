@@ -122,5 +122,5 @@ jobs:
         if: success()
         uses: manticoresoftware/upload_artifact_with_retries@v2
         with:
-          name: embeddings_${{ inputs.distr }}_${{ inputs.CTEST_CONFIGURATION_TYPE }}_${{ inputs.arch }}
+          name: embeddings_${{ inputs.distr }}_${{ inputs.arch }}
           path: ./build/*
