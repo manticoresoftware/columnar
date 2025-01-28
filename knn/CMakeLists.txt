@@ -36,7 +36,7 @@ set(EMBEDDINGS_LIB_NAME manticoresearch_text_embeddings)
 
 # Set platform-specific library file names
 if(WIN32)
-	set(EMBEDDINGS_LIB_FILE "${EMBEDDINGS_LIB_NAME}.lib")
+	set(EMBEDDINGS_LIB_FILE "${EMBEDDINGS_LIB_NAME}.dll")
 elseif(APPLE)
 	set(EMBEDDINGS_LIB_FILE "lib${EMBEDDINGS_LIB_NAME}.dylib")
 else()
