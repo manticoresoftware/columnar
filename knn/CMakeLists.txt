@@ -75,5 +75,5 @@ else()
 	message(FATAL_ERROR "Could not find manticoresearch text embeddings library at: ${EMBEDDINGS_LIB}")
 endif()
 
-target_link_libraries(knn_lib PRIVATE LINK_FLAGS ${EMBEDDINGS_LIB})
+target_link_libraries(knn_lib PRIVATE ${EMBEDDINGS_LIB})
 
