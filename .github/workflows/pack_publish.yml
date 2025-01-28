@@ -31,13 +31,27 @@ jobs:
     steps:
       - run: echo "All set to build packages"
 
-  embedding_linux_osx_pack:
+  embedding_osx_pack:
     needs: pack
     uses: ./.github/workflows/embedding_build_template.yml
     strategy:
       fail-fast: false
       matrix:
-        distr: [linux, macos]
+        distr: [macos]
+        arch: [x86_64, aarch64]
+    name: ${{ matrix.distr }} ${{ matrix.arch }} embedding packing
+    with:
+      runner: macos-14
+      distr: ${{ matrix.distr }}
+      arch: ${{ matrix.arch }}
+
+  embedding_linux_pack:
+    needs: pack
+    uses: ./.github/workflows/embedding_build_template.yml
+    strategy:
+      fail-fast: false
+      matrix:
+        distr: [linux]
         arch: [x86_64, aarch64]
     name: ${{ matrix.distr }} ${{ matrix.arch }} embedding packing
     with:
@@ -61,7 +75,7 @@ jobs:
 
   pack_debian_ubuntu:
     uses: ./.github/workflows/build_template.yml
-    needs: embedding_linux_osx_pack
+    needs: embedding_linux_pack
     strategy:
       fail-fast: false
       matrix:
@@ -82,7 +96,7 @@ jobs:
 
   pack_rhel:
     uses: ./.github/workflows/build_template.yml
-    needs: embedding_linux_osx_pack
+    needs: embedding_linux_pack
     strategy:
       fail-fast: false
       matrix:
@@ -107,7 +121,7 @@ jobs:
 
   pack_macos:
     uses: ./.github/workflows/build_template.yml
-    needs: embedding_linux_osx_pack
+    needs: embedding_osx_pack
     strategy:
       fail-fast: false
       matrix:
