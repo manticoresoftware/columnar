@@ -92,6 +92,7 @@ public:
 private:
 	Settings_t	m_tSettings;
 	uint32_t	m_uValuesPerBlock = 1;
+	uint32_t	m_uValuesPerBlockShift = 0;
 	uint32_t	m_uRowidsPerBlock = 1024;
 
 	uint64_t	m_uMetaOff { 0 };
@@ -148,6 +149,7 @@ bool SecondaryIndex_c::Setup ( const std::string & sFile, std::string & sError )
 
 	m_tSettings.Load ( m_tReader, m_uVersion );
 	m_uValuesPerBlock = m_tReader.Read_uint32();
+	m_uValuesPerBlockShift = Log2(m_uValuesPerBlock)-1;
 
 	if ( m_uVersion>=8 )
 		m_uRowidsPerBlock = m_tReader.Read_uint32();
@@ -156,8 +158,8 @@ bool SecondaryIndex_c::Setup ( const std::string & sFile, std::string & sError )
 	for ( int i=0; i<iAttrsCount; i++ )
 	{
 		ColumnInfo_t & tAttr = m_dAttrs[i];
-		tAttr.Load(m_tReader);
-		tAttr.m_bEnabled = dAttrsEnabled.BitGet ( i );
+		tAttr.Load ( m_tReader, m_uVersion );
+		tAttr.m_bEnabled = dAttrsEnabled.BitGet(i);
 	}
 
 	ReadVectorPacked ( m_dBlockStartOff, m_tReader );
@@ -321,12 +323,15 @@ bool SecondaryIndex_c::PrepareBlocksValues ( const Filter_t & tFilter, std::vect
 	uBlockBaseOff = m_iBlocksBase + m_dBlockStartOff[iCol];
 	uBlocksCount = m_dBlocksCount[iCol];
 
+	if ( pBlocksIt )
+		pBlocksIt->reserve ( tFilter.m_dValues.size() );
+
 	for ( const uint64_t uVal : tFilter.m_dValues )
 	{
 		ApproxPos_t tPos = m_dIdx[iCol]->Search(uVal);
 		iNumIterators += tPos.m_iHi-tPos.m_iLo;
 		if ( pBlocksIt )
-			pBlocksIt->emplace_back ( BlockIter_t ( tPos, uVal, uBlocksCount, m_uValuesPerBlock ) );
+			pBlocksIt->emplace_back ( BlockIter_t ( tPos, uVal, uBlocksCount, m_uValuesPerBlockShift ) );
 	}
 
 	// sort by block start offset
@@ -339,6 +344,9 @@ bool SecondaryIndex_c::PrepareBlocksValues ( const Filter_t & tFilter, std::vect
 
 int64_t SecondaryIndex_c::GetValsRows ( std::vector<BlockIterator_i *> * pIterators,  const Filter_t & tFilter, const RowidRange_t * pBounds, uint32_t uMaxValues, int64_t iRsetSize, int iCutoff ) const
 {
+	if ( tFilter.m_dValues.empty() )
+		return 0;
+
 	std::vector<BlockIter_t> dBlocksIt;
 	int64_t iNumIterators = 0;
 	uint64_t uBlockBaseOff = 0;
@@ -366,6 +374,9 @@ int64_t SecondaryIndex_c::GetValsRows ( std::vector<BlockIterator_i *> * pIterat
 
 uint32_t SecondaryIndex_c::CalcValsRows ( const Filter_t & tFilter ) const
 {
+	if ( tFilter.m_dValues.empty() )
+		return 0;
+
 	std::vector<BlockIter_t> dBlocksIt;
 	uint64_t uBlockBaseOff = 0;
 	int64_t iNumIterators = 0;
@@ -510,12 +521,51 @@ const ColumnInfo_t * SecondaryIndex_c::GetAttr ( const Filter_t & tFilter, std::
 }
 
 
- bool FixupFilter ( Filter_t & tFixedFilter, const Filter_t & tFilter, const ColumnInfo_t & tCol )
+static void RemoveOutOfRangeValues ( Filter_t & tFilter, const ColumnInfo_t & tCol, uint32_t uVersion )
+{
+	// versions prior to 9 don't have min/max
+	if ( tFilter.m_dValues.empty() || uVersion<9 )
+		return;
+
+	static common::AttrType_e dSupportedTypes[] =
+	{
+		common::AttrType_e::UINT32,
+		common::AttrType_e::TIMESTAMP,
+		common::AttrType_e::INT64,
+		common::AttrType_e::BOOLEAN,
+		common::AttrType_e::UINT32SET,
+		common::AttrType_e::INT64SET
+	};
+
+	bool bSupported = false;
+	for ( auto i : dSupportedTypes )
+		if ( tCol.m_eType==i )
+			bSupported = true;
+
+	if ( !bSupported )
+		return;
+
+	if ( tFilter.m_dValues.back() < (int64_t)tCol.m_tMin || tFilter.m_dValues.front() > (int64_t)tCol.m_tMax )
+	{
+		tFilter.m_dValues.resize(0);
+		return;
+	}
+
+	tFilter.m_dValues.erase ( std::remove_if ( tFilter.m_dValues.begin(), tFilter.m_dValues.end(), [&tCol]( int64_t iValue ) { return iValue<(int64_t)tCol.m_tMin || iValue>(int64_t)tCol.m_tMax; } ), tFilter.m_dValues.end() );
+}
+
+
+static bool FixupFilter ( Filter_t & tFixedFilter, const Filter_t & tFilter, const ColumnInfo_t & tCol, uint32_t uVersion )
 {
 	tFixedFilter = tFilter;
 	FixupFilterSettings ( tFixedFilter, tCol.m_eType );
+
 	switch ( tFixedFilter.m_eType )
 	{
+	case FilterType_e::VALUES:
+		RemoveOutOfRangeValues ( tFixedFilter, tCol, uVersion );
+		break;
+
 	case FilterType_e::STRINGS:
 		if ( !tFixedFilter.m_fnCalcStrHash )
 			return false;
@@ -543,7 +593,7 @@ bool SecondaryIndex_c::CreateIterators ( std::vector<BlockIterator_i *> & dItera
 		return false;
 
 	Filter_t tFixedFilter;
-	if ( !FixupFilter ( tFixedFilter, tFilter, *pCol ) )
+	if ( !FixupFilter ( tFixedFilter, tFilter, *pCol, m_uVersion ) )
 		return false;
 
 	switch ( tFixedFilter.m_eType )
@@ -577,7 +627,7 @@ bool SecondaryIndex_c::CalcCount ( uint32_t & uCount, const common::Filter_t & t
 		return false;
 
 	Filter_t tFixedFilter;
-	if ( !FixupFilter ( tFixedFilter, tFilter, *pCol ) )
+	if ( !FixupFilter ( tFixedFilter, tFilter, *pCol, m_uVersion ) )
 		return false;
 
 	bool bExclude = tFixedFilter.m_bExclude;
@@ -614,13 +664,20 @@ uint32_t SecondaryIndex_c::GetNumIterators ( const common::Filter_t & tFilter ) 
 		return 0;
 
 	Filter_t tFixedFilter;
-	if ( !FixupFilter ( tFixedFilter, tFilter, *pCol ) )
+	if ( !FixupFilter ( tFixedFilter, tFilter, *pCol, m_uVersion ) )
 		return 0;
 
 	switch ( tFixedFilter.m_eType )
 	{
 	case FilterType_e::VALUES:
-		return GetValsRows ( nullptr, tFixedFilter, nullptr, 0, 0, INT_MAX );
+		{
+			// filters with lots of values are too slow to estimate
+			const int BIG_FILTER_THRESH=100;
+			if ( tFixedFilter.m_dValues.size()>=BIG_FILTER_THRESH )
+				return tFixedFilter.m_dValues.size();
+
+			return GetValsRows ( nullptr, tFixedFilter, nullptr, 0, 0, INT_MAX );
+		}
 
 	case FilterType_e::RANGE:
 	case FilterType_e::FLOATRANGE:

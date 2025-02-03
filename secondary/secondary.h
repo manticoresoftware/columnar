@@ -39,7 +39,7 @@ namespace SI
 {
 
 static const int LIB_VERSION = 17;
-static const uint32_t STORAGE_VERSION = 8;
+static const uint32_t STORAGE_VERSION = 9;
 
 struct IndexAttrInfo_t
 {
