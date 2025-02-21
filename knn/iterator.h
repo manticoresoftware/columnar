@@ -25,7 +25,7 @@ class KNNIndex_i
 {
 public:
 	virtual			~KNNIndex_i() = default;
-	virtual void	Search ( std::vector<DocDist_t> & dResults, const util::Span_T<float> & dData, int iResults, int iEf ) const = 0;
+	virtual void	Search ( std::vector<DocDist_t> & dResults, const util::Span_T<float> & dData, int iResults, int iEf, std::vector<uint8_t> & dQuantized ) const = 0;
 };
 
 Iterator_i * CreateIterator ( KNNIndex_i & tIndex, const util::Span_T<float> & dData, int iResults, int iEf );
