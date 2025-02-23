@@ -18,7 +18,8 @@ cmake_minimum_required ( VERSION 3.17 )
 
 include ( GetHNSW )
 
-add_library ( knn_lib MODULE knn.cpp knn.h iterator.cpp iterator.h embeddings.cpp embeddings.h manticoresearch_text_embeddings.h )
+add_library ( knn_lib MODULE knn.cpp knn.h iterator.cpp iterator.h embeddings.cpp embeddings.h ${CMAKE_SOURCE_DIR}/manticoresearch_text_embeddings.h )
+target_include_directories(knn_lib PRIVATE ${CMAKE_SOURCE_DIR}/embeddings)
 
 if (CMAKE_SYSTEM_PROCESSOR STREQUAL x86_64 OR CMAKE_SYSTEM_PROCESSOR STREQUAL amd64)
 	message ( STATUS "Add sse 4.1 to compiler flags for ${CMAKE_SYSTEM_PROCESSOR} arch" )
@@ -54,16 +55,17 @@ if(NOT DEFINED ENV{SYSROOT_URL})
 	endif()
 
 	execute_process(
-		COMMAND cargo build --manifest-path ${CMAKE_SOURCE_DIR}/embeddings/Cargo.toml --lib --release
+		COMMAND cargo build --manifest-path ${CMAKE_SOURCE_DIR}/embeddings/Cargo.toml --lib --release --target-dir ${CMAKE_CURRENT_BINARY_DIR}/embeddings
 		RESULT_VARIABLE CMD_RESULT
 	)
+
 	if(NOT CMD_RESULT EQUAL 0)
 		message(FATAL_ERROR "Failed to build: ${CMD_RESULT}")
 	endif()
 endif()
 
 # Set the path to look for the library
-set(EMBEDDINGS_LIB_PATH "${CMAKE_SOURCE_DIR}/embeddings/target/release")
+set(EMBEDDINGS_LIB_PATH "${CMAKE_CURRENT_BINARY_DIR}/embeddings/release")
 
 # Construct the full library path
 set(EMBEDDINGS_LIB "${EMBEDDINGS_LIB_PATH}/${EMBEDDINGS_LIB_FILE}")
@@ -74,6 +76,3 @@ if(EXISTS ${EMBEDDINGS_LIB})
 else()
 	message(FATAL_ERROR "Could not find manticoresearch text embeddings library at: ${EMBEDDINGS_LIB}")
 endif()
-
-target_link_libraries(knn_lib PRIVATE ${EMBEDDINGS_LIB})
-
