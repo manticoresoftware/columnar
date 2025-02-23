@@ -80,10 +80,13 @@ struct ColumnInfo_t
 {
 	common::AttrType_e m_eType = common::AttrType_e::NONE;
 	std::string m_sName;
+	std::string m_sJsonParentName;
 	uint32_t	m_uCountDistinct = 0;
+	uint64_t	m_tMin = 0;
+	uint64_t	m_tMax = 0;
 	bool		m_bEnabled = true;
 
-	void		Load ( util::FileReader_c & tReader );
+	void		Load ( util::FileReader_c & tReader, uint32_t uVersion );
 	void		Save ( util::FileWriter_c & tWriter ) const; 
 };
 
