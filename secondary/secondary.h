@@ -38,8 +38,15 @@ namespace common
 namespace SI
 {
 
-static const int LIB_VERSION = 16;
-static const uint32_t STORAGE_VERSION = 8;
+static const int LIB_VERSION = 17;
+static const uint32_t STORAGE_VERSION = 9;
+
+struct IndexAttrInfo_t
+{
+	std::string			m_sName;
+	common::AttrType_e	m_eType;
+	bool				m_bEnabled;
+};
 
 class Index_i
 {
@@ -53,6 +60,7 @@ public:
 	virtual int64_t		GetCountDistinct ( const std::string & sName ) const = 0;
 	virtual bool		SaveMeta ( std::string & sError ) = 0;
 	virtual void		ColumnUpdated ( const char * sName ) = 0;
+	virtual void		GetAttrInfo ( std::vector<IndexAttrInfo_t> & dAttrs ) const = 0;
 };
 
 class Builder_i;
