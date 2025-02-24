@@ -1,4 +1,4 @@
-use std::os::raw::c_char;
+use std::{ffi::CStr, os::raw::c_char};
 use crate::model::text_model_wrapper::{TextModelResult, TextModelWrapper, FloatVecResult, StringItem};
 
 type LoadModelFn = extern "C" fn(
@@ -26,6 +26,7 @@ type GetLenFn = extern "C" fn(&TextModelWrapper) -> usize;
 #[repr(C)]
 pub struct EmbedLib {
 	version: usize,
+	version_str: *const c_char,
 	load_model: LoadModelFn,
 	free_model_result: FreeModelResultFn,
 	make_vect_embeddings: MakeVectEmbeddingsFn,
@@ -33,9 +34,12 @@ pub struct EmbedLib {
 	get_hidden_size: GetLenFn,
 	get_max_input_size: GetLenFn,
 }
-
 const LIB: EmbedLib = EmbedLib {
 	version: 1usize,
+	version_str: {
+		let version_bytes = b"1.0.0\0";
+		version_bytes.as_ptr() as *const c_char
+	},
 	load_model: TextModelWrapper::load_model,
 	free_model_result: TextModelWrapper::free_model_result,
 	make_vect_embeddings: TextModelWrapper::make_vect_embeddings,
