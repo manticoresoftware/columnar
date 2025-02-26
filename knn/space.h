@@ -17,16 +17,26 @@
 #pragma once
 
 #include "hnswlib.h"
+#include "util/util.h"
 
 namespace knn
 {
 
-class Space_c : public hnswlib::SpaceInterface<int>
+struct QuantizationSettings_t;
+
+class Space_i : public hnswlib::SpaceInterface<float>
 {
-	using Dist_fn = hnswlib::DISTFUNC<int>;
+public:
+	virtual void SetQuantizationSettings ( const QuantizationSettings_t & tSettings ) {}
+};
+
+template<typename T>
+class Space_T : public Space_i
+{
+	using Dist_fn = hnswlib::DISTFUNC<T>;
 
 public:
-			Space_c ( size_t uDim );
+			Space_T ( size_t uDim ) : m_uDim ( uDim ) {}
 
 	Dist_fn	get_dist_func()	override		{ return m_fnDist; }
 	void *	get_dist_func_param() override	{ return &m_uDim; }
@@ -36,6 +46,7 @@ protected:
 	size_t	m_uDim = 0;
 };
 
+/*using Space_c = Space_T<int>;
 
 class L2Space1Bit_c : public Space_c
 {
@@ -83,6 +94,114 @@ class IPSpace8Bit_c : public Space_c
 			IPSpace8Bit_c ( size_t uDim );
 		
 	size_t	get_data_size() override	{ return m_uDim; }
+};*/
+
+///////////////////////////////////////////////////////////////////////////////
+
+class L2Space32BitFloat_c : public Space_i
+{
+	using Dist_fn = hnswlib::DISTFUNC<float>;
+
+public:
+			L2Space32BitFloat_c ( size_t uDim ) : m_tL2S(uDim) {}
+
+	size_t	get_data_size() override		{ return m_tL2S.get_data_size(); }
+	Dist_fn	get_dist_func() override		{ return m_tL2S.get_dist_func(); }
+	void *	get_dist_func_param() override	{ return m_tL2S.get_dist_func_param(); }
+
+private:
+	hnswlib::L2Space m_tL2S;
+};
+
+
+struct DistFuncParamL2_t
+{
+	size_t	m_uDim;
+	float	m_fA;
+};
+
+
+class L2Space8BitFloat_c : public Space_T<float>
+{
+ public:
+			L2Space8BitFloat_c ( size_t uDim );
+
+	void *	get_dist_func_param() override	{ return &m_tDistFuncParam; }
+	size_t	get_data_size() override		{ return m_uDim; }
+
+	void	SetQuantizationSettings ( const QuantizationSettings_t & tSettings ) override;
+
+private:
+	DistFuncParamL2_t m_tDistFuncParam;
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
+class IPSpace32BitFloat_c : public Space_i
+{
+	using Dist_fn = hnswlib::DISTFUNC<float>;
+
+public:
+			IPSpace32BitFloat_c ( size_t uDim ) : m_tIPS(uDim) {}
+
+	size_t	get_data_size() override		{ return m_tIPS.get_data_size(); }
+	Dist_fn	get_dist_func() override		{ return m_tIPS.get_dist_func(); }
+	void *	get_dist_func_param() override	{ return m_tIPS.get_dist_func_param(); }
+
+private:
+	hnswlib::InnerProductSpace m_tIPS;
+};
+
+
+struct DistFuncParamIP_t
+{
+	size_t	m_uDim;
+	float	m_fA;
+	float	m_fB;
+	float	m_fC;
+
+	FORCE_INLINE float CalcIP ( int iDotProduct, int iSumVec1, int iSumVec2 ) const;
+};
+
+class IPSpace8BitFloat_c : public Space_T<float>
+{
+ public:
+			IPSpace8BitFloat_c ( size_t uDim );
+
+	void *	get_dist_func_param() override	{ return &m_tDistFuncParam; }
+	size_t	get_data_size() override		{ return m_uDim; }
+
+	void	SetQuantizationSettings ( const QuantizationSettings_t & tSettings ) override;
+
+protected:
+	virtual float CalcAlpha ( const QuantizationSettings_t & tSettings ) const;
+
+private:
+	DistFuncParamIP_t m_tDistFuncParam;
+};
+
+
+class IPSpace4BitFloat_c : public IPSpace8BitFloat_c
+{
+ public:
+			IPSpace4BitFloat_c ( size_t uDim );
+
+	size_t	get_data_size() override		{ return (m_uDim+1)>>1; }
+
+protected:
+	float	CalcAlpha ( const QuantizationSettings_t & tSettings ) const override;
+};
+
+
+class IPSpace1BitFloat_c : public IPSpace8BitFloat_c
+{
+ public:
+			IPSpace1BitFloat_c ( size_t uDim );
+
+	size_t	get_data_size() override		{ return (m_uDim+7)>>3; }
+
+protected:
+	float	CalcAlpha ( const QuantizationSettings_t & tSettings ) const override;
 };
 
 } // namespace knn

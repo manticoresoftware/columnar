@@ -35,7 +35,7 @@ public:
 
 	virtual void	Train ( const util::Span_T<float> & dPoint ) = 0;
 	virtual void	Encode ( const util::Span_T<float> & dPoint, std::vector<uint8_t> & dQuantized ) = 0;
-	virtual const QuantizationSettings_t & GetSettings() const = 0;
+	virtual const QuantizationSettings_t & GetSettings() = 0;
 
 };
 

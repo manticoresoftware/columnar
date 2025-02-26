@@ -146,7 +146,7 @@ public:
 
 	void	Train ( const util::Span_T<float> & dPoint ) override;
 	void	Encode ( const util::Span_T<float> & dPoint, std::vector<uint8_t> & dQuantized ) override;
-	const QuantizationSettings_t & GetSettings() const override { return m_tSettings; }
+	const QuantizationSettings_t & GetSettings() override;
 
 protected:
 	QuantizationSettings_t	m_tSettings;
@@ -224,6 +224,13 @@ void ScalarQuantizer8Bit_c::Encode ( const util::Span_T<float> & dPoint, std::ve
 		float fValue = Scale ( dPoint[i] );
 		dQuantized[i] = (int)(SCALE * fValue);
 	}
+}
+
+
+const QuantizationSettings_t & ScalarQuantizer8Bit_c::GetSettings()
+{
+	FinalizeTraining();
+	return m_tSettings;
 }
 
 
