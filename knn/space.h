@@ -21,12 +21,12 @@
 namespace knn
 {
 
-class L2Space_c : public hnswlib::SpaceInterface<int>
+class Space_c : public hnswlib::SpaceInterface<int>
 {
 	using Dist_fn = hnswlib::DISTFUNC<int>;
 
 public:
-			L2Space_c ( size_t uDim );
+			Space_c ( size_t uDim );
 
 	Dist_fn	get_dist_func()	override		{ return m_fnDist; }
 	void *	get_dist_func_param() override	{ return &m_uDim; }
@@ -37,29 +37,52 @@ protected:
 };
 
 
-class L2Space1Bit_c : public L2Space_c
+class L2Space1Bit_c : public Space_c
 {
  public:
 			L2Space1Bit_c ( size_t uDim );
 
-	size_t	get_data_size() override		{ return (m_uDim+7)>>3; }
+	size_t	get_data_size() override	{ return (m_uDim+7)>>3; }
 };
 
-class L2Space4Bit_c : public L2Space_c
+class L2Space4Bit_c : public Space_c
 {
  public:
 			L2Space4Bit_c ( size_t uDim );
 
-	size_t	get_data_size() override		{ return (m_uDim+1)>>1; }
+	size_t	get_data_size() override	{ return (m_uDim+1)>>1; }
 };
 
-class L2Space8Bit_c : public L2Space_c
+class L2Space8Bit_c : public Space_c
 {
  public:
 			L2Space8Bit_c ( size_t uDim );
 		
-	size_t	get_data_size() override		{ return m_uDim; }
+	size_t	get_data_size() override	{ return m_uDim; }
 };
 
+class IPSpace1Bit_c : public Space_c
+{
+ public:
+			IPSpace1Bit_c ( size_t uDim );
+
+	size_t	get_data_size() override	{ return (m_uDim+7)>>3; }
+};
+
+class IPSpace4Bit_c : public Space_c
+{
+ public:
+			IPSpace4Bit_c ( size_t uDim );
+
+	size_t	get_data_size() override	{ return (m_uDim+1)>>1; }
+};
+
+class IPSpace8Bit_c : public Space_c
+{
+ public:
+			IPSpace8Bit_c ( size_t uDim );
+		
+	size_t	get_data_size() override	{ return m_uDim; }
+};
 
 } // namespace knn

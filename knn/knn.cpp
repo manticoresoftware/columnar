@@ -83,6 +83,9 @@ protected:
 	L2Space1Bit_c				m_tSpaceL2Bit1;
 	L2Space4Bit_c				m_tSpaceL2Bit4;
 	L2Space8Bit_c				m_tSpaceL2Bit8;
+	IPSpace1Bit_c				m_tSpaceIPBit1;
+	IPSpace4Bit_c				m_tSpaceIPBit4;
+	IPSpace8Bit_c				m_tSpaceIPBit8;
 	int							m_iDim = 0;
 	HNSWSimilarity_e			m_eSimilarity = HNSWSimilarity_e::L2;
 	Quantization_e				m_eQuantization = Quantization_e::NONE;
@@ -95,6 +98,9 @@ HNSWDist_T<T>::HNSWDist_T ( int iDim, HNSWSimilarity_e eSimilarity, Quantization
 	, m_tSpaceL2Bit1 ( iDim )
 	, m_tSpaceL2Bit4 ( iDim )
 	, m_tSpaceL2Bit8 ( iDim )
+	, m_tSpaceIPBit1 ( iDim )
+	, m_tSpaceIPBit4 ( iDim )
+	, m_tSpaceIPBit8 ( iDim )
 	, m_iDim ( iDim )
 	, m_eSimilarity ( eSimilarity )
 	, m_eQuantization ( eQuantization )
@@ -121,8 +127,12 @@ hnswlib::SpaceInterface<int> * HNSWDist_T<int>::GetSpaceInterface ( std::string 
 	{
 	case HNSWSimilarity_e::IP:
 	case HNSWSimilarity_e::COSINE:
-		sError = "Unsupported similarity";
-		return nullptr;
+		switch ( m_eQuantization )
+		{
+		case Quantization_e::BIT1:	return &m_tSpaceIPBit1;
+		case Quantization_e::BIT4:	return &m_tSpaceIPBit4;
+		default:					return &m_tSpaceIPBit8;
+		}
 
 	case HNSWSimilarity_e::L2:
 	{
