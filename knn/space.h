@@ -30,13 +30,12 @@ public:
 	virtual void SetQuantizationSettings ( const QuantizationSettings_t & tSettings ) {}
 };
 
-template<typename T>
-class Space_T : public Space_i
+class Space_c : public Space_i
 {
-	using Dist_fn = hnswlib::DISTFUNC<T>;
+	using Dist_fn = hnswlib::DISTFUNC<float>;
 
 public:
-			Space_T ( size_t uDim ) : m_uDim ( uDim ) {}
+			Space_c ( size_t uDim ) : m_uDim ( uDim ) {}
 
 	Dist_fn	get_dist_func()	override		{ return m_fnDist; }
 	void *	get_dist_func_param() override	{ return &m_uDim; }
@@ -45,56 +44,6 @@ protected:
 	Dist_fn	m_fnDist = nullptr;
 	size_t	m_uDim = 0;
 };
-
-/*using Space_c = Space_T<int>;
-
-class L2Space1Bit_c : public Space_c
-{
- public:
-			L2Space1Bit_c ( size_t uDim );
-
-	size_t	get_data_size() override	{ return (m_uDim+7)>>3; }
-};
-
-class L2Space4Bit_c : public Space_c
-{
- public:
-			L2Space4Bit_c ( size_t uDim );
-
-	size_t	get_data_size() override	{ return (m_uDim+1)>>1; }
-};
-
-class L2Space8Bit_c : public Space_c
-{
- public:
-			L2Space8Bit_c ( size_t uDim );
-		
-	size_t	get_data_size() override	{ return m_uDim; }
-};
-
-class IPSpace1Bit_c : public Space_c
-{
- public:
-			IPSpace1Bit_c ( size_t uDim );
-
-	size_t	get_data_size() override	{ return (m_uDim+7)>>3; }
-};
-
-class IPSpace4Bit_c : public Space_c
-{
- public:
-			IPSpace4Bit_c ( size_t uDim );
-
-	size_t	get_data_size() override	{ return (m_uDim+1)>>1; }
-};
-
-class IPSpace8Bit_c : public Space_c
-{
- public:
-			IPSpace8Bit_c ( size_t uDim );
-		
-	size_t	get_data_size() override	{ return m_uDim; }
-};*/
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -121,7 +70,7 @@ struct DistFuncParamL2_t
 };
 
 
-class L2Space8BitFloat_c : public Space_T<float>
+class L2Space8BitFloat_c : public Space_c
 {
  public:
 			L2Space8BitFloat_c ( size_t uDim );
@@ -131,8 +80,24 @@ class L2Space8BitFloat_c : public Space_T<float>
 
 	void	SetQuantizationSettings ( const QuantizationSettings_t & tSettings ) override;
 
-private:
+protected:
 	DistFuncParamL2_t m_tDistFuncParam;
+};
+
+class L2Space4BitFloat_c : public L2Space8BitFloat_c
+{
+ public:
+			L2Space4BitFloat_c ( size_t uDim );
+
+	size_t	get_data_size() override		{ return (m_uDim+1)>>1; }
+};
+
+class L2Space1BitFloat_c : public L2Space8BitFloat_c
+{
+ public:
+			L2Space1BitFloat_c ( size_t uDim );
+
+	size_t	get_data_size() override		{ return (m_uDim+7)>>3; }
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -163,7 +128,7 @@ struct DistFuncParamIP_t
 	FORCE_INLINE float CalcIP ( int iDotProduct, int iSumVec1, int iSumVec2 ) const;
 };
 
-class IPSpace8BitFloat_c : public Space_T<float>
+class IPSpace8BitFloat_c : public Space_c
 {
  public:
 			IPSpace8BitFloat_c ( size_t uDim );
@@ -179,7 +144,6 @@ protected:
 private:
 	DistFuncParamIP_t m_tDistFuncParam;
 };
-
 
 class IPSpace4BitFloat_c : public IPSpace8BitFloat_c
 {

@@ -173,11 +173,14 @@ ScalarQuantizer8Bit_c::ScalarQuantizer8Bit_c ( const QuantizationSettings_t & tS
 {
 	m_fDiff = m_tSettings.m_fMax - m_tSettings.m_fMin;
 	m_bTrained = true;
+	m_bFinalized = true;
 }
 
 
 void ScalarQuantizer8Bit_c::Train ( const util::Span_T<float> & dPoint )
 {
+	assert ( !m_bFinalized );
+
 	for ( auto i : dPoint )
 	{
 		if ( i < m_tSettings.m_fMin )

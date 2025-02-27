@@ -105,11 +105,12 @@ Space_i * HNSWDist_c::CreateSpaceInterface() const
 		case Quantization_e::BIT8:	return new IPSpace8BitFloat_c(m_iDim);
 		default:					return new IPSpace32BitFloat_c(m_iDim);
 		}
+
 	case HNSWSimilarity_e::L2:
 		switch ( m_eQuantization )
 		{
-		case Quantization_e::BIT1:
-		case Quantization_e::BIT4:
+		case Quantization_e::BIT1:	return new L2Space1BitFloat_c(m_iDim);
+		case Quantization_e::BIT4:	return new L2Space4BitFloat_c(m_iDim);
 		case Quantization_e::BIT8:	return new L2Space8BitFloat_c(m_iDim);
 		default:					return new L2Space32BitFloat_c(m_iDim);
 		}
@@ -164,9 +165,9 @@ public:
 class HNSWIndex_c : public HNSWDist_c, public HNSWIndex_i
 {
 public:
-			HNSWIndex_c ( const std::string & sName, int64_t iNumElements, const knn::IndexSettings_t & tSettings, ScalarQuantizer_i * pQuantizer );
+			HNSWIndex_c ( const std::string & sName, int64_t iNumElements, const knn::IndexSettings_t & tSettings, const QuantizationSettings_t & tQuantSettings, ScalarQuantizer_i * pQuantizer );
 
-	bool	Load ( FileReader_c & tReader, std::string & sError )	override { return m_pAlg->loadIndex ( tReader, m_pSpace.get(), sError ); }
+	bool	Load ( FileReader_c & tReader, std::string & sError ) override	{ return m_pAlg->loadIndex ( tReader, m_pSpace.get(), sError ); 	}
 	const std::string &	GetName() const override	{ return m_sName; }
 	void	Search ( std::vector<DocDist_t> & dResults, const Span_T<float> & dData, int iResults, int iEf, std::vector<uint8_t> & dQuantized ) const override;
 
@@ -177,11 +178,12 @@ private:
 };
 
 
-HNSWIndex_c::HNSWIndex_c ( const std::string & sName, int64_t iNumElements, const knn::IndexSettings_t & tSettings, ScalarQuantizer_i * pQuantizer )
+HNSWIndex_c::HNSWIndex_c ( const std::string & sName, int64_t iNumElements, const knn::IndexSettings_t & tSettings, const QuantizationSettings_t & tQuantSettings, ScalarQuantizer_i * pQuantizer )
 	: HNSWDist_c ( tSettings.m_iDims, tSettings.m_eHNSWSimilarity,  tSettings.m_eQuantization )
 	, m_sName ( sName )
 	, m_pQuantizer ( pQuantizer )
 {
+	m_pSpace->SetQuantizationSettings(tQuantSettings);
 	m_pAlg = std::make_unique<hnswlib::HierarchicalNSW<float>>( m_pSpace.get(), iNumElements, tSettings.m_iHNSWM, tSettings.m_iHNSWEFConstruction );
 }
 
@@ -249,7 +251,7 @@ bool KNN_c::Load ( const std::string & sFilename, std::string & sError )
 		if ( tSettings.m_eQuantization!=Quantization_e::NONE )
 			LoadQuantizationSettings ( tQuantSettings, tReader, uVersion );
 
-		i = std::make_unique<HNSWIndex_c> ( sName, 0, tSettings, CreateQuantizer ( tSettings.m_eQuantization, tQuantSettings ) );
+		i = std::make_unique<HNSWIndex_c> ( sName, 0, tSettings, tQuantSettings, CreateQuantizer ( tSettings.m_eQuantization, tQuantSettings ) );
 		if ( !i->Load ( tReader, sError ) )
 			return false;
 	}
