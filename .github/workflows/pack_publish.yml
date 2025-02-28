@@ -237,7 +237,9 @@ jobs:
   update-manticoresearch-deps:
     needs:
       - vars
+      - publish
     runs-on: ubuntu-22.04
+    if: needs.publish.outputs.target != 'release'
     steps:
       - name: Update deps
         uses: manticoresoftware/manticoresearch/actions/update-deps@master
