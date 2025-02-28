@@ -16,8 +16,6 @@
 
 #include "space.h"
 
-#include "quantizer.h"
-
 namespace knn
 {
 
@@ -135,7 +133,7 @@ L2Space8BitFloat_c::L2Space8BitFloat_c ( size_t uDim )
 
 void L2Space8BitFloat_c::SetQuantizationSettings ( const QuantizationSettings_t & tSettings )
 {
-	float fAlpha = ( tSettings.m_fMax-tSettings.m_fMin ) / 255.0;
+	float fAlpha = CalcAlpha(tSettings);
 	m_tDistFuncParam.m_fA = fAlpha*fAlpha;
 }
 
@@ -494,16 +492,10 @@ IPSpace8BitFloat_c::IPSpace8BitFloat_c ( size_t uDim )
 
 void IPSpace8BitFloat_c::SetQuantizationSettings ( const QuantizationSettings_t & tSettings )
 {
-	float fAlpha = ( tSettings.m_fMax-tSettings.m_fMin ) / 255.0;
+	float fAlpha = CalcAlpha(tSettings);
 	m_tDistFuncParam.m_fA = tSettings.m_fMin*tSettings.m_fMin*m_uDim;
 	m_tDistFuncParam.m_fB = fAlpha*tSettings.m_fMin;
 	m_tDistFuncParam.m_fC = fAlpha*fAlpha;
-}
-
-
-float IPSpace8BitFloat_c::CalcAlpha ( const QuantizationSettings_t & tSettings ) const
-{
-	return ( tSettings.m_fMax-tSettings.m_fMin ) / 255.0;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -657,12 +649,6 @@ IPSpace4BitFloat_c::IPSpace4BitFloat_c ( size_t uDim )
 		m_fnDist = IP4BitDistance;
 }
 
-
-float IPSpace4BitFloat_c::CalcAlpha ( const QuantizationSettings_t & tSettings ) const
-{
-	return ( tSettings.m_fMax-tSettings.m_fMin ) / 15.0;
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 
 static FORCE_INLINE int IP1Bit ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pQty, int & iSumVec1, int & iSumVec2 )
@@ -760,12 +746,6 @@ IPSpace1BitFloat_c::IPSpace1BitFloat_c ( size_t uDim )
 		m_fnDist = IP1Bit8xFloatResiduals;
 	else
 		m_fnDist = IP1BitFloatDistance;
-}
-
-
-float IPSpace1BitFloat_c::CalcAlpha ( const QuantizationSettings_t & tSettings ) const
-{
-	return tSettings.m_fMax-tSettings.m_fMin;
 }
 
 } // namespace knn

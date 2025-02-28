@@ -133,7 +133,6 @@ public:
 private:
 	hnswlib::DISTFUNC<float>	m_fnDistFunc;
 	void *						m_pDistFuncParam = nullptr;
-	std::unique_ptr<Space_i>	m_pSpace;
 };
 
 

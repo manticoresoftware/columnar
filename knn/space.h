@@ -17,7 +17,7 @@
 #pragma once
 
 #include "hnswlib.h"
-#include "util/util.h"
+#include "quantizer.h"
 
 namespace knn
 {
@@ -82,6 +82,8 @@ class L2Space8BitFloat_c : public Space_c
 
 protected:
 	DistFuncParamL2_t m_tDistFuncParam;
+
+	virtual float CalcAlpha ( const QuantizationSettings_t & tSettings ) const	{ return ( tSettings.m_fMax-tSettings.m_fMin ) / 255.0; }
 };
 
 class L2Space4BitFloat_c : public L2Space8BitFloat_c
@@ -90,6 +92,9 @@ class L2Space4BitFloat_c : public L2Space8BitFloat_c
 			L2Space4BitFloat_c ( size_t uDim );
 
 	size_t	get_data_size() override		{ return (m_uDim+1)>>1; }
+
+protected:
+	float	CalcAlpha ( const QuantizationSettings_t & tSettings ) const override { return ( tSettings.m_fMax-tSettings.m_fMin ) / 15.0; }
 };
 
 class L2Space1BitFloat_c : public L2Space8BitFloat_c
@@ -98,6 +103,9 @@ class L2Space1BitFloat_c : public L2Space8BitFloat_c
 			L2Space1BitFloat_c ( size_t uDim );
 
 	size_t	get_data_size() override		{ return (m_uDim+7)>>3; }
+
+protected:
+	float	CalcAlpha ( const QuantizationSettings_t & tSettings ) const override { return tSettings.m_fMax-tSettings.m_fMin; }
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -139,7 +147,7 @@ class IPSpace8BitFloat_c : public Space_c
 	void	SetQuantizationSettings ( const QuantizationSettings_t & tSettings ) override;
 
 protected:
-	virtual float CalcAlpha ( const QuantizationSettings_t & tSettings ) const;
+	virtual float CalcAlpha ( const QuantizationSettings_t & tSettings ) const	{ return ( tSettings.m_fMax-tSettings.m_fMin ) / 255.0; }
 
 private:
 	DistFuncParamIP_t m_tDistFuncParam;
@@ -153,7 +161,7 @@ class IPSpace4BitFloat_c : public IPSpace8BitFloat_c
 	size_t	get_data_size() override		{ return (m_uDim+1)>>1; }
 
 protected:
-	float	CalcAlpha ( const QuantizationSettings_t & tSettings ) const override;
+	float	CalcAlpha ( const QuantizationSettings_t & tSettings ) const override { return ( tSettings.m_fMax-tSettings.m_fMin ) / 15.0; }
 };
 
 
@@ -165,7 +173,7 @@ class IPSpace1BitFloat_c : public IPSpace8BitFloat_c
 	size_t	get_data_size() override		{ return (m_uDim+7)>>3; }
 
 protected:
-	float	CalcAlpha ( const QuantizationSettings_t & tSettings ) const override;
+	float	CalcAlpha ( const QuantizationSettings_t & tSettings ) const override { return tSettings.m_fMax-tSettings.m_fMin; }
 };
 
 } // namespace knn
