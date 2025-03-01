@@ -57,7 +57,7 @@ target_compile_features ( FastPFOR PUBLIC c_std_99 )
 string ( TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" SYSTEM_PROCESSOR_LOWER )
 if (SYSTEM_PROCESSOR_LOWER STREQUAL x86_64 OR SYSTEM_PROCESSOR_LOWER STREQUAL amd64)
 	message ( STATUS "Add sse 4.2 to compiler flags for ${CMAKE_SYSTEM_PROCESSOR} arch" )
-	target_compile_options ( FastPFOR PUBLIC $<${GNUCLANGCXX}:-msse4.2> )
+	target_compile_options ( FastPFOR PUBLIC $<${GNUC_CXX}:-msse4.2> )
 endif ()
 
 if (${CMAKE_CXX_COMPILER_ID} STREQUAL "GNU")

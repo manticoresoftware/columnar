@@ -23,7 +23,7 @@ add_library ( knn_lib MODULE knn.cpp knn.h quantizer.cpp quantizer.h iterator.cp
 string ( TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" SYSTEM_PROCESSOR_LOWER )
 if (SYSTEM_PROCESSOR_LOWER STREQUAL x86_64 OR SYSTEM_PROCESSOR_LOWER STREQUAL amd64)
 	message ( STATUS "Add sse 4.2 to compiler flags for ${CMAKE_SYSTEM_PROCESSOR} arch" )
-	target_compile_options ( knn_lib PUBLIC $<${GNUCLANGCXX}:-msse4.2 -mpopcnt> )
+	target_compile_options ( knn_lib PUBLIC $<${GNUC_CXX}:-msse4.2 -mpopcnt> )
 endif ()
 
 target_link_libraries ( knn_lib PRIVATE hnswlib::hnswlib columnar_root util common )
