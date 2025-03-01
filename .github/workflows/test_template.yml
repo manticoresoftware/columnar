@@ -66,14 +66,14 @@ jobs:
           path: .
 
       - name: Check out main cache before building
-        uses: actions/cache@v3.3.1
+        uses: actions/cache@v4
         with:
           path: cache
           enableCrossOsArchive: true
           key: build_linux_x86_64
 
       - name: Check out deps cache before building
-        uses: actions/cache@v3.3.1
+        uses: actions/cache@v4
         with:
           path: build/_deps/cache
           enableCrossOsArchive: true
