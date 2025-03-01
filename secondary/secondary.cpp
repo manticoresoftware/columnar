@@ -464,7 +464,7 @@ int64_t SecondaryIndex_c::GetRangeRows ( std::vector<BlockIterator_i *> * pItera
 	if ( !pIterators )
 		return iNumIterators;
 
-	BlockIter_t tPosIt ( tPos, 0, uBlocksCount, m_uValuesPerBlock );
+	BlockIter_t tPosIt ( tPos, 0, uBlocksCount, m_uValuesPerBlockShift );
 	RsetInfo_t tRsetInfo { iNumIterators, uMaxValues, iRsetSize };
 	const auto & tCol = m_dAttrs[GetColumnId ( tFilter.m_sName )];
 
@@ -488,7 +488,7 @@ uint32_t SecondaryIndex_c::CalcRangeRows ( const Filter_t & tFilter ) const
 	if ( !PrepareBlocksRange ( tFilter, tPos, uBlockBaseOff, uBlocksCount, iNumIterators ) )
 		return 0;
 
-	BlockIter_t tPosIt ( tPos, 0, uBlocksCount, m_uValuesPerBlock );
+	BlockIter_t tPosIt ( tPos, 0, uBlocksCount, m_uValuesPerBlockShift );
 	const auto & tCol = m_dAttrs[GetColumnId ( tFilter.m_sName )];
 
 	ReaderFactory_c tReaderFactory = { .m_tCol = tCol, .m_tSettings = m_tSettings, .m_iFD = m_tReader.GetFD(), .m_uVersion = m_uVersion, .m_uBlockBaseOff = uBlockBaseOff, .m_uBlocksCount = uBlocksCount, .m_uValuesPerBlock = m_uValuesPerBlock, .m_uRowidsPerBlock = m_uRowidsPerBlock };
@@ -524,7 +524,7 @@ const ColumnInfo_t * SecondaryIndex_c::GetAttr ( const Filter_t & tFilter, std::
 static void RemoveOutOfRangeValues ( Filter_t & tFilter, const ColumnInfo_t & tCol, uint32_t uVersion )
 {
 	// versions prior to 9 don't have min/max
-	if ( tFilter.m_dValues.empty() || uVersion<9 )
+	if ( tFilter.m_dValues.empty() || uVersion<9 || tFilter.m_bExclude )
 		return;
 
 	static common::AttrType_e dSupportedTypes[] =
