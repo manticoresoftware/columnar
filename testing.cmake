@@ -39,16 +39,24 @@ endfunction ()
 # this will switch off pure manticore-specific tests: google, api, keyword consistency and benches (we don't need them here)
 set ( TEST_SPECIAL_EXTERNAL ON )
 
+message ( STATUS "Checking MANTICORE_LOCATOR sources..." )
 if (DEFINED ENV{MANTICORE_LOCATOR} AND NOT "$ENV{MANTICORE_LOCATOR}" STREQUAL "")
 	set ( MANTICORE_LOCATOR $ENV{MANTICORE_LOCATOR} )
+	message ( STATUS "Using MANTICORE_LOCATOR from environment: '${MANTICORE_LOCATOR}'" )
 elseif (EXISTS "${columnar_SOURCE_DIR}/local_manticore_src.txt")
 	file ( READ "${columnar_SOURCE_DIR}/local_manticore_src.txt" MANTICORE_LOCATOR )
+	message ( STATUS "Using MANTICORE_LOCATOR from local_manticore_src.txt: '${MANTICORE_LOCATOR}'" )
 else ()
 	file ( READ "${columnar_SOURCE_DIR}/manticore_src.txt" MANTICORE_LOCATOR )
+	message ( STATUS "Using MANTICORE_LOCATOR from manticore_src.txt: '${MANTICORE_LOCATOR}'" )
 endif ()
+
+message ( STATUS "MANTICORE_LOCATOR before configure: '${MANTICORE_LOCATOR}'" )
 string ( CONFIGURE "${MANTICORE_LOCATOR}" MANTICORE_LOCATOR ) # that is to expand possible inside variables
-message ( STATUS "Fetch locator is '${MANTICORE_LOCATOR}'" )
+message ( STATUS "MANTICORE_LOCATOR after configure: '${MANTICORE_LOCATOR}'" )
+
 file ( WRITE "${columnar_BINARY_DIR}/manticore-get.cmake" "FetchContent_Declare ( manticore ${MANTICORE_LOCATOR} )\n" )
+message ( STATUS "Written to ${columnar_BINARY_DIR}/manticore-get.cmake: 'FetchContent_Declare ( manticore ${MANTICORE_LOCATOR} )'" )
 
 include ( FetchContent )
 include ( "${columnar_BINARY_DIR}/manticore-get.cmake" )
