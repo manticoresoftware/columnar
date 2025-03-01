@@ -33,6 +33,43 @@ jobs:
           echo "* Ref: ${{ github.ref_type }} \"${{ github.ref_name }}\"" >> $GITHUB_STEP_SUMMARY
           echo "* Attempt: ${{ github.run_attempt }}" >> $GITHUB_STEP_SUMMARY
 
+  check_branch:
+    name: Check branch existence
+    runs-on: ubuntu-22.04
+    outputs:
+      manticore_locator: ${{ steps.set_locator.outputs.manticore_locator }}
+    steps:
+      - name: Check if branch exists in manticoresoftware/manticoresearch
+        id: check_branch
+        if: github.ref_name != 'master'
+        run: |
+          # Extract the actual branch name for pull requests
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+          else
+            BRANCH_NAME="${{ github.ref_name }}"
+          fi
+          
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://api.github.com/repos/manticoresoftware/manticoresearch/branches/$BRANCH_NAME)
+          if [ "$HTTP_STATUS" -eq "200" ]; then
+            echo "branch_exists=true" >> $GITHUB_OUTPUT
+            echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          else
+            echo "branch_exists=false" >> $GITHUB_OUTPUT
+            echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set Manticore Locator
+        id: set_locator
+        run: |
+          if [[ "${{ github.event.schedule }}" == "00 20 * * *" ]]; then
+            echo "manticore_locator=GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG master" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref_name }}" != "master" && "${{ steps.check_branch.outputs.branch_exists }}" == "true" ]]; then
+            echo "manticore_locator=GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG ${{ steps.check_branch.outputs.branch_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "manticore_locator=" >> $GITHUB_OUTPUT
+          fi
+
   win_bundle:
     name: Windows supplementary files preparation
     runs-on: ubuntu-22.04
@@ -58,21 +95,25 @@ jobs:
         run: |
           wget https://repo.manticoresearch.com/repository/ci/boost_1_75_0.tgz
           tar -xf boost_1_75_0.tgz
+
   build_linux_release:
     name: Linux release build
+    needs: check_branch
     uses: ./.github/workflows/build_template.yml
     with:
-      MANTICORE_LOCATOR: ${{ github.event.schedule == '00 20 * * *' && 'GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG master' || '' }}
+      MANTICORE_LOCATOR: ${{ needs.check_branch.outputs.manticore_locator }}
 
   build_linux_debug:
     name: Linux debug build
+    needs: check_branch
     uses: ./.github/workflows/build_template.yml
     with:
       CTEST_CONFIGURATION_TYPE: "Debug"
-      MANTICORE_LOCATOR: ${{ github.event.schedule == '00 20 * * *' && 'GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG master' || '' }}
+      MANTICORE_LOCATOR: ${{ needs.check_branch.outputs.manticore_locator }}
 
   build_windows:
     name: Windows x64 build
+    needs: check_branch
     uses: ./.github/workflows/build_template.yml
     with:
       DISTR: windows
@@ -81,11 +122,11 @@ jobs:
       CTEST_CONFIGURATION_TYPE: Debug
       cache_key: build_windows_x64
       artifact_list: "build/columnar/Debug/lib_manticore_columnar.dll build/secondary/Debug/lib_manticore_secondary.dll build/_deps/manticore-build/src/Debug/indexer.exe build/_deps/manticore-build/src/Debug/searchd.exe" #
-      MANTICORE_LOCATOR: ${{ github.event.schedule == '00 20 * * *' && 'GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG master' || '' }}
+      MANTICORE_LOCATOR: ${{ needs.check_branch.outputs.manticore_locator }}
 
   test_linux_debug:
     name: Linux debug mode tests
-    needs: build_linux_debug
+    needs: [build_linux_debug, check_branch]
     uses: ./.github/workflows/test_template.yml
     strategy:
       fail-fast: false
@@ -120,7 +161,7 @@ jobs:
       CTEST_CONFIGURATION_TYPE: "Debug"
       CTEST_START: ${{ matrix.start }}
       CTEST_END: ${{ matrix.end }}
-      MANTICORE_LOCATOR: ${{ github.event.schedule == '00 20 * * *' && 'GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG master' || '' }}
+      MANTICORE_LOCATOR: ${{ needs.check_branch.outputs.manticore_locator }}
       artifact_name: debug_test_${{ matrix.name }}
       xml_command: "cd build; cp -r Testing/2*/Test.xml .; xsltproc -o junit_tests_${{ matrix.name }}.xml ../misc/junit/ctest2junit.xsl Test.xml"
       timeout: 10
@@ -210,7 +251,7 @@ jobs:
 
   test_linux_release:
     name: Linux release mode tests
-    needs: build_linux_release
+    needs: [build_linux_release, check_branch]
     uses: ./.github/workflows/test_template.yml
     strategy:
       fail-fast: false
@@ -245,7 +286,7 @@ jobs:
       CTEST_CONFIGURATION_TYPE: "RelWithDebInfo"
       CTEST_START: ${{ matrix.start }}
       CTEST_END: ${{ matrix.end }}
-      MANTICORE_LOCATOR: ${{ github.event.schedule == '00 20 * * *' && 'GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG master' || '' }}
+      MANTICORE_LOCATOR: ${{ needs.check_branch.outputs.manticore_locator }}
       artifact_name: release_test_${{ matrix.name }}
       xml_command: "cd build; cp -r Testing/2*/Test.xml .; xsltproc -o junit_tests_${{ matrix.name }}.xml ../misc/junit/ctest2junit.xsl Test.xml"
       timeout: 10
@@ -335,7 +376,7 @@ jobs:
 
   test_windows:
     name: Windows tests
-    needs: [build_windows, win_bundle]
+    needs: [build_windows, win_bundle, check_branch]
     uses: ./.github/workflows/win_test_template.yml
     strategy:
       fail-fast: false
@@ -360,7 +401,7 @@ jobs:
     with:
       CTEST_START: ${{ matrix.start }}
       CTEST_END: ${{ matrix.end }}
-      MANTICORE_LOCATOR: ${{ github.event.schedule == '00 20 * * *' && 'GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG master' || '' }}
+      MANTICORE_LOCATOR: ${{ needs.check_branch.outputs.manticore_locator }}
       artifact_name: windows_test_${{ matrix.name }}
 
   windows_tests_report:
