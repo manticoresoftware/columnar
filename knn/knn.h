@@ -26,7 +26,7 @@
 namespace knn
 {
 
-static const int LIB_VERSION = 3;
+static const int LIB_VERSION = 4;
 static const uint32_t STORAGE_VERSION = 1;
 
 enum class HNSWSimilarity_e
@@ -42,6 +42,14 @@ struct IndexSettings_t
 	HNSWSimilarity_e	m_eHNSWSimilarity = HNSWSimilarity_e::L2;
 	int					m_iHNSWM = 16;
 	int					m_iHNSWEFConstruction = 200;
+};
+
+struct ModelSettings_t
+{
+	std::string m_sModelName;
+	std::string m_sCachePath;
+	std::string m_sAPIKey;
+	bool		m_bUseGPU = false;
 };
 
 struct AttrWithSettings_t : public common::SchemaAttr_t, public IndexSettings_t {};
@@ -86,14 +94,33 @@ public:
 	virtual const std::string & GetError() const = 0;
 };
 
-} // namespace knn
+class TextToEmbeddings_i
+{
+public:
+	virtual			~TextToEmbeddings_i() = default;
 
+	virtual	bool	Convert ( const std::vector<std::string_view> & dTexts, std::vector<std::vector<float>> & dEmbeddings, std::string & sError ) const = 0;
+	virtual int		GetDims() const = 0;
+};
+
+class EmbeddingsLib_i
+{
+public:
+	virtual			~EmbeddingsLib_i() = default;
+
+	virtual TextToEmbeddings_i * CreateTextToEmbeddings ( const knn::ModelSettings_t & tSettings, std::string & sError ) const = 0;
+	virtual const std::string &	GetVersionStr() const = 0;
+	virtual int		GetVersion() const = 0;
+};
+
+} // namespace knn
 
 extern "C"
 {
 	DLLEXPORT knn::Distance_i *			CreateDistanceCalc ( const knn::IndexSettings_t & tSettings );
 	DLLEXPORT knn::KNN_i *				CreateKNN();
 	DLLEXPORT knn::Builder_i *			CreateKNNBuilder ( const knn::Schema_t & tSchema, int64_t iNumElements );
+	DLLEXPORT knn::EmbeddingsLib_i *	LoadEmbeddingsLib ( const std::string & sLibPath, std::string & sError );
 	DLLEXPORT int						GetKNNLibVersion();
 	DLLEXPORT const char *				GetKNNLibVersionStr();
 }
