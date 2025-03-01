@@ -16,6 +16,7 @@
 
 #include "quantizer.h"
 
+#include <float.h>
 #include <algorithm>
 
 namespace knn
