@@ -133,6 +133,7 @@ if (SYSTEM_PROCESSOR_LOWER STREQUAL x86_64 OR SYSTEM_PROCESSOR_LOWER STREQUAL am
 	message(STATUS "Compiler ID: ${CMAKE_CXX_COMPILER_ID}")
 	message(STATUS "Compiler Version: ${CMAKE_CXX_COMPILER_VERSION}")
 	message(STATUS "Compiler is MSVC-like: ${MSVC}")
+	message(STATUS "GNUCLANGCXX evaluates to: $<COMPILE_LANG_AND_ID:CXX,Clang,AppleClang,GNU>")
 	message ( STATUS "Add sse 4.2 to compiler flags for ${CMAKE_SYSTEM_PROCESSOR} arch" )
 	target_compile_options ( streamvbyte PUBLIC $<${GNUCLANGCXX}:-msse4.2> )
 endif ()
