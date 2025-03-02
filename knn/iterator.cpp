@@ -43,13 +43,14 @@ private:
 
 	std::vector<uint32_t>	m_dRowIDs;
 	std::vector<DocDist_t>	m_dCollected;
+	std::vector<uint8_t>	m_dQuantized;
 	int						m_iIndex = 0;
 };
 
 
 RowidIteratorKNN_c::RowidIteratorKNN_c ( KNNIndex_i & tIndex, const Span_T<float> & dData, int iResults, int iEf )
 {
-	tIndex.Search ( m_dCollected, dData, iResults, iEf );
+	tIndex.Search ( m_dCollected, dData, iResults, iEf, m_dQuantized );
 	std::sort ( m_dCollected.begin(), m_dCollected.end(), []( const auto & a, const auto & b ) { return a.m_tRowID<b.m_tRowID; } );
 	m_dRowIDs.resize(DOCS_PER_CHUNK);
 }

@@ -26,8 +26,8 @@
 namespace knn
 {
 
-static const int LIB_VERSION = 3;
-static const uint32_t STORAGE_VERSION = 1;
+static const int LIB_VERSION = 4;
+static const uint32_t STORAGE_VERSION = 2;
 
 enum class HNSWSimilarity_e
 {
@@ -36,10 +36,19 @@ enum class HNSWSimilarity_e
 	COSINE
 };
 
+enum class Quantization_e
+{
+	NONE,
+	BIT1,
+	BIT4,
+	BIT8
+};
+
 struct IndexSettings_t
 {
 	int					m_iDims = 0;
 	HNSWSimilarity_e	m_eHNSWSimilarity = HNSWSimilarity_e::L2;
+	Quantization_e		m_eQuantization = Quantization_e::NONE;
 	int					m_iHNSWM = 16;
 	int					m_iHNSWEFConstruction = 200;
 };
@@ -81,6 +90,7 @@ class Builder_i
 public:
 	virtual			~Builder_i() = default;
 
+	virtual void	Train ( int iAttr, const util::Span_T<float> & dData ) = 0;
 	virtual bool	SetAttr ( int iAttr, const util::Span_T<float> & dData ) = 0;
 	virtual bool	Save ( const std::string & sFilename, size_t tBufferSize, std::string & sError ) = 0;
 	virtual const std::string & GetError() const = 0;
