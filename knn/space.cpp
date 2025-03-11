@@ -17,7 +17,6 @@
 #include "space.h"
 
 #include "util_private.h"
-#include <nmmintrin.h>
 
 namespace knn
 {

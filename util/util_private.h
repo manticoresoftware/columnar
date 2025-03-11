@@ -25,6 +25,7 @@
 	#include <intrin.h>
 #else
 	#include <x86intrin.h>
+	#include <nmmintrin.h>
 #endif
 
 namespace util
