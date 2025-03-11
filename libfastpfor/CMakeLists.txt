@@ -60,7 +60,7 @@ if (SYSTEM_PROCESSOR_LOWER STREQUAL x86_64 OR SYSTEM_PROCESSOR_LOWER STREQUAL am
 	if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC)
 		target_compile_options ( FastPFOR PUBLIC -msse4.2 -mpopcnt )
 	else()
-		target_compile_options ( FastPFOR PUBLIC $<${GNUCLANGCXX}:-msse4.2> )
+		target_compile_options ( FastPFOR PUBLIC $<${GNUC_CXX}:-msse4.2> )
 	endif()
 endif ()
 
