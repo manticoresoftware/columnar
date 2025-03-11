@@ -21,18 +21,18 @@ set ( LIBS_BUNDLE "${LIBS_BUNDLE}" CACHE PATH "Choose the path to the dir which 
 
 # cacheb (means 'cache binary') - contains unpacked sources and builds of 3-rd party libs, alive between rebuilds.
 # if not provided, set to folder 'cache' aside bundle. If not absolute, point it into binary (build) dir.
-if (DEFINED ENV{CACHEB})
-	set ( CACHEB "$ENV{CACHEB}" )
-endif ()
+#if (DEFINED ENV{CACHEB})
+#	set ( CACHEB "$ENV{CACHEB}" )
+#endif ()
 
-if (NOT DEFINED CACHEB)
-	get_filename_component ( CACHEB "${LIBS_BUNDLE}/../cache" ABSOLUTE )
-endif ()
+#if (NOT DEFINED CACHEB)
+#	get_filename_component ( CACHEB "${LIBS_BUNDLE}/../cache" ABSOLUTE )
+#endif ()
 
-if (NOT IS_ABSOLUTE ${CACHEB})
-	set ( CACHEB "${columnar_BINARY_DIR}/${CACHEB}" )
-endif ()
+#if (NOT IS_ABSOLUTE ${CACHEB})
+#	set ( CACHEB "${columnar_BINARY_DIR}/${CACHEB}" )
+#endif ()
 
-if (DEFINED CACHEB)
-	set ( CACHEB "${CACHEB}" CACHE PATH "Cache dir where unpacked sources and builds found." )
-endif ()
+#if (DEFINED CACHEB)
+#	set ( CACHEB "${CACHEB}" CACHE PATH "Cache dir where unpacked sources and builds found." )
+#endif ()

@@ -24,7 +24,7 @@ jobs:
     name: ${{ inputs.CTEST_START }}_${{ inputs.CTEST_END }}
     runs-on: windows-2022
     env:
-      CACHEB: "D:/a/columnar/columnar/cache"
+      #CACHEB: "D:/a/columnar/columnar/cache"
       LIBS_BUNDLE: "D:/a/columnar/columnar/bundle"
       BOOST_ROOT: "D:/a/columnar/columnar/boost_1_75_0"
       CTEST_CMAKE_GENERATOR: "Visual Studio 17 2022"
