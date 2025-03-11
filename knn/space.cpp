@@ -272,6 +272,16 @@ L2Space4BitFloat_c::L2Space4BitFloat_c ( size_t uDim )
 
 ///////////////////////////////////////////////////////////////////////////////
 
+FORCE_INLINE uint32_t PopCnt32 ( uint32_t uVal )
+{
+#if defined(USE_SIMDE)
+	return __builtin_popcount(uVal);
+#else
+	return _mm_popcnt_u32(uVal);
+#endif
+}
+
+
 static FORCE_INLINE int L2Sqr1Bit ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pQty )
 {
 	size_t uQty = *((size_t *)pQty);
@@ -281,7 +291,7 @@ static FORCE_INLINE int L2Sqr1Bit ( const void * __restrict pVect1, const void *
 	auto pV2 = (uint8_t*)pVect2;
 	int iDistance = 0;
 	for ( size_t i = 0; i < uLenBytes; i++ )
-		iDistance += _mm_popcnt_u32 ( pV1[i] ^ pV2[i] );
+		iDistance += PopCnt32 ( pV1[i] ^ pV2[i] );
 
 	return iDistance;
 }
@@ -294,7 +304,7 @@ static float L2Sqr1BitFloatDistance ( const void * __restrict pVect1, const void
 	return pDistFuncParam->m_fA*iDist;
 }
 
-
+#if !defined(USE_SIMDE)
 static FORCE_INLINE int L2Sqr1Bit8x ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pQty )
 {
 	size_t uQty = *((size_t *)pQty);
@@ -337,17 +347,21 @@ static float L2Sqr1Bit8xFloatResiduals ( const void * pVect1, const void * pVect
 
 	return pDistFuncParam->m_fA*( iDist1 + iDist2 );
 }
+#endif
 
 
 L2Space1BitFloat_c::L2Space1BitFloat_c ( size_t uDim )
 	: L2Space8BitFloat_c ( uDim )
 {
 	size_t uBytes = get_data_size();
+
+#if !defined(USE_SIMDE)
 	if ( uBytes % 8 == 0)
 		m_fnDist = L2Sqr1Bit8xFloatDistance;
 	else if ( uBytes > 8 )
 		m_fnDist = L2Sqr1Bit8xFloatResiduals;
 	else
+#endif
 		m_fnDist = L2Sqr1BitFloatDistance;
 }
 
@@ -665,9 +679,9 @@ static FORCE_INLINE int IP1Bit ( const void * __restrict pVect1, const void * __
 	{
 		uint32_t uV1 = pV1[i];
 		uint32_t uV2 = pV2[i];
-		iSumVec1 += _mm_popcnt_u32(uV1);
-		iSumVec2 += _mm_popcnt_u32(uV2);
-		iDistance += _mm_popcnt_u32 ( uV1 & uV2 );
+		iSumVec1 += PopCnt32(uV1);
+		iSumVec2 += PopCnt32(uV2);
+		iDistance += PopCnt32( uV1 & uV2 );
 	}
 
 	return iDistance;
@@ -683,7 +697,7 @@ static float IP1BitFloatDistance ( const void * __restrict pVect1, const void * 
 	return 1.0f - pDistFuncParam->CalcIP ( iDotProduct, iSumVec1, iSumVec2 );
 }
 
-
+#if !defined(USE_SIMDE)
 static FORCE_INLINE int IP1Bit8x ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pQty, int & iSumVec1, int & iSumVec2 )
 {
 	size_t uQty = *((size_t *)pQty);
@@ -736,17 +750,20 @@ static float IP1Bit8xFloatResiduals ( const void * __restrict pVect1, const void
 	iDotProduct += IP1Bit ( pV1, pV2, &uQtyLeft, iSumVec1, iSumVec2 );
 	return 1.0f - pDistFuncParam->CalcIP ( iDotProduct, iSumVec1, iSumVec2 );
 }
-
+#endif
 
 IPSpace1BitFloat_c::IPSpace1BitFloat_c ( size_t uDim )
 	: IPSpace8BitFloat_c ( uDim )
 {
 	size_t uBytes = get_data_size();
+
+#if !defined(USE_SIMDE)
 	if ( uBytes % 8 == 0)
 		m_fnDist = IP1Bit8xFloatDistance;
 	else if ( uBytes > 8 )
 		m_fnDist = IP1Bit8xFloatResiduals;
 	else
+#endif
 		m_fnDist = IP1BitFloatDistance;
 }
 
