@@ -54,7 +54,7 @@ jobs:
     container:
       image: manticoresearch/external_toolchain:clang16_cmake3263
       env:
-        CACHEB: "../cache"
+        CACHEB: "../cache2"
         VERBOSE: 1
         DIAGNOSTIC: 1
         NO_TESTS: 1
