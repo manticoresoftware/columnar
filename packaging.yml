@@ -26,7 +26,7 @@ workflow:
     - docker
   image: manticoresearch/external_toolchain:clang15_cmake3263
   variables:
-    #CACHEB: $CI_PROJECT_DIR/cache
+    CACHEB: $CI_PROJECT_DIR/cache
     arch: x86_64
     boost: boost_nov22
     sysroot: roots_nov22
