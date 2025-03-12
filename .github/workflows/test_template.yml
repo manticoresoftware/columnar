@@ -43,7 +43,7 @@ jobs:
       image: manticoresearch/ubertests_ctest:3263_mar_2024
       env:
         DIAGNOSTIC: 1
-        CACHEB: ../cache2
+        CACHEB: ../cache
         NO_BUILD: 1
         CTEST_START: ${{ inputs.CTEST_START }}
         CTEST_END: ${{ inputs.CTEST_END }}
