@@ -18,7 +18,7 @@ cmake_minimum_required ( VERSION 3.17 )
 
 include ( GetHNSW )
 
-add_library ( knn_lib MODULE knn.cpp knn.h iterator.cpp iterator.h embeddings.cpp embeddings.h ${CMAKE_SOURCE_DIR}/manticoresearch_text_embeddings.h )
+add_library ( knn_lib MODULE knn.cpp knn.h iterator.cpp iterator.h embeddings.cpp embeddings.h ${CMAKE_SOURCE_DIR}/embeddings/manticoresearch_text_embeddings.h )
 target_include_directories(knn_lib PRIVATE ${CMAKE_SOURCE_DIR}/embeddings)
 
 if (CMAKE_SYSTEM_PROCESSOR STREQUAL x86_64 OR CMAKE_SYSTEM_PROCESSOR STREQUAL amd64)

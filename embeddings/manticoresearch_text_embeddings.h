@@ -65,6 +65,6 @@ extern "C" {
 
 const EmbedLib *GetLibFuncs();
 
-}  // extern "C"
+} // extern "C"
 
-#endif  // MANTICORESEARCH_TEXT_EMBEDDINGS_H
+#endif // MANTICORESEARCH_TEXT_EMBEDDINGS_H
