@@ -18,12 +18,17 @@ cmake_minimum_required ( VERSION 3.17 )
 
 include ( GetHNSW )
 
-add_library ( knn_lib MODULE knn.cpp knn.h iterator.cpp iterator.h embeddings.cpp embeddings.h ${CMAKE_SOURCE_DIR}/embeddings/manticoresearch_text_embeddings.h )
+add_library ( knn_lib MODULE knn.cpp knn.h iterator.cpp iterator.h embeddings.cpp embeddings.h quantizer.cpp quantizer.h space.cpp space.h ${CMAKE_SOURCE_DIR}/embeddings/manticoresearch_text_embeddings.h )
 target_include_directories(knn_lib PRIVATE ${CMAKE_SOURCE_DIR}/embeddings)
 
-if (CMAKE_SYSTEM_PROCESSOR STREQUAL x86_64 OR CMAKE_SYSTEM_PROCESSOR STREQUAL amd64)
-	message ( STATUS "Add sse 4.1 to compiler flags for ${CMAKE_SYSTEM_PROCESSOR} arch" )
-	target_compile_options ( knn_lib PUBLIC $<${GNUC_CXX}:-msse4.1> )
+string ( TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" SYSTEM_PROCESSOR_LOWER )
+if (SYSTEM_PROCESSOR_LOWER STREQUAL x86_64 OR SYSTEM_PROCESSOR_LOWER STREQUAL amd64)
+	message ( STATUS "Add sse 4.2 to compiler flags for ${CMAKE_SYSTEM_PROCESSOR} arch" )
+	if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC)
+		target_compile_options ( knn_lib PUBLIC -msse4.2 -mpopcnt )
+	else()
+		target_compile_options ( knn_lib PUBLIC $<${GNUCLANGCXX}:-msse4.2 -mpopcnt> )
+	endif()
 endif ()
 
 target_link_libraries ( knn_lib PRIVATE hnswlib::hnswlib columnar_root util common )

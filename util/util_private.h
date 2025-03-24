@@ -20,11 +20,12 @@
 
 #if defined(USE_SIMDE)
 	#define SIMDE_ENABLE_NATIVE_ALIASES 1
-	#include <simde/x86/sse4.1.h>
+	#include <simde/x86/sse4.2.h>
 #elif _MSC_VER
 	#include <intrin.h>
 #else
 	#include <x86intrin.h>
+	#include <nmmintrin.h>
 #endif
 
 namespace util

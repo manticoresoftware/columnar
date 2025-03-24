@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2024, Manticore Software LTD (https://manticoresearch.com)
+// Copyright (c) 2025, Manticore Software LTD (https://manticoresearch.com)
 // All rights reserved
 //
 //
@@ -21,13 +21,25 @@
 namespace knn
 {
 
-class KNNIndex_i
+struct QuantizationSettings_t
 {
-public:
-	virtual			~KNNIndex_i() = default;
-	virtual void	Search ( std::vector<DocDist_t> & dResults, const util::Span_T<float> & dData, int iResults, int iEf, std::vector<uint8_t> & dQuantized ) const = 0;
+	float	m_fMin = 0.0f;
+	float	m_fMax = 0.0f;
 };
 
-Iterator_i * CreateIterator ( KNNIndex_i & tIndex, const util::Span_T<float> & dData, int iResults, int iEf );
+
+class ScalarQuantizer_i
+{
+public:
+	virtual			~ScalarQuantizer_i() = default;
+
+	virtual void	Train ( const util::Span_T<float> & dPoint ) = 0;
+	virtual void	Encode ( const util::Span_T<float> & dPoint, std::vector<uint8_t> & dQuantized ) = 0;
+	virtual const QuantizationSettings_t & GetSettings() = 0;
+
+};
+
+ScalarQuantizer_i * CreateQuantizer ( Quantization_e eQuantization, const QuantizationSettings_t & tQuantSettings );
+ScalarQuantizer_i * CreateQuantizer ( Quantization_e eQuantization );
 
 } // namespace knn
