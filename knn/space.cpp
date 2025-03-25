@@ -326,7 +326,7 @@ static float L2Sqr1Bit8xFloatDistance ( const void * __restrict pVect1, const vo
 {
 	auto pDistFuncParam = (const DistFuncParamL2_t*)pParam;
 	int iDist = L2Sqr1Bit8x ( pVect1, pVect2, &(pDistFuncParam->m_uDim) );
-	return pDistFuncParam->m_fA*iDist;
+	return pDistFuncParam->m_fA*iDist;	
 }
 
 

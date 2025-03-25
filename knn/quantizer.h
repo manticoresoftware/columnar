@@ -39,7 +39,7 @@ public:
 
 };
 
-ScalarQuantizer_i * CreateQuantizer ( Quantization_e eQuantization, const QuantizationSettings_t & tQuantSettings );
-ScalarQuantizer_i * CreateQuantizer ( Quantization_e eQuantization );
+ScalarQuantizer_i * CreateQuantizer ( Quantization_e eQuantization, const QuantizationSettings_t & tQuantSettings, HNSWSimilarity_e eSimilarity );
+ScalarQuantizer_i * CreateQuantizer ( Quantization_e eQuantization, HNSWSimilarity_e eSimilarity );
 
 } // namespace knn

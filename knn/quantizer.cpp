@@ -153,12 +153,14 @@ protected:
 	QuantizationSettings_t	m_tSettings;
 	P2QuantileEstimator_c	m_tQuantile1 { 0.005 };
 	P2QuantileEstimator_c	m_tQuantile2 { 0.995 };
+	bool					m_bQuantilesEnabled = false;
 	float	m_fDiff = 0.0f;
 	bool	m_bTrained = false;
 	bool	m_bFinalized = false;
+	size_t	m_uNumTrained = 0;
 
 	FORCE_INLINE float Scale ( float fValue ) const;
-	void	FinalizeTraining();
+	virtual void FinalizeTraining();
 };
 
 
@@ -190,11 +192,15 @@ void ScalarQuantizer8Bit_c::Train ( const util::Span_T<float> & dPoint )
 		if ( i > m_tSettings.m_fMax )
 			m_tSettings.m_fMax = i;
 
-		m_tQuantile1.Insert(i);
-		m_tQuantile2.Insert(i);
+		if ( m_bQuantilesEnabled )
+		{
+			m_tQuantile1.Insert(i);
+			m_tQuantile2.Insert(i);
+		}
 	}
 
 	m_bTrained = true;
+	m_uNumTrained += dPoint.size();
 }
 
 
@@ -206,7 +212,8 @@ void ScalarQuantizer8Bit_c::FinalizeTraining()
 	
 	m_bFinalized = true;
 
-	if ( m_tQuantile1.Ready() && m_tQuantile2.Ready() )
+	const size_t TRAINED_SIZE_THRESH = 1000;
+	if ( m_bQuantilesEnabled && m_uNumTrained>TRAINED_SIZE_THRESH && m_tQuantile1.Ready() && m_tQuantile2.Ready() )
 	{
 		m_tSettings.m_fMin = std::max ( m_tSettings.m_fMin, m_tQuantile1.Get() );
 		m_tSettings.m_fMax = std::min ( m_tSettings.m_fMax, m_tQuantile2.Get() );
@@ -267,7 +274,7 @@ public:
 
 void ScalarQuantizer4Bit_c::Encode ( const util::Span_T<float> & dPoint, std::vector<uint8_t> & dQuantized )
 {
-	assert(m_bTrained);
+	FinalizeTraining();
 
 	dQuantized.resize ( ( dPoint.size()+1 ) >> 1 );
 
@@ -290,18 +297,39 @@ void ScalarQuantizer4Bit_c::Encode ( const util::Span_T<float> & dPoint, std::ve
 
 ///////////////////////////////////////////////////////////////////////////////
 
-class ScalarQuantizer1Bit_c : public ScalarQuantizer8Bit_c
+template <bool COSINE>
+class ScalarQuantizer1Bit_T : public ScalarQuantizer8Bit_c
 {
 	using ScalarQuantizer8Bit_c::ScalarQuantizer8Bit_c;
 
 public:
+	void	Train ( const util::Span_T<float> & dPoint ) override;
 	void	Encode ( const util::Span_T<float> & dPoint, std::vector<uint8_t> & dQuantized ) override;
+
+protected:
+	void	FinalizeTraining() override;
+
+private:
+	HNSWSimilarity_e m_eSimilarity = HNSWSimilarity_e::L2;
 };
 
-
-void ScalarQuantizer1Bit_c::Encode ( const util::Span_T<float> & dPoint, std::vector<uint8_t> & dQuantized )
+template <bool COSINE>
+void ScalarQuantizer1Bit_T<COSINE>::Train ( const util::Span_T<float> & dPoint )
 {
-	assert(m_bTrained);
+	if constexpr ( COSINE )
+	{
+		m_bTrained = true;
+		m_tSettings.m_fMin = -1.0f;
+		m_tSettings.m_fMax = 1.0f;
+	}
+	else
+		ScalarQuantizer8Bit_c::Train(dPoint);
+}
+
+template <bool COSINE>
+void ScalarQuantizer1Bit_T<COSINE>::Encode ( const util::Span_T<float> & dPoint, std::vector<uint8_t> & dQuantized )
+{
+	FinalizeTraining();
 
 	dQuantized.resize ( ( dPoint.size()+7 ) >> 3 );
 	size_t uDim = dPoint.size();
@@ -312,9 +340,17 @@ void ScalarQuantizer1Bit_c::Encode ( const util::Span_T<float> & dPoint, std::ve
 		uint8_t uPacked = 0;
 		for ( size_t uBit = 0; uBit < 8; uBit++ )
 		{
-			float fValue = Scale(dPoint[uOff]);
-			if ( fValue > 0.5f)
-				uPacked |= 1 << uBit;
+			if constexpr ( COSINE )
+			{
+				if ( dPoint[uOff] > 0.0f )
+					uPacked |= 1 << uBit;
+			}
+			else
+			{
+				float fValue = Scale(dPoint[uOff]);
+				if ( fValue > 0.5f )
+					uPacked |= 1 << uBit;
+			}
 
 			uOff++;
 			if ( uOff>=uDim )
@@ -325,13 +361,34 @@ void ScalarQuantizer1Bit_c::Encode ( const util::Span_T<float> & dPoint, std::ve
 	}
 }
 
+template <bool COSINE>
+void ScalarQuantizer1Bit_T<COSINE>::FinalizeTraining()
+{
+	if constexpr ( COSINE )
+	{
+		assert(m_bTrained);
+		if ( m_bFinalized )
+			return;
+	
+		m_bFinalized = true;
+		m_fDiff = m_tSettings.m_fMax - m_tSettings.m_fMin;
+	}
+	else
+		ScalarQuantizer8Bit_c::FinalizeTraining();
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
-ScalarQuantizer_i * CreateQuantizer ( Quantization_e eQuantization, const QuantizationSettings_t & tQuantSettings )
+ScalarQuantizer_i * CreateQuantizer ( Quantization_e eQuantization, const QuantizationSettings_t & tQuantSettings, HNSWSimilarity_e eSimilarity )
 {
 	switch ( eQuantization )
 	{
-	case Quantization_e::BIT1: return new ScalarQuantizer1Bit_c(tQuantSettings);
+	case Quantization_e::BIT1:
+		if ( eSimilarity==HNSWSimilarity_e::COSINE )
+			return new ScalarQuantizer1Bit_T<true>(tQuantSettings);
+		else
+			return new ScalarQuantizer1Bit_T<false>(tQuantSettings);
+
 	case Quantization_e::BIT4: return new ScalarQuantizer4Bit_c(tQuantSettings);
 	case Quantization_e::BIT8: return new ScalarQuantizer8Bit_c(tQuantSettings);
 	default: return nullptr;
@@ -339,11 +396,16 @@ ScalarQuantizer_i * CreateQuantizer ( Quantization_e eQuantization, const Quanti
 }
 
 
-ScalarQuantizer_i * CreateQuantizer ( Quantization_e eQuantization )
+ScalarQuantizer_i * CreateQuantizer ( Quantization_e eQuantization, HNSWSimilarity_e eSimilarity )
 {
 	switch ( eQuantization )
 	{
-	case Quantization_e::BIT1: return new ScalarQuantizer1Bit_c;
+	case Quantization_e::BIT1:
+		if ( eSimilarity==HNSWSimilarity_e::COSINE )
+			return new ScalarQuantizer1Bit_T<true>;
+		else
+			return new ScalarQuantizer1Bit_T<false>;
+
 	case Quantization_e::BIT4: return new ScalarQuantizer4Bit_c;
 	case Quantization_e::BIT8: return new ScalarQuantizer8Bit_c;
 	default: return nullptr;

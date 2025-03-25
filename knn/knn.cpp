@@ -250,7 +250,7 @@ bool KNN_c::Load ( const std::string & sFilename, std::string & sError )
 		if ( tSettings.m_eQuantization!=Quantization_e::NONE )
 			LoadQuantizationSettings ( tQuantSettings, tReader, uVersion );
 
-		i = std::make_unique<HNSWIndex_c> ( sName, 0, tSettings, tQuantSettings, CreateQuantizer ( tSettings.m_eQuantization, tQuantSettings ) );
+		i = std::make_unique<HNSWIndex_c> ( sName, 0, tSettings, tQuantSettings, CreateQuantizer ( tSettings.m_eQuantization, tQuantSettings, tSettings.m_eHNSWSimilarity ) );
 		if ( !i->Load ( tReader, sError ) )
 			return false;
 	}
@@ -391,7 +391,7 @@ private:
 HNSWBuilder_c::HNSWBuilder_c ( const Schema_t & tSchema, int64_t iNumElements )
 {
 	for ( const auto & i : tSchema )
-		m_dIndexes.push_back ( std::make_unique<HNSWIndexBuilder_c> ( i, iNumElements, CreateQuantizer(i.m_eQuantization) ) );
+		m_dIndexes.push_back ( std::make_unique<HNSWIndexBuilder_c> ( i, iNumElements, CreateQuantizer ( i.m_eQuantization, i.m_eHNSWSimilarity ) ) );
 }
 
 
