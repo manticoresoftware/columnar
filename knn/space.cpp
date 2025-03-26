@@ -691,10 +691,9 @@ static FORCE_INLINE int IP1Bit ( const void * __restrict pVect1, const void * __
 static float IP1BitFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamIP_t*)pParam;
-	int iSumVec1 = 0;
-	int iSumVec2 = 0;
-	int iDotProduct = IP1Bit ( pVect1, pVect2, &(pDistFuncParam->m_uDim), iSumVec1, iSumVec2 );
-	return 1.0f - pDistFuncParam->CalcIP ( iDotProduct, iSumVec1, iSumVec2 );
+	int iMismatchingBits = L2Sqr1Bit ( pVect1, pVect2, &(pDistFuncParam->m_uDim) );
+	int iMatchingBits = int(pDistFuncParam->m_uDim) - iMismatchingBits;
+	return iMismatchingBits - iMatchingBits;
 }
 
 #if !defined(USE_SIMDE)
@@ -724,31 +723,28 @@ static FORCE_INLINE int IP1Bit8x ( const void * __restrict pVect1, const void * 
 static float IP1Bit8xFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamIP_t*)pParam;
-	int iSumVec1 = 0;
-	int iSumVec2 = 0;
-	int iDotProduct = IP1Bit8x ( pVect1, pVect2, &(pDistFuncParam->m_uDim), iSumVec1, iSumVec2 );
-	return 1.0f - pDistFuncParam->CalcIP ( iDotProduct, iSumVec1, iSumVec2 );
+	int iMismatchingBits = L2Sqr1Bit8x ( pVect1, pVect2, &(pDistFuncParam->m_uDim) );
+	int iMatchingBits = int(pDistFuncParam->m_uDim) - iMismatchingBits;
+	return iMismatchingBits - iMatchingBits;
 }
 
 
 static float IP1Bit8xFloatResiduals ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamIP_t*)pParam;
-	int iSumVec1 = 0;
-	int iSumVec2 = 0;
-
 	size_t uQty = pDistFuncParam->m_uDim;
 	size_t uLenBytes = (uQty + 7) >> 3;
 	size_t uQty8 = uLenBytes >> 3;
 	size_t uLenBytes8 = uQty8 << 3;
 
-	int iDotProduct = IP1Bit8x ( pVect1, pVect2, &uQty8, iSumVec1, iSumVec2 );
+	int iMismatchingBits = L2Sqr1Bit8x ( pVect1, pVect2, &uQty8 );
 
 	auto pV1 = (uint8_t *)pVect1 + uLenBytes8;
 	auto pV2 = (uint8_t *)pVect2 + uLenBytes8;
 	size_t uQtyLeft = uQty - uQty8;
-	iDotProduct += IP1Bit ( pV1, pV2, &uQtyLeft, iSumVec1, iSumVec2 );
-	return 1.0f - pDistFuncParam->CalcIP ( iDotProduct, iSumVec1, iSumVec2 );
+	iMismatchingBits += L2Sqr1Bit ( pV1, pV2, &uQtyLeft );
+	int iMatchingBits = int(pDistFuncParam->m_uDim) - iMismatchingBits;
+	return iMismatchingBits - iMatchingBits;
 }
 #endif
 
