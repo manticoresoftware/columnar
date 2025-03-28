@@ -123,8 +123,17 @@ jobs:
         || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
         || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/columnar-'))
       )
+    outputs:
+      target: ${{ steps.set-target.outputs.target }}
     steps:
       - run: echo "Ready to publish"
+      - id: set-target
+        run: |
+          if [[ "${{ github.ref }}" == refs/heads/columnar-* ]]; then
+            echo "target=release" >> $GITHUB_OUTPUT
+          else
+            echo "target=" >> $GITHUB_OUTPUT
+          fi
 
   publish_debian_ubuntu:
     needs: publish
@@ -144,6 +153,7 @@ jobs:
           artifact: build_${{ matrix.DISTR }}_RelWithDebInfo_${{ matrix.arch }}
           type: deb
           delimiter: "-"
+          target: ${{ needs.publish.outputs.target }}
 
   publish_rhel:
     needs: publish
@@ -163,6 +173,7 @@ jobs:
           artifact: build_rhel${{ matrix.DISTR }}_RelWithDebInfo_${{ matrix.arch }}
           type: rpm
           delimiter: "_"
+          target: ${{ needs.publish.outputs.target }}
 
   publish_macos:
     needs: publish
@@ -181,6 +192,7 @@ jobs:
           artifact: build_macos_RelWithDebInfo_${{ matrix.arch }}
           type: arc
           delimiter: "-"
+          target: ${{ needs.publish.outputs.target }}
 
   publish_windows:
     name: Publishing Windows packages to repo.manticoresearch.com
@@ -195,6 +207,7 @@ jobs:
           artifact: build_windows_RelWithDebInfo_x64
           type: arc
           delimiter: "-"
+          target: ${{ needs.publish.outputs.target }}
   vars:
     name: Detecting versions
     needs:
@@ -224,7 +237,9 @@ jobs:
   update-manticoresearch-deps:
     needs:
       - vars
+      - publish
     runs-on: ubuntu-22.04
+    if: needs.publish.outputs.target != 'release'
     steps:
       - name: Update deps
         uses: manticoresoftware/manticoresearch/actions/update-deps@master
