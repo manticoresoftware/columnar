@@ -1,0 +1,12 @@
+language = "C++"
+# namespace = "manticoresearch"
+include_guard = "MANTICORESEARCH_TEXT_EMBEDDINGS_H"
+header = "// Auto-generated file. Do not edit."
+
+[struct]
+derive_eq = false
+derive_neq = false
+
+[export]
+include = ["FloatVecResult", "FloatVec", "TextModelResult", "TextModelWrapper"]
+
