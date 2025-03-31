@@ -261,7 +261,7 @@ void ScalarQuantizer8Bit_T<COSINE>::Encode ( const util::Span_T<float> & dPoint,
 	{
 		float fValue = m_fIntScale * Scale ( dPoint[i] );
 		fSum += fValue;
-		*pQuantized++ = std::clamp ( (int)lround(fValue), 0, int(m_fIntScale) );
+		*pQuantized++ = std::clamp ( (int)roundf(fValue), 0, int(m_fIntScale) );
 	}
 
 	*(float*)dQuantized.data() = -fSum*m_tSettings.m_fMin*m_fAlpha;
@@ -319,13 +319,13 @@ void ScalarQuantizer4Bit_T<COSINE>::Encode ( const util::Span_T<float> & dPoint,
 	{
 		float fValue = BASE::m_fIntScale*BASE::Scale(dPoint[i]);
 		fSum += fValue;
-		int iLow = std::clamp ( (int)lround(fValue), 0, int(BASE::m_fIntScale) );
+		int iLow = std::clamp ( (int)roundf(fValue), 0, int(BASE::m_fIntScale) );
 		int iHigh = 0;
 		if ( i+1 < tSize )
 		{
 			float fValue = BASE::m_fIntScale*BASE::Scale(dPoint[i+1]);
 			fSum += fValue;
-			iHigh = std::clamp ( (int)lround(fValue), 0, int(BASE::m_fIntScale) );
+			iHigh = std::clamp ( (int)roundf(fValue), 0, int(BASE::m_fIntScale) );
 		}
 
 		pQuantized[i>>1] = ( iHigh << 4 ) | iLow;
