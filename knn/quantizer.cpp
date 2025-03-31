@@ -229,14 +229,17 @@ void ScalarQuantizer8Bit_T<COSINE>::FinalizeTraining()
 	assert(m_bTrained);
 	if ( m_bFinalized )
 		return;
-	
+
 	m_bFinalized = true;
 
-	const size_t TRAINED_SIZE_THRESH = 1000;
-	if ( m_bQuantilesEnabled && m_uNumTrained>TRAINED_SIZE_THRESH && m_tQuantile1.Ready() && m_tQuantile2.Ready() )
+	if constexpr ( !COSINE )
 	{
-		m_tSettings.m_fMin = std::max ( m_tSettings.m_fMin, m_tQuantile1.Get() );
-		m_tSettings.m_fMax = std::min ( m_tSettings.m_fMax, m_tQuantile2.Get() );
+		const size_t TRAINED_SIZE_THRESH = 1000;
+		if ( m_bQuantilesEnabled && m_uNumTrained>TRAINED_SIZE_THRESH && m_tQuantile1.Ready() && m_tQuantile2.Ready() )
+		{
+			m_tSettings.m_fMin = std::max ( m_tSettings.m_fMin, m_tQuantile1.Get() );
+			m_tSettings.m_fMax = std::min ( m_tSettings.m_fMax, m_tQuantile2.Get() );
+		}
 	}
 
 	CalculateCoeffs();
@@ -258,7 +261,7 @@ void ScalarQuantizer8Bit_T<COSINE>::Encode ( const util::Span_T<float> & dPoint,
 	{
 		float fValue = m_fIntScale * Scale ( dPoint[i] );
 		fSum += fValue;
-		*pQuantized++ = (int)std::clamp ( (int)(fValue+0.5f), 0, int(m_fIntScale) );
+		*pQuantized++ = std::clamp ( (int)lround(fValue), 0, int(m_fIntScale) );
 	}
 
 	*(float*)dQuantized.data() = -fSum*m_tSettings.m_fMin*m_fAlpha;
@@ -316,13 +319,13 @@ void ScalarQuantizer4Bit_T<COSINE>::Encode ( const util::Span_T<float> & dPoint,
 	{
 		float fValue = BASE::m_fIntScale*BASE::Scale(dPoint[i]);
 		fSum += fValue;
-		int iLow = (int)std::clamp ( (int)(fValue+0.5f), 0, int(BASE::m_fIntScale) );
+		int iLow = std::clamp ( (int)lround(fValue), 0, int(BASE::m_fIntScale) );
 		int iHigh = 0;
 		if ( i+1 < tSize )
 		{
 			float fValue = BASE::m_fIntScale*BASE::Scale(dPoint[i+1]);
 			fSum += fValue;
-			iHigh = (int)std::clamp ( (int)(fValue+0.5f), 0, int(BASE::m_fIntScale) );
+			iHigh = std::clamp ( (int)lround(fValue), 0, int(BASE::m_fIntScale) );
 		}
 
 		pQuantized[i>>1] = ( iHigh << 4 ) | iLow;
