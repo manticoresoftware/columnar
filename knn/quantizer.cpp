@@ -154,18 +154,26 @@ protected:
 	P2QuantileEstimator_c	m_tQuantile1 { 0.005 };
 	P2QuantileEstimator_c	m_tQuantile2 { 0.995 };
 	bool					m_bQuantilesEnabled = false;
+	float	m_fIntScale = 0.0f;
 	float	m_fDiff = 0.0f;
+	float	m_fAlpha = 0.0f;
 	bool	m_bTrained = false;
 	bool	m_bFinalized = false;
+	size_t	m_uDim = 0;
 	size_t	m_uNumTrained = 0;
 
-	FORCE_INLINE float Scale ( float fValue ) const;
-	virtual void FinalizeTraining();
+	FORCE_INLINE float	Scale ( float fValue ) const;
+	virtual void		InitScale() { m_fIntScale = 255.0f; }
+	virtual void		FinalizeTraining();
+
+private:
+	void	CalculateCoeffs();
 };
 
 
 ScalarQuantizer8Bit_c::ScalarQuantizer8Bit_c()
 {
+	InitScale();	
 	m_tSettings.m_fMin = FLT_MAX;
 	m_tSettings.m_fMax = -FLT_MAX;
 }
@@ -174,7 +182,8 @@ ScalarQuantizer8Bit_c::ScalarQuantizer8Bit_c()
 ScalarQuantizer8Bit_c::ScalarQuantizer8Bit_c ( const QuantizationSettings_t & tSettings )
 	: m_tSettings ( tSettings )
 {
-	m_fDiff = m_tSettings.m_fMax - m_tSettings.m_fMin;
+	InitScale();
+	CalculateCoeffs();
 	m_bTrained = true;
 	m_bFinalized = true;
 }
@@ -200,7 +209,8 @@ void ScalarQuantizer8Bit_c::Train ( const util::Span_T<float> & dPoint )
 	}
 
 	m_bTrained = true;
-	m_uNumTrained += dPoint.size();
+	m_uDim = dPoint.size();
+	m_uNumTrained += m_uDim;
 }
 
 
@@ -219,7 +229,10 @@ void ScalarQuantizer8Bit_c::FinalizeTraining()
 		m_tSettings.m_fMax = std::min ( m_tSettings.m_fMax, m_tQuantile2.Get() );
 	}
 
-	m_fDiff = m_tSettings.m_fMax - m_tSettings.m_fMin;
+	CalculateCoeffs();
+
+	m_tSettings.m_fK = -m_fAlpha*m_fAlpha;
+	m_tSettings.m_fB = 1.0f - m_tSettings.m_fMin*m_tSettings.m_fMin*m_uDim;
 }
 
 
@@ -227,14 +240,18 @@ void ScalarQuantizer8Bit_c::Encode ( const util::Span_T<float> & dPoint, std::ve
 {
 	FinalizeTraining();
 
-	dQuantized.resize ( dPoint.size() );
+	dQuantized.resize ( dPoint.size() + sizeof(float) );
+	uint8_t * pQuantized = dQuantized.data() + sizeof(float);
 
-	const int SCALE = 255;
+	float fSum = 0.0f;
 	for ( size_t i = 0; i < dPoint.size(); i++ )
 	{
-		float fValue = Scale ( dPoint[i] );
-		dQuantized[i] = (int)(SCALE * fValue);
+		float fValue = m_fIntScale * Scale ( dPoint[i] );
+		fSum += fValue;
+		*pQuantized++ = (int)fValue;
 	}
+
+	*(float*)dQuantized.data() = -fSum*m_tSettings.m_fMin*m_fAlpha;
 }
 
 
@@ -261,6 +278,13 @@ float ScalarQuantizer8Bit_c::Scale ( float fValue ) const
 	return fRes;
 }
 
+
+void ScalarQuantizer8Bit_c::CalculateCoeffs()
+{
+	m_fDiff = m_tSettings.m_fMax - m_tSettings.m_fMin;
+	m_fAlpha = m_fDiff / m_fIntScale;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 class ScalarQuantizer4Bit_c : public ScalarQuantizer8Bit_c
@@ -269,6 +293,9 @@ class ScalarQuantizer4Bit_c : public ScalarQuantizer8Bit_c
 
 public:
 	void	Encode ( const util::Span_T<float> & dPoint, std::vector<uint8_t> & dQuantized ) override;
+
+protected:
+	void	InitScale() override { m_fIntScale = 15.0f; }
 };
 
 
@@ -276,23 +303,28 @@ void ScalarQuantizer4Bit_c::Encode ( const util::Span_T<float> & dPoint, std::ve
 {
 	FinalizeTraining();
 
-	dQuantized.resize ( ( dPoint.size()+1 ) >> 1 );
+	dQuantized.resize ( ( ( dPoint.size()+1 ) >> 1 ) + sizeof(float) );
+	uint8_t * pQuantized = dQuantized.data() + sizeof(float);
 
-	const int SCALE = 15;
 	size_t tSize = dPoint.size();
+	float fSum = 0.0f;
 	for ( size_t i = 0; i < tSize; i+=2 )
 	{
-		float fValue = Scale(dPoint[i]);
-		int iLow = (int)(SCALE * fValue);
+		float fValue = m_fIntScale*Scale(dPoint[i]);
+		fSum += fValue;
+		int iLow = (int)fValue;
 		int iHigh = 0;
 		if ( i+1 < tSize )
 		{
-			float fValue = Scale(dPoint[i+1]);
-			iHigh = (int)(SCALE * fValue);
+			float fValue = m_fIntScale*Scale(dPoint[i+1]);
+			fSum += fValue;
+			iHigh = (int)fValue;
 		}
 
-		dQuantized[i>>1] = ( iHigh << 4 ) | iLow;
+		pQuantized[i>>1] = ( iHigh << 4 ) | iLow;
 	}
+
+	*(float*)dQuantized.data() = -fSum*m_tSettings.m_fMin*m_fAlpha;
 }
 
 ///////////////////////////////////////////////////////////////////////////////

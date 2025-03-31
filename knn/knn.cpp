@@ -48,6 +48,8 @@ static void LoadQuantizationSettings ( QuantizationSettings_t & tSettings, FileR
 
 	tSettings.m_fMin = UintToFloat ( tReader.Read_uint32() );
 	tSettings.m_fMax = UintToFloat ( tReader.Read_uint32() );
+	tSettings.m_fK = UintToFloat ( tReader.Read_uint32() );
+	tSettings.m_fB = UintToFloat ( tReader.Read_uint32() );
 }
 
 
@@ -65,6 +67,8 @@ static void SaveQuantizationSettings ( const QuantizationSettings_t & tSettings,
 {
 	tWriter.Write_uint32 ( FloatToUint ( tSettings.m_fMin ) );
 	tWriter.Write_uint32 ( FloatToUint ( tSettings.m_fMax ) );
+	tWriter.Write_uint32 ( FloatToUint ( tSettings.m_fK ) );
+	tWriter.Write_uint32 ( FloatToUint ( tSettings.m_fB ) );
 }
 
 /////////////////////////////////////////////////////////////////////

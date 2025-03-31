@@ -25,6 +25,8 @@ struct QuantizationSettings_t
 {
 	float	m_fMin = 0.0f;
 	float	m_fMax = 0.0f;
+	float	m_fK = 0.0f;
+	float	m_fB = 0.0f;
 };
 
 

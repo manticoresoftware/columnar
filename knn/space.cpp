@@ -21,9 +21,9 @@
 namespace knn
 {
 
-float DistFuncParamIP_t::CalcIP ( int iDotProduct, int iSumVec1, int iSumVec2 ) const
+float DistFuncParamIP_t::CalcIP ( int iDotProduct ) const
 {
-	return m_fA + m_fB*( iSumVec1 + iSumVec2 ) + m_fC*iDotProduct;
+	return m_fK*iDotProduct + m_fB;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -282,9 +282,8 @@ FORCE_INLINE uint32_t PopCnt32 ( uint32_t uVal )
 }
 
 
-static FORCE_INLINE int L2Sqr1Bit ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pQty )
+static FORCE_INLINE int L2Sqr1Bit ( const void * __restrict pVect1, const void * __restrict pVect2, size_t uQty )
 {
-	size_t uQty = *((size_t *)pQty);
 	size_t uLenBytes = (uQty + 7) >> 3;
 
 	auto pV1 = (uint8_t*)pVect1;
@@ -300,14 +299,13 @@ static FORCE_INLINE int L2Sqr1Bit ( const void * __restrict pVect1, const void *
 static float L2Sqr1BitFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamL2_t*)pParam;
-	int iDist = L2Sqr1Bit ( pVect1, pVect2, &(pDistFuncParam->m_uDim) );
+	int iDist = L2Sqr1Bit ( pVect1, pVect2, pDistFuncParam->m_uDim );
 	return pDistFuncParam->m_fA*iDist;
 }
 
 #if !defined(USE_SIMDE)
-static FORCE_INLINE int L2Sqr1Bit8x ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pQty )
+static FORCE_INLINE int L2Sqr1Bit8x ( const void * __restrict pVect1, const void * __restrict pVect2, size_t uQty )
 {
-	size_t uQty = *((size_t *)pQty);
 	size_t uLenBytes = (uQty + 7) >> 3;
 	size_t uQty8 = uLenBytes >> 3;
 
@@ -325,7 +323,7 @@ static FORCE_INLINE int L2Sqr1Bit8x ( const void * __restrict pVect1, const void
 static float L2Sqr1Bit8xFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamL2_t*)pParam;
-	int iDist = L2Sqr1Bit8x ( pVect1, pVect2, &(pDistFuncParam->m_uDim) );
+	int iDist = L2Sqr1Bit8x ( pVect1, pVect2, pDistFuncParam->m_uDim );
 	return pDistFuncParam->m_fA*iDist;	
 }
 
@@ -338,12 +336,11 @@ static float L2Sqr1Bit8xFloatResiduals ( const void * pVect1, const void * pVect
 	size_t uQty8 = uLenBytes >> 3;
 	size_t uLenBytes8 = uQty8 << 3;
 
-	int iDist1 = L2Sqr1Bit8x ( pVect1, pVect2, &uQty8 );
+	int iDist1 = L2Sqr1Bit8x ( pVect1, pVect2, uQty8 );
 
 	auto pV1 = (uint8_t*)pVect1 + uLenBytes8;
 	auto pV2 = (uint8_t*)pVect2 + uLenBytes8;
-	size_t uQtyLeft = uQty - uQty8;
-	int iDist2 = L2Sqr1Bit ( pV1, pV2, &uQtyLeft );
+	int iDist2 = L2Sqr1Bit ( pV1, pV2, uQty - uQty8 );
 
 	return pDistFuncParam->m_fA*( iDist1 + iDist2 );
 }
@@ -367,21 +364,11 @@ L2Space1BitFloat_c::L2Space1BitFloat_c ( size_t uDim )
 
 ///////////////////////////////////////////////////////////////////////////////
 
-static FORCE_INLINE int IP8Bit ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pQty, int & iSumVec1, int & iSumVec2 )
+static FORCE_INLINE int IP8Bit ( const uint8_t * __restrict pVect1, const uint8_t * __restrict pVect2, size_t uQty )
 {
-	size_t uQty = *((size_t*)pQty);
-	auto pV1 = (uint8_t*)pVect1;
-	auto pV2 = (uint8_t*)pVect2;
-
 	int iRes = 0;
 	for ( size_t i = 0; i < uQty; i++ )
-	{
-		int iV1 = pV1[i];
-		int iV2 = pV2[i];
-		iSumVec1 += iV1;
-		iSumVec2 += iV2;
-		iRes += iV1*iV2;
-	}
+		iRes += (int)pVect1[i]*pVect2[i];
 
 	return iRes;
 }
@@ -390,23 +377,20 @@ static FORCE_INLINE int IP8Bit ( const void * __restrict pVect1, const void * __
 static float IP8BitFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamIP_t*)pParam;
-	int iSumVec1 = 0;
-	int iSumVec2 = 0;
-	int iDotProduct = IP8Bit ( pVect1, pVect2, &(pDistFuncParam->m_uDim), iSumVec1, iSumVec2 );
-	return 1.0f - pDistFuncParam->CalcIP ( iDotProduct, iSumVec1, iSumVec2 );
+	float fVect1B = *(float*)pVect1;
+	float fVect2B = *(float*)pVect2;
+	int iDotProduct = IP8Bit ( (uint8_t*)pVect1 + sizeof(float), (uint8_t*)pVect2 + sizeof(float), pDistFuncParam->m_uDim );
+	return pDistFuncParam->CalcIP ( iDotProduct ) + fVect1B + fVect2B;
 }
 
 
-static FORCE_INLINE int IP8BitSIMD16 ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pQty, int & iSumVec1, int & iSumVec2 )
+static FORCE_INLINE int IP8BitSIMD16 ( const void * __restrict pVect1, const void * __restrict pVect2, size_t uQty )
 {
-	size_t uQty = *((size_t*)pQty);
 	uQty >>= 4;
 	auto pV1 = (uint8_t*)pVect1;
 	auto pV2 = (uint8_t*)pVect2;
 
 	__m128i iSum = _mm_setzero_si128();
-	__m128i iVec1SumPacked = _mm_setzero_si128();
-	__m128i iVec2SumPacked = _mm_setzero_si128();
 
 	for ( size_t i = 0; i < uQty; i++ )
 	{
@@ -437,12 +421,6 @@ static FORCE_INLINE int IP8BitSIMD16 ( const void * __restrict pVect1, const voi
 		__m128i iSumLo = _mm_add_epi32 ( iProdLoLo, iProdLoHi );
 		__m128i iSumHi = _mm_add_epi32 ( iProdHiLo, iProdHiHi );
 
-		__m128i iElementSumVec1 = _mm_add_epi32 ( _mm_add_epi32 ( iV1Lo32Lo, iV1Lo32Hi ), _mm_add_epi32 ( iV1Hi32Lo, iV1Hi32Hi ) );
-		iVec1SumPacked = _mm_add_epi32 ( iVec1SumPacked, iElementSumVec1 );
-
-		__m128i iElementSumVec2 = _mm_add_epi32 ( _mm_add_epi32 ( iV2Lo32Lo, iV2Lo32Hi ), _mm_add_epi32 ( iV2Hi32Lo, iV2Hi32Hi ) );
-		iVec2SumPacked = _mm_add_epi32 ( iVec2SumPacked, iElementSumVec2 );
-
 		iSum = _mm_add_epi32 ( iSum, iSumLo );
 		iSum = _mm_add_epi32 ( iSum, iSumHi );
 
@@ -451,12 +429,6 @@ static FORCE_INLINE int IP8BitSIMD16 ( const void * __restrict pVect1, const voi
 	}
 
 	alignas(16) int dBuffer[4];
-	_mm_store_si128 ( (__m128i*)dBuffer, iVec1SumPacked );
-	iSumVec1 += dBuffer[0] + dBuffer[1] + dBuffer[2] + dBuffer[3];
-
-	_mm_store_si128 ( (__m128i*)dBuffer, iVec2SumPacked );
-	iSumVec2 += dBuffer[0] + dBuffer[1] + dBuffer[2] + dBuffer[3];
-
 	_mm_store_si128 ( (__m128i*)dBuffer, iSum );
 	return dBuffer[0] + dBuffer[1] + dBuffer[2] + dBuffer[3];
 }
@@ -465,29 +437,29 @@ static FORCE_INLINE int IP8BitSIMD16 ( const void * __restrict pVect1, const voi
 static float IP8BitSIMD16FloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamIP_t*)pParam;
-	int iSumVec1 = 0;
-	int iSumVec2 = 0;
-	int iDotProduct = IP8BitSIMD16 ( pVect1, pVect2, &(pDistFuncParam->m_uDim), iSumVec1, iSumVec2 );
-	return 1.0f - pDistFuncParam->CalcIP ( iDotProduct, iSumVec1, iSumVec2 );
+	float fVect1B = *(float*)pVect1;
+	float fVect2B = *(float*)pVect2;
+	int iDotProduct = IP8BitSIMD16 ( (uint8_t*)pVect1 + sizeof(float), (uint8_t*)pVect2 + sizeof(float), pDistFuncParam->m_uDim );
+	return pDistFuncParam->CalcIP(iDotProduct) + fVect1B + fVect2B;
 }
 
 
 static float IP8BitSIMD16FloatResiduals ( const void * pVect1, const void * pVect2, const void * pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamIP_t*)pParam;
-	int iSumVec1 = 0;
-	int iSumVec2 = 0;
 
 	size_t uQty = pDistFuncParam->m_uDim;
 	size_t uQty16 = uQty >> 4 << 4;
 
-	int iDotProduct = IP8BitSIMD16 ( pVect1, pVect2, &uQty16, iSumVec1, iSumVec2 );
-
-	auto pV1 = (uint8_t *)pVect1 + uQty16;
-	auto pV2 = (uint8_t *)pVect2 + uQty16;
-	size_t uQtyLeft = uQty - uQty16;
-	iDotProduct += IP8Bit ( pV1, pV2, &uQtyLeft, iSumVec1, iSumVec2 );
-	return 1.0f - pDistFuncParam->CalcIP ( iDotProduct, iSumVec1, iSumVec2 );
+	auto pV1 = (uint8_t *)pVect1;
+	auto pV2 = (uint8_t *)pVect2;
+	float fVect1B = *(float*)pV1;
+	float fVect2B = *(float*)pV2;
+	pV1 += sizeof(float);
+	pV2 += sizeof(float);
+	int iDotProduct = IP8BitSIMD16 ( pV1, pV2, uQty16 );
+	iDotProduct += IP8Bit ( pV1 + uQty16, pV2 + uQty16, uQty - uQty16 );
+	return pDistFuncParam->CalcIP(iDotProduct) + fVect1B + fVect2B;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -508,17 +480,14 @@ IPSpace8BitFloat_c::IPSpace8BitFloat_c ( size_t uDim )
 
 void IPSpace8BitFloat_c::SetQuantizationSettings ( const QuantizationSettings_t & tSettings )
 {
-	float fAlpha = CalcAlpha(tSettings);
-	m_tDistFuncParam.m_fA = tSettings.m_fMin*tSettings.m_fMin*m_uDim;
-	m_tDistFuncParam.m_fB = fAlpha*tSettings.m_fMin;
-	m_tDistFuncParam.m_fC = fAlpha*fAlpha;
+	m_tDistFuncParam.m_fK = tSettings.m_fK;
+	m_tDistFuncParam.m_fB = tSettings.m_fB;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
-static FORCE_INLINE int IP4Bit ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pQty, int & iSumVec1, int & iSumVec2 )
+static FORCE_INLINE int IP4Bit ( const void * __restrict pVect1, const void * __restrict pVect2, size_t uQty )
 {
-	size_t uQty = *((size_t*)pQty);
 	uQty = ( uQty+1 ) >> 1;
 
 	auto pV1 = (uint8_t*)pVect1;
@@ -534,27 +503,24 @@ static FORCE_INLINE int IP4Bit ( const void * __restrict pVect1, const void * __
 		int iV2Hi = ( pV2[i] >> 4 ) & 0x0F;
 
 		iSum += iV1Lo*iV2Lo + iV1Hi*iV2Hi;
-		iSumVec1 += iV1Lo + iV1Hi;
-		iSumVec2 += iV2Lo + iV2Hi;
 	}
 
 	return iSum;
 }
 
 
-static float IP4BitDistance ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pParam )
+static float IP4BitFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamIP_t*)pParam;
-	int iSumVec1 = 0;
-	int iSumVec2 = 0;
-	int iDotProduct = IP4Bit ( pVect1, pVect2, &(pDistFuncParam->m_uDim), iSumVec1, iSumVec2 );
-	return 1.0f - pDistFuncParam->CalcIP ( iDotProduct, iSumVec1, iSumVec2 );
+	float fVect1B = *(float*)pVect1;
+	float fVect2B = *(float*)pVect2;
+	int iDotProduct = IP4Bit ( (uint8_t*)pVect1 + sizeof(float), (uint8_t*)pVect2 + sizeof(float), pDistFuncParam->m_uDim );
+	return pDistFuncParam->CalcIP(iDotProduct) + fVect1B + fVect2B;
 }
 
 
-static FORCE_INLINE int IP4BitSIMD16 ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pQty, int & iSumVec1, int & iSumVec2 )
+static FORCE_INLINE int IP4BitSIMD16 ( const void * __restrict pVect1, const void * __restrict pVect2, size_t uQty )
 {
-	size_t uQty = *((size_t*)pQty);
 	uQty = uQty >> 5;  // 32x 4-bit components
 
 	auto pV1 = (uint8_t*)pVect1;
@@ -563,8 +529,6 @@ static FORCE_INLINE int IP4BitSIMD16 ( const void * __restrict pVect1, const voi
 	__m128i iSum	= _mm_setzero_si128();
 	__m128i iUnit16	= _mm_set1_epi16(1);
 	__m128i iMask	= _mm_set1_epi8(0x0F);
-	__m128i iVec1SumPacked = _mm_setzero_si128();
-	__m128i iVec2SumPacked = _mm_setzero_si128();
 
 	for ( size_t i = 0; i < uQty; i++ )
 	{
@@ -596,14 +560,6 @@ static FORCE_INLINE int IP4BitSIMD16 ( const void * __restrict pVect1, const voi
 		__m128i iSum16 = _mm_add_epi16 ( iSumLo, iSumHi );
 		__m128i iSum32 = _mm_madd_epi16 ( iSum16, iUnit16 );
 
-		__m128i iElementSumVec1 = _mm_add_epi16 ( _mm_add_epi16 ( iV1Lo16Lo, iV1Hi16Lo ), _mm_add_epi16 ( iV1Lo16Hi, iV1Hi16Hi ) );
-		__m128i iVec1Sum32 = _mm_madd_epi16 ( iElementSumVec1, iUnit16 );
-		iVec1SumPacked = _mm_add_epi32 ( iVec1SumPacked, iVec1Sum32 );
-
-		__m128i iElementSumVec2 = _mm_add_epi16 ( _mm_add_epi16 ( iV2Lo16Lo, iV2Hi16Lo ), _mm_add_epi16 ( iV2Lo16Hi, iV2Hi16Hi ) );
-		__m128i iVec2Sum32 = _mm_madd_epi16 ( iElementSumVec2, iUnit16 );
-		iVec2SumPacked = _mm_add_epi32 ( iVec2SumPacked, iVec2Sum32 );
-
 		iSum = _mm_add_epi32 ( iSum, iSum32 );
 
 		pV1 += 16;
@@ -611,12 +567,6 @@ static FORCE_INLINE int IP4BitSIMD16 ( const void * __restrict pVect1, const voi
 	}
 
 	alignas(16) int dBuffer[4];
-	_mm_store_si128 ( (__m128i*)dBuffer, iVec1SumPacked );
-	iSumVec1 += dBuffer[0] + dBuffer[1] + dBuffer[2] + dBuffer[3];
-
-	_mm_store_si128 ( (__m128i*)dBuffer, iVec2SumPacked );
-	iSumVec2 += dBuffer[0] + dBuffer[1] + dBuffer[2] + dBuffer[3];
-
 	_mm_store_si128 ( (__m128i*)dBuffer, iSum );
 	return dBuffer[0] + dBuffer[1] + dBuffer[2] + dBuffer[3];
 }
@@ -625,30 +575,33 @@ static FORCE_INLINE int IP4BitSIMD16 ( const void * __restrict pVect1, const voi
 static float IP4BitSIMD16FloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamIP_t*)pParam;
-	int iSumVec1 = 0;
-	int iSumVec2 = 0;
-	int iDotProduct = IP4BitSIMD16 ( pVect1, pVect2, &(pDistFuncParam->m_uDim), iSumVec1, iSumVec2 );
-	return 1.0f - pDistFuncParam->CalcIP ( iDotProduct, iSumVec1, iSumVec2 );
+	float fVect1B = *(float*)pVect1;
+	float fVect2B = *(float*)pVect2;
+	int iDotProduct = IP4BitSIMD16 ( (uint8_t*)pVect1 + sizeof(float), (uint8_t*)pVect2 + sizeof(float), pDistFuncParam->m_uDim );
+	return pDistFuncParam->CalcIP(iDotProduct) + fVect1B + fVect2B;
 }
 
 
 static float IP4BitSIMD16FloatResiduals ( const void * pVect1, const void * pVect2, const void * pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamIP_t*)pParam;
-	int iSumVec1 = 0;
-	int iSumVec2 = 0;
-
 	size_t uQty = pDistFuncParam->m_uDim;
 	size_t uQty16 = uQty >> 4 << 4;
 	size_t uNumBytes16 = uQty16 >> 1;
 
-	int iDotProduct = IP4BitSIMD16 ( pVect1, pVect2, &uQty16, iSumVec1, iSumVec2 );
+	auto pV1 = (uint8_t *)pVect1;
+	auto pV2 = (uint8_t *)pVect2;
+	float fVect1B = *(float*)pV1;
+	float fVect2B = *(float*)pV2;
+	pV1 += sizeof(float);
+	pV2 += sizeof(float);
 
-	auto pV1 = (uint8_t *)pVect1 + uNumBytes16;
-	auto pV2 = (uint8_t *)pVect2 + uNumBytes16;
-	size_t uQtyLeft = uQty - uQty16;
-	iDotProduct += IP4Bit ( pV1, pV2, &uQtyLeft, iSumVec1, iSumVec2 );
-	return 1.0f - pDistFuncParam->CalcIP ( iDotProduct, iSumVec1, iSumVec2 );
+	int iDotProduct = IP4BitSIMD16 ( pV1, pV1, uQty16 );
+
+	pV1 += uNumBytes16;
+	pV2 += uNumBytes16;
+	iDotProduct += IP4Bit ( pV1, pV2, uQty - uQty16 );
+	return pDistFuncParam->CalcIP(iDotProduct) + fVect1B + fVect2B;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -662,68 +615,24 @@ IPSpace4BitFloat_c::IPSpace4BitFloat_c ( size_t uDim )
 	else if ( uBytes > 16 )
 		m_fnDist = IP4BitSIMD16FloatResiduals;
 	else
-		m_fnDist = IP4BitDistance;
+		m_fnDist = IP4BitFloatDistance;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
-static FORCE_INLINE int IP1Bit ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pQty, int & iSumVec1, int & iSumVec2 )
-{
-	size_t uQty = *((size_t *)pQty);
-	size_t uLenBytes = (uQty + 7) >> 3;
-
-	auto pV1 = (uint8_t*)pVect1;
-	auto pV2 = (uint8_t*)pVect2;
-	int iDistance = 0;
-	for ( size_t i = 0; i < uLenBytes; i++ )
-	{
-		uint32_t uV1 = pV1[i];
-		uint32_t uV2 = pV2[i];
-		iSumVec1 += PopCnt32(uV1);
-		iSumVec2 += PopCnt32(uV2);
-		iDistance += PopCnt32( uV1 & uV2 );
-	}
-
-	return iDistance;
-}
-
-
 static float IP1BitFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamIP_t*)pParam;
-	int iMismatchingBits = L2Sqr1Bit ( pVect1, pVect2, &(pDistFuncParam->m_uDim) );
+	int iMismatchingBits = L2Sqr1Bit ( pVect1, pVect2, pDistFuncParam->m_uDim );
 	int iMatchingBits = int(pDistFuncParam->m_uDim) - iMismatchingBits;
 	return iMismatchingBits - iMatchingBits;
 }
 
 #if !defined(USE_SIMDE)
-static FORCE_INLINE int IP1Bit8x ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pQty, int & iSumVec1, int & iSumVec2 )
-{
-	size_t uQty = *((size_t *)pQty);
-	size_t uLenBytes = (uQty + 7) >> 3;
-	size_t uQty8 = uLenBytes >> 3;
-
-	auto pV1 = (uint64_t*)pVect1;
-	auto pV2 = (uint64_t*)pVect2;
-
-	int iRes = 0;
-	for ( size_t i = 0; i < uQty8; i++ )
-	{
-		uint64_t uV1 = pV1[i];
-		uint64_t uV2 = pV2[i];
-		iSumVec1 += _mm_popcnt_u64(uV1);
-		iSumVec2 += _mm_popcnt_u64(uV2);
-		iRes += _mm_popcnt_u64 ( uV1 & uV2 );
-	}
-
-	return iRes;
-}
-
-
 static float IP1Bit8xFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamIP_t*)pParam;
-	int iMismatchingBits = L2Sqr1Bit8x ( pVect1, pVect2, &(pDistFuncParam->m_uDim) );
+	int iMismatchingBits = L2Sqr1Bit8x ( pVect1, pVect2, pDistFuncParam->m_uDim );
 	int iMatchingBits = int(pDistFuncParam->m_uDim) - iMismatchingBits;
 	return iMismatchingBits - iMatchingBits;
 }
@@ -737,12 +646,11 @@ static float IP1Bit8xFloatResiduals ( const void * __restrict pVect1, const void
 	size_t uQty8 = uLenBytes >> 3;
 	size_t uLenBytes8 = uQty8 << 3;
 
-	int iMismatchingBits = L2Sqr1Bit8x ( pVect1, pVect2, &uQty8 );
+	int iMismatchingBits = L2Sqr1Bit8x ( pVect1, pVect2, uQty8 );
 
 	auto pV1 = (uint8_t *)pVect1 + uLenBytes8;
 	auto pV2 = (uint8_t *)pVect2 + uLenBytes8;
-	size_t uQtyLeft = uQty - uQty8;
-	iMismatchingBits += L2Sqr1Bit ( pV1, pV2, &uQtyLeft );
+	iMismatchingBits += L2Sqr1Bit ( pV1, pV2, uQty - uQty8 );
 	int iMatchingBits = int(pDistFuncParam->m_uDim) - iMismatchingBits;
 	return iMismatchingBits - iMatchingBits;
 }
