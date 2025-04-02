@@ -154,7 +154,7 @@ protected:
 	QuantizationSettings_t	m_tSettings;
 	P2QuantileEstimator_c	m_tQuantile1 { 0.005 };
 	P2QuantileEstimator_c	m_tQuantile2 { 0.995 };
-	bool					m_bQuantilesEnabled = false;
+	bool					m_bQuantilesEnabled = true;
 	float	m_fIntScale = 0.0f;
 	float	m_fDiff = 0.0f;
 	float	m_fAlpha = 0.0f;
