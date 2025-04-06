@@ -78,7 +78,7 @@ jobs:
           set-safe-directory: true
 
       - name: Download embeddings lib 
-        uses: manticoresoftware/download_artifact_with_retries@v4
+        uses: manticoresoftware/download_artifact_with_retries@v3
         continue-on-error: true
         with:
           name: ${{ inputs.embeddings_artifact }}
@@ -111,7 +111,7 @@ jobs:
 
       - name: Upload build artifacts
         if: success()
-        uses: manticoresoftware/upload_artifact_with_retries@v4
+        uses: manticoresoftware/upload_artifact_with_retries@v3
         with:
           name: build_${{ inputs.DISTR }}_${{ inputs.CTEST_CONFIGURATION_TYPE }}_${{ inputs.arch }}
           path: ${{ inputs.artifact_list }}
