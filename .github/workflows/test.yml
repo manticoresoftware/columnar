@@ -276,7 +276,7 @@ jobs:
       - name: Upload combined artifacts
         if: always()
         continue-on-error: true
-        uses: manticoresoftware/upload_artifact_with_retries@v3
+        uses: manticoresoftware/upload_artifact_with_retries@v4
         with:
           name: debug_test_resuls
           path: build
@@ -401,7 +401,7 @@ jobs:
       - name: Upload combined artifacts
         if: always()
         continue-on-error: true
-        uses: manticoresoftware/upload_artifact_with_retries@v3
+        uses: manticoresoftware/upload_artifact_with_retries@v4
         with:
           name: release_test_resuls
           path: build
@@ -500,7 +500,7 @@ jobs:
       - name: Upload combined artifacts
         if: always()
         continue-on-error: true
-        uses: manticoresoftware/upload_artifact_with_retries@v3
+        uses: manticoresoftware/upload_artifact_with_retries@v4
         with:
           name: windows_test_resuls
           path: build
