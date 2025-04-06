@@ -31,6 +31,43 @@ jobs:
     steps:
       - run: echo "All set to build packages"
 
+  check_branch:
+    name: Check branch existence
+    runs-on: ubuntu-22.04
+    outputs:
+      manticore_locator: ${{ steps.set_locator.outputs.manticore_locator }}
+    steps:
+      - name: Check if branch exists in manticoresoftware/manticoresearch
+        id: check_branch
+        if: github.ref_name != 'master'
+        run: |
+          # Extract the actual branch name for pull requests
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+          else
+            BRANCH_NAME="${{ github.ref_name }}"
+          fi
+          
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://api.github.com/repos/manticoresoftware/manticoresearch/branches/$BRANCH_NAME)
+          if [ "$HTTP_STATUS" -eq "200" ]; then
+            echo "branch_exists=true" >> $GITHUB_OUTPUT
+            echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          else
+            echo "branch_exists=false" >> $GITHUB_OUTPUT
+            echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set Manticore Locator
+        id: set_locator
+        run: |
+          if [[ "${{ github.event.schedule }}" == "00 20 * * *" ]]; then
+            echo "manticore_locator=GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG master" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref_name }}" != "master" && "${{ steps.check_branch.outputs.branch_exists }}" == "true" ]]; then
+            echo "manticore_locator=GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG ${{ steps.check_branch.outputs.branch_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "manticore_locator=" >> $GITHUB_OUTPUT
+          fi
+
   embedding_osx_pack:
     needs: pack
     uses: ./.github/workflows/embedding_build_template.yml
@@ -75,7 +112,7 @@ jobs:
 
   pack_debian_ubuntu:
     uses: ./.github/workflows/build_template.yml
-    needs: embedding_linux_pack
+    needs: [embedding_linux_pack, check_branch]
     strategy:
       fail-fast: false
       matrix:
@@ -83,6 +120,7 @@ jobs:
         arch: [x86_64, aarch64]
     name: ${{ matrix.DISTR }} ${{ matrix.arch }} packing
     with:
+      MANTICORE_LOCATOR: ${{ needs.check_branch.outputs.manticore_locator }}
       DISTR: ${{ matrix.DISTR }}
       arch: ${{ matrix.arch }}
       cmake_command: |
@@ -96,7 +134,7 @@ jobs:
 
   pack_rhel:
     uses: ./.github/workflows/build_template.yml
-    needs: embedding_linux_pack
+    needs: [embedding_linux_pack, check_branch]
     strategy:
       fail-fast: false
       matrix:
@@ -104,6 +142,7 @@ jobs:
         arch: [x86_64, aarch64]
     name: ${{ matrix.DISTR }} ${{ matrix.arch }} packing
     with:
+      MANTICORE_LOCATOR: ${{ needs.check_branch.outputs.manticore_locator }}
       DISTR: ${{ matrix.DISTR }}
       arch: ${{ matrix.arch }}
       boost: boost_rhel_feb17
@@ -121,7 +160,7 @@ jobs:
 
   pack_macos:
     uses: ./.github/workflows/build_template.yml
-    needs: embedding_osx_pack
+    needs: [embedding_osx_pack, check_branch]
     strategy:
       fail-fast: false
       matrix:
@@ -129,6 +168,7 @@ jobs:
         arch: [x86_64, arm64]
     name: ${{ matrix.DISTR }} ${{ matrix.arch }} packing
     with:
+      MANTICORE_LOCATOR: ${{ needs.check_branch.outputs.manticore_locator }}
       DISTR: ${{ matrix.DISTR }}
       arch: ${{ matrix.arch }}
       HOMEBREW_PREFIX: /opt/homebrew
@@ -144,8 +184,9 @@ jobs:
   pack_windows:
     name: Windows x64 package
     uses: ./.github/workflows/build_template.yml
-    needs: embedding_windows_pack
+    needs: [embedding_windows_pack, check_branch]
     with:
+      MANTICORE_LOCATOR: ${{ needs.check_branch.outputs.manticore_locator }}
       DISTR: windows
       arch: x64
       cmake_command: |
