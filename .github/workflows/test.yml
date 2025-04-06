@@ -128,7 +128,6 @@ jobs:
   build_linux_release:
     name: Linux release build
     needs: [embedding_linux_pack, check_branch]
-    pbuil
     uses: ./.github/workflows/build_template.yml
     with:
       MANTICORE_LOCATOR: ${{ needs.check_branch.outputs.manticore_locator }}
