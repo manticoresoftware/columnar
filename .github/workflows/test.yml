@@ -96,24 +96,55 @@ jobs:
           wget https://repo.manticoresearch.com/repository/ci/boost_1_75_0.tgz
           tar -xf boost_1_75_0.tgz
 
+
+  embedding_linux_pack:
+    needs: pack
+    uses: ./.github/workflows/embedding_build_template.yml
+    strategy:
+      fail-fast: false
+      matrix:
+        distr: [linux]
+        arch: [x86_64]
+    name: ${{ matrix.distr }} ${{ matrix.arch }} embedding packing
+    with:
+      runner: ubuntu-22.04
+      distr: ${{ matrix.distr }}
+      arch: ${{ matrix.arch }}
+
+  embedding_windows_pack:
+    needs: pack
+    uses: ./.github/workflows/embedding_build_template.yml
+    strategy:
+      fail-fast: false
+      matrix:
+        distr: [windows]
+        arch: [x86_64]
+    name: ${{ matrix.distr }} ${{ matrix.arch }} embedding packing
+    with:
+      runner: windows-2022
+      distr: ${{ matrix.distr }}
+      arch: ${{ matrix.arch }}
+
   build_linux_release:
     name: Linux release build
-    needs: check_branch
+    needs: [embedding_linux_pack, check_branch]
     uses: ./.github/workflows/build_template.yml
     with:
       MANTICORE_LOCATOR: ${{ needs.check_branch.outputs.manticore_locator }}
+      embeddings_artifact: embeddings_linux_x86_64
 
   build_linux_debug:
     name: Linux debug build
-    needs: check_branch
+    needs: [embedding_linux_pack, check_branch]
     uses: ./.github/workflows/build_template.yml
     with:
       CTEST_CONFIGURATION_TYPE: "Debug"
       MANTICORE_LOCATOR: ${{ needs.check_branch.outputs.manticore_locator }}
+      embeddings_artifact: embeddings_linux_x86_64
 
   build_windows:
     name: Windows x64 build
-    needs: check_branch
+    needs: [embedding_windows_pack, check_branch]
     uses: ./.github/workflows/build_template.yml
     with:
       DISTR: windows
@@ -123,6 +154,7 @@ jobs:
       cache_key: build_windows_x64
       artifact_list: "build/columnar/Debug/lib_manticore_columnar.dll build/secondary/Debug/lib_manticore_secondary.dll build/_deps/manticore-build/src/Debug/indexer.exe build/_deps/manticore-build/src/Debug/searchd.exe" #
       MANTICORE_LOCATOR: ${{ needs.check_branch.outputs.manticore_locator }}
+      embeddings_artifact: embeddings_windows_x86_64
 
   test_linux_debug:
     name: Linux debug mode tests
