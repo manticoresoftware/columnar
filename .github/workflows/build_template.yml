@@ -78,7 +78,7 @@ jobs:
           set-safe-directory: true
 
       - name: Download embeddings lib 
-        uses: manticoresoftware/download_artifact_with_retries@v2
+        uses: manticoresoftware/download_artifact_with_retries@v4
         continue-on-error: true
         with:
           name: ${{ inputs.embeddings_artifact }}
