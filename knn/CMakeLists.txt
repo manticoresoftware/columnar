@@ -70,7 +70,7 @@ if(NOT DEFINED ENV{SYSROOT_URL})
 endif()
 
 # Set the path to look for the library
-set(EMBEDDINGS_LIB_PATH "${CMAKE_CURRENT_BINARY_DIR}/embeddings/release")
+set(EMBEDDINGS_LIB_PATH "${CMAKE_CURRENT_BINARY_DIR}/embeddings/target/release")
 
 # Construct the full library path
 set(EMBEDDINGS_LIB "${EMBEDDINGS_LIB_PATH}/${EMBEDDINGS_LIB_FILE}")
