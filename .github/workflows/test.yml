@@ -208,49 +208,49 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Download test report artifact 1_54
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retires@v4
         continue-on-error: true
         with:
           name: debug_test_1_54
           path: .
       - name: Download test report artifact 55_108
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retires@v4
         continue-on-error: true
         with:
           name: debug_test_55_108
           path: .
       - name: Download test report artifact 109_162
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retires@v4
         continue-on-error: true
         with:
           name: debug_test_109_162
           path: .
       - name: Download test report artifact 163_216
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retires@v4
         continue-on-error: true
         with:
           name: debug_test_163_216
           path: .
       - name: Download test report artifact 217_270
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retires@v4
         continue-on-error: true
         with:
           name: debug_test_217_270
           path: .
       - name: Download test report artifact 271_324
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retires@v4
         continue-on-error: true
         with:
           name: debug_test_271_324
           path: .
       - name: Download test report artifact 325_378
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retires@v4
         continue-on-error: true
         with:
           name: debug_test_325_378
           path: .
       - name: Download test report artifact 379_and_on
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retires@v4
         continue-on-error: true
         with:
           name: debug_test_379_and_on
@@ -333,49 +333,49 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Download test report artifact 1_54
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retires@v4
         continue-on-error: true
         with:
           name: release_test_1_54
           path: .
       - name: Download test report artifact 55_108
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retires@v4
         continue-on-error: true
         with:
           name: release_test_55_108
           path: .
       - name: Download test report artifact 109_162
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retires@v4
         continue-on-error: true
         with:
           name: release_test_109_162
           path: .
       - name: Download test report artifact 163_216
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retires@v4
         continue-on-error: true
         with:
           name: release_test_163_216
           path: .
       - name: Download test report artifact 217_270
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retires@v4
         continue-on-error: true
         with:
           name: release_test_217_270
           path: .
       - name: Download test report artifact 271_324
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retires@v4
         continue-on-error: true
         with:
           name: release_test_271_324
           path: .
       - name: Download test report artifact 325_378
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retires@v4
         continue-on-error: true
         with:
           name: release_test_325_378
           path: .
       - name: Download test report artifact 379_and_on
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retires@v4
         continue-on-error: true
         with:
           name: release_test_379_and_on
@@ -448,31 +448,31 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Download test report artifact 1_86
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retires@v4
         continue-on-error: true
         with:
           name: windows_test_1_86
           path: .
       - name: Download test report artifact 87_172
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retires@v4
         continue-on-error: true
         with:
           name: windows_test_87_172
           path: .
       - name: Download test report artifact 173_258
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retires@v4
         continue-on-error: true
         with:
           name: windows_test_173_258
           path: .
       - name: Download test report artifact 259_344
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retires@v4
         continue-on-error: true
         with:
           name: windows_test_259_344
           path: .
       - name: Download test report artifact 345_and_on
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retires@v4
         continue-on-error: true
         with:
           name: windows_test_345_and_on

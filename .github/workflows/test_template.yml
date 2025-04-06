@@ -60,7 +60,7 @@ jobs:
         run: bash /entry_point.sh &
 
       - name: Download build artifacts
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retires@v4
         with:
           name: build_jammy_${{ inputs.CTEST_CONFIGURATION_TYPE }}_x86_64
           path: .
