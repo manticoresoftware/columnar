@@ -98,7 +98,7 @@ jobs:
 
 
   embedding_linux_pack:
-    needs: pack
+    needs: commit_info
     uses: ./.github/workflows/embedding_build_template.yml
     strategy:
       fail-fast: false
@@ -112,7 +112,7 @@ jobs:
       arch: ${{ matrix.arch }}
 
   embedding_windows_pack:
-    needs: pack
+    needs: commit_info
     uses: ./.github/workflows/embedding_build_template.yml
     strategy:
       fail-fast: false
