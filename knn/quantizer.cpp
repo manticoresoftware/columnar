@@ -248,9 +248,9 @@ void ScalarQuantizer8Bit_c::Encode ( const util::Span_T<float> & dPoint, std::ve
 	for ( size_t i = 0; i < dPoint.size(); i++ )
 	{
 		float fValue = m_fIntScale * Scale ( dPoint[i] );
-		int iQuantized = std::clamp ( (int)fValue, 0, int(m_fIntScale) ); 
-		iSum += iQuantized;
-		*pQuantized++ = iQuantized;
+		int iValue = (int)std::lround(fValue);
+		iSum += iValue;
+		*pQuantized++ = std::clamp ( iValue, 0, int(m_fIntScale) );
 	}
 
 	*(float*)dQuantized.data() = -iSum*m_tSettings.m_fMin*m_fAlpha;
@@ -305,15 +305,18 @@ void ScalarQuantizer4Bit_c::Encode ( const util::Span_T<float> & dPoint, std::ve
 	for ( size_t i = 0; i < tSize; i+=2 )
 	{
 		float fValue = m_fIntScale*Scale(dPoint[i]);
-		int iLow = std::clamp ( (int)fValue, 0, int(m_fIntScale) );
+		int iValue = (int)std::lround(fValue);
+		iSum += iValue;
+		int iLow = std::clamp ( iValue, 0, int(m_fIntScale) );
 		int iHigh = 0;
 		if ( i+1 < tSize )
 		{
 			fValue = m_fIntScale*Scale(dPoint[i+1]);
-			iHigh = std::clamp ( (int)fValue, 0, int(m_fIntScale) );
+			iValue = (int)std::lround(fValue);
+			iSum += iValue;
+			iHigh = std::clamp ( iValue, 0, int(m_fIntScale) );
 		}
 
-		iSum += iLow + iHigh;
 		pQuantized[i>>1] = ( iHigh << 4 ) | iLow;
 	}
 
