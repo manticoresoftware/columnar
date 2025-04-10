@@ -154,7 +154,7 @@ protected:
 	QuantizationSettings_t	m_tSettings;
 	P2QuantileEstimator_c	m_tQuantile1 { 0.005 };
 	P2QuantileEstimator_c	m_tQuantile2 { 0.995 };
-	bool					m_bQuantilesEnabled = true;
+	bool					m_bQuantilesEnabled = false;
 	float	m_fIntScale = 0.0f;
 	float	m_fDiff = 0.0f;
 	float	m_fAlpha = 0.0f;
@@ -164,7 +164,7 @@ protected:
 	size_t	m_uNumTrained = 0;
 
 	FORCE_INLINE float	Scale ( float fValue ) const;
-	virtual void		InitScale() { m_fIntScale = 255.0f; }
+	virtual void		InitScale() { m_fIntScale = 127.0f; }
 	virtual void		FinalizeTraining();
 
 private:
@@ -244,15 +244,16 @@ void ScalarQuantizer8Bit_c::Encode ( const util::Span_T<float> & dPoint, std::ve
 	dQuantized.resize ( dPoint.size() + sizeof(float) );
 	uint8_t * pQuantized = dQuantized.data() + sizeof(float);
 
-	float fSum = 0.0f;
+	int iSum = 0;
 	for ( size_t i = 0; i < dPoint.size(); i++ )
 	{
 		float fValue = m_fIntScale * Scale ( dPoint[i] );
-		fSum += fValue;
-		*pQuantized++ = std::clamp ( (int)std::lround(fValue), 0, int(m_fIntScale) );
+		int iQuantized = std::clamp ( (int)fValue, 0, int(m_fIntScale) ); 
+		iSum += iQuantized;
+		*pQuantized++ = iQuantized;
 	}
 
-	*(float*)dQuantized.data() = -fSum*m_tSettings.m_fMin*m_fAlpha;
+	*(float*)dQuantized.data() = -iSum*m_tSettings.m_fMin*m_fAlpha;
 }
 
 
@@ -300,24 +301,23 @@ void ScalarQuantizer4Bit_c::Encode ( const util::Span_T<float> & dPoint, std::ve
 	uint8_t * pQuantized = dQuantized.data() + sizeof(float);
 
 	size_t tSize = dPoint.size();
-	float fSum = 0.0f;
+	int iSum = 0;
 	for ( size_t i = 0; i < tSize; i+=2 )
 	{
 		float fValue = m_fIntScale*Scale(dPoint[i]);
-		fSum += fValue;
-		int iLow = std::clamp ( (int)std::lround(fValue), 0, int(m_fIntScale) );
+		int iLow = std::clamp ( (int)fValue, 0, int(m_fIntScale) );
 		int iHigh = 0;
 		if ( i+1 < tSize )
 		{
-			float fValue = m_fIntScale*Scale(dPoint[i+1]);
-			fSum += fValue;
-			iHigh = std::clamp ( (int)std::lround(fValue), 0, int(m_fIntScale) );
+			fValue = m_fIntScale*Scale(dPoint[i+1]);
+			iHigh = std::clamp ( (int)fValue, 0, int(m_fIntScale) );
 		}
 
+		iSum += iLow + iHigh;
 		pQuantized[i>>1] = ( iHigh << 4 ) | iLow;
 	}
 
-	*(float*)dQuantized.data() = -fSum*m_tSettings.m_fMin*m_fAlpha;
+	*(float*)dQuantized.data() = -iSum*m_tSettings.m_fMin*m_fAlpha;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
