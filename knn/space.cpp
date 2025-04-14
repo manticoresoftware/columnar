@@ -377,10 +377,20 @@ static FORCE_INLINE int IP8Bit ( const uint8_t * __restrict pVect1, const uint8_
 static float IP8BitFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamIP_t*)pParam;
-	float fVect1B = *(float*)pVect1;
-	float fVect2B = *(float*)pVect2;
-	int iDotProduct = IP8Bit ( (uint8_t*)pVect1 + sizeof(float), (uint8_t*)pVect2 + sizeof(float), pDistFuncParam->m_uDim );
-	return pDistFuncParam->CalcIP ( iDotProduct ) + fVect1B + fVect2B;
+
+	auto pVec1Header = (float*)pVect1;
+	float fSum1 = *pVec1Header++;
+	float fMin1 = *pVec1Header++;
+	float fAlpha1 = *pVec1Header++;
+
+	auto pVec2Header = (float*)pVect2;
+	float fSum2 = *pVec2Header++;
+	float fMin2 = *pVec2Header++;
+	float fAlpha2 = *pVec2Header++;
+
+	int iDotProduct = IP8Bit ( (uint8_t*)pVec1Header, (uint8_t*)pVec2Header, pDistFuncParam->m_uDim );
+	float fDot = fAlpha1*fAlpha2*iDotProduct + fAlpha1*fSum1*fMin2 + fAlpha2*fSum2*fMin1 + fMin1*fMin2*pDistFuncParam->m_uDim;
+	return 1.0f - fDot;
 }
 
 
@@ -469,11 +479,11 @@ IPSpace8BitFloat_c::IPSpace8BitFloat_c ( size_t uDim )
 {
 	m_tDistFuncParam.m_uDim = uDim;
 
-	if ( uDim % 16 == 0)
+/*	if ( uDim % 16 == 0)
 		m_fnDist = IP8BitSIMD16FloatDistance;
 	else if ( uDim > 16)
 		m_fnDist = IP8BitSIMD16FloatResiduals;
-	else
+	else*/
 		m_fnDist = IP8BitFloatDistance;
 }
 
