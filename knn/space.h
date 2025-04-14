@@ -141,7 +141,7 @@ class IPSpace8BitFloat_c : public Space_c
 			IPSpace8BitFloat_c ( size_t uDim );
 
 	void *	get_dist_func_param() override	{ return &m_tDistFuncParam; }
-	size_t	get_data_size() override		{ return m_uDim + sizeof(float)*3; }
+	size_t	get_data_size() override		{ return m_uDim + sizeof(float); }
 
 	void	SetQuantizationSettings ( const QuantizationSettings_t & tSettings ) override;
 

@@ -241,17 +241,8 @@ void ScalarQuantizer8Bit_c::Encode ( const util::Span_T<float> & dPoint, std::ve
 {
 	FinalizeTraining();
 
-	dQuantized.resize ( dPoint.size() + sizeof(float)*3 );
-	uint8_t * pQuantized = dQuantized.data() + sizeof(float)*3;
-
-	float fMin = dPoint[0];
-	float fMax = dPoint[0];
-	for ( size_t i = 0; i < dPoint.size(); i++ )
-	{
-		float fSrc = dPoint[i];
-		fMin = std::min ( fMin, fSrc );
-		fMax = std::max ( fMax, fSrc );
-	}
+	dQuantized.resize ( dPoint.size() + sizeof(float) );
+	uint8_t * pQuantized = dQuantized.data() + sizeof(float);
 
 	int iSum = 0;
 	for ( size_t i = 0; i < dPoint.size(); i++ )
@@ -262,11 +253,7 @@ void ScalarQuantizer8Bit_c::Encode ( const util::Span_T<float> & dPoint, std::ve
 		*pQuantized++ = std::clamp ( iValue, 0, int(m_fIntScale) );
 	}
 
-	auto pHeader = (float*)dQuantized.data();
-	pHeader[0] = (float)iSum;
-	pHeader[1] = fMin;
-	pHeader[2] = ( fMax-fMin ) / m_fIntScale;
-
+	*(float*)dQuantized.data() = -iSum*m_tSettings.m_fMin*m_fAlpha;
 }
 
 
