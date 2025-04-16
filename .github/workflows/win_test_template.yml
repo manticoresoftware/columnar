@@ -41,7 +41,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Download build artifacts
-        uses: manticoresoftware/download_artifact_with_retires@v4
+        uses: manticoresoftware/download_artifact_with_retries@v4
         with:
           name: build_windows_Debug_x64
           path: .
