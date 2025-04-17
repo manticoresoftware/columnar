@@ -381,10 +381,10 @@ ScalarQuantizer_i * CreateQuantizer ( Quantization_e eQuantization, const Quanti
 	switch ( eQuantization )
 	{
 	case Quantization_e::BIT1:
-		if ( eSimilarity==HNSWSimilarity_e::COSINE )
+//		if ( eSimilarity==HNSWSimilarity_e::COSINE )
 			return new ScalarQuantizer1Bit_T<true>(tQuantSettings);
-		else
-			return new ScalarQuantizer1Bit_T<false>(tQuantSettings);
+//		else
+//			return new ScalarQuantizer1Bit_T<false>(tQuantSettings);
 
 	case Quantization_e::BIT4:	return new ScalarQuantizer4Bit_c(tQuantSettings);
 	case Quantization_e::BIT8:	return new ScalarQuantizer8Bit_c(tQuantSettings);
@@ -398,10 +398,10 @@ ScalarQuantizer_i * CreateQuantizer ( Quantization_e eQuantization, HNSWSimilari
 	switch ( eQuantization )
 	{
 	case Quantization_e::BIT1:
-		if ( eSimilarity==HNSWSimilarity_e::COSINE )
+//		if ( eSimilarity==HNSWSimilarity_e::COSINE )
 			return new ScalarQuantizer1Bit_T<true>;
-		else
-			return new ScalarQuantizer1Bit_T<false>;
+//		else
+//			return new ScalarQuantizer1Bit_T<false>;
 
 	case Quantization_e::BIT4:	return new ScalarQuantizer4Bit_c;
 	case Quantization_e::BIT8:	return new ScalarQuantizer8Bit_c;

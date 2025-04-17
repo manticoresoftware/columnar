@@ -154,7 +154,7 @@ class IPSpace4BitFloat_c : public IPSpace8BitFloat_c
  public:
 			IPSpace4BitFloat_c ( size_t uDim );
 
-	size_t	get_data_size() override		{ return ( (m_uDim+1)>>1 ) + sizeof(float); }
+	size_t	get_data_size() override		{ return ( (m_uDim+3)>>1 ) + sizeof(float); }
 };
 
 

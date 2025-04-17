@@ -298,9 +298,10 @@ static FORCE_INLINE int L2Sqr1Bit ( const void * __restrict pVect1, const void *
 
 static float L2Sqr1BitFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pParam )
 {
-	auto pDistFuncParam = (const DistFuncParamL2_t*)pParam;
-	int iDist = L2Sqr1Bit ( pVect1, pVect2, pDistFuncParam->m_uDim );
-	return pDistFuncParam->m_fA*iDist;
+	auto pDistFuncParam = (const DistFuncParamIP_t*)pParam;
+	int iMismatchingBits = L2Sqr1Bit ( pVect1, pVect2, pDistFuncParam->m_uDim );
+	int iMatchingBits = int(pDistFuncParam->m_uDim) - iMismatchingBits;
+	return iMismatchingBits - iMatchingBits;
 }
 
 #if !defined(USE_SIMDE)
@@ -322,9 +323,10 @@ static FORCE_INLINE int L2Sqr1Bit8x ( const void * __restrict pVect1, const void
 
 static float L2Sqr1Bit8xFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pParam )
 {
-	auto pDistFuncParam = (const DistFuncParamL2_t*)pParam;
-	int iDist = L2Sqr1Bit8x ( pVect1, pVect2, pDistFuncParam->m_uDim );
-	return pDistFuncParam->m_fA*iDist;	
+	auto pDistFuncParam = (const DistFuncParamIP_t*)pParam;
+	int iMismatchingBits = L2Sqr1Bit8x ( pVect1, pVect2, pDistFuncParam->m_uDim );
+	int iMatchingBits = int(pDistFuncParam->m_uDim) - iMismatchingBits;
+	return iMismatchingBits - iMatchingBits;
 }
 
 
@@ -336,13 +338,13 @@ static float L2Sqr1Bit8xFloatResiduals ( const void * pVect1, const void * pVect
 	size_t uQty8 = uLenBytes >> 3;
 	size_t uLenBytes8 = uQty8 << 3;
 
-	int iDist1 = L2Sqr1Bit8x ( pVect1, pVect2, uQty8 );
+	int iMismatchingBits = L2Sqr1Bit8x ( pVect1, pVect2, uQty8 );
 
-	auto pV1 = (uint8_t*)pVect1 + uLenBytes8;
-	auto pV2 = (uint8_t*)pVect2 + uLenBytes8;
-	int iDist2 = L2Sqr1Bit ( pV1, pV2, uQty - uQty8 );
-
-	return pDistFuncParam->m_fA*( iDist1 + iDist2 );
+	auto pV1 = (uint8_t *)pVect1 + uLenBytes8;
+	auto pV2 = (uint8_t *)pVect2 + uLenBytes8;
+	iMismatchingBits += L2Sqr1Bit ( pV1, pV2, uQty - uQty8 );
+	int iMatchingBits = int(pDistFuncParam->m_uDim) - iMismatchingBits;
+	return iMismatchingBits - iMatchingBits;
 }
 #endif
 
@@ -609,8 +611,8 @@ static float IP4BitSIMD16FloatResiduals ( const void * pVect1, const void * pVec
 IPSpace4BitFloat_c::IPSpace4BitFloat_c ( size_t uDim )
 	: IPSpace8BitFloat_c ( uDim )
 {
-	size_t uBytes = get_data_size();
-	if ( uBytes % 16 == 0)
+	size_t uBytes = (uDim+3)>>1;
+	if ( uBytes % 16 == 0 )
 		m_fnDist = IP4BitSIMD16FloatDistance;
 	else if ( uBytes > 16 )
 		m_fnDist = IP4BitSIMD16FloatResiduals;
