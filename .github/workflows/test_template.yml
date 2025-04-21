@@ -80,7 +80,7 @@ jobs:
           key: build_linux_x86_64_deps
 
       - name: Update package lists
-        run: sudo apt-get update
+        run: apt-get update
 
       - name: Install Rust and Cargo
         run: |
