@@ -249,22 +249,59 @@ if (INSTALL_KNN)
 		if(EXISTS ${SEARCH_PATH})
 			# Add build-id to the embeddings library for Linux systems
 			if(UNIX AND NOT APPLE)
-				# Generate a temporary file with random content for build ID
-				string(RANDOM LENGTH 20 ALPHABET "0123456789abcdef" BUILD_ID_CONTENT)
-				file(WRITE "${CMAKE_BINARY_DIR}/build-id-content" "${BUILD_ID_CONTENT}")
+				# Using a different approach to add build ID via strip
+				set(TEMP_FILE "${CMAKE_BINARY_DIR}/temp_${EMBEDDINGS_LIB_NAME}")
 				
-				# Use objcopy to add a build ID section
+				# Make a copy of the original file
+				file(COPY ${SEARCH_PATH} DESTINATION ${CMAKE_BINARY_DIR})
+				
+				# Use strip to ensure build ID is properly set
 				execute_process(
-					COMMAND objcopy --force-add-build-id ${SEARCH_PATH}
-					RESULT_VARIABLE BUILD_ID_RESULT
-					OUTPUT_VARIABLE BUILD_ID_OUTPUT
-					ERROR_VARIABLE BUILD_ID_ERROR
+					COMMAND strip --strip-unneeded -o ${TEMP_FILE} ${SEARCH_PATH}
+					RESULT_VARIABLE STRIP_RESULT
+					OUTPUT_VARIABLE STRIP_OUTPUT
+					ERROR_VARIABLE STRIP_ERROR
 				)
 				
-				if(BUILD_ID_RESULT EQUAL 0)
-					message(STATUS "Successfully added build ID to embeddings library")
+				if(STRIP_RESULT EQUAL 0)
+					message(STATUS "Successfully processed embeddings library for build ID")
+					
+					# Verify the file still exists and use it for installation
+					if(EXISTS ${TEMP_FILE})
+						set(SEARCH_PATH ${TEMP_FILE})
+						message(STATUS "Using processed embeddings library for installation")
+					else()
+						message(WARNING "Processed file not found, using original library")
+					endif()
 				else()
-					message(WARNING "Failed to add build ID to embeddings library: ${BUILD_ID_ERROR}")
+					message(WARNING "Failed to process embeddings library: ${STRIP_ERROR}")
+				endif()
+				
+				# If strip failed, try another approach with patchelf
+				if(NOT STRIP_RESULT EQUAL 0)
+					execute_process(
+						COMMAND apt-get update && apt-get install -y patchelf
+						RESULT_VARIABLE INSTALL_RESULT
+						OUTPUT_QUIET
+						ERROR_QUIET
+					)
+					
+					if(INSTALL_RESULT EQUAL 0)
+						execute_process(
+							COMMAND patchelf --set-soname libmanticoresearch_text_embeddings.so ${SEARCH_PATH}
+							RESULT_VARIABLE PATCHELF_RESULT
+							OUTPUT_VARIABLE PATCHELF_OUTPUT
+							ERROR_VARIABLE PATCHELF_ERROR
+						)
+						
+						if(PATCHELF_RESULT EQUAL 0)
+							message(STATUS "Successfully set soname with patchelf")
+						else()
+							message(WARNING "Failed to set soname with patchelf: ${PATCHELF_ERROR}")
+						endif()
+					else()
+						message(WARNING "Failed to install patchelf")
+					endif()
 				endif()
 			endif()
 
@@ -277,6 +314,11 @@ endif ()
 
 # Add component dependency - KNN depends on embeddings
 set(CPACK_COMPONENT_KNN_DEPENDS embeddings)
+
+# Include custom DEB packaging settings before CPack
+if(UNIX AND NOT APPLE)
+    include(cmake/cpack/DEB.cmake)
+endif()
 
 include ( CPack )
 include ( testing.cmake )
