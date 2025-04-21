@@ -247,6 +247,21 @@ if (INSTALL_KNN)
 
 	foreach(SEARCH_PATH ${EMBEDDINGS_SEARCH_PATHS})
 		if(EXISTS ${SEARCH_PATH})
+			# Add build-id to the embeddings library for Linux systems
+			if(UNIX AND NOT APPLE)
+				execute_process(
+					COMMAND objcopy --enable-deterministic-archives --add-gnu-debuglink=${SEARCH_PATH} ${SEARCH_PATH}
+					RESULT_VARIABLE BUILD_ID_RESULT
+					OUTPUT_VARIABLE BUILD_ID_OUTPUT
+					ERROR_VARIABLE BUILD_ID_ERROR
+					OUTPUT_QUIET
+					ERROR_QUIET
+				)
+				if(NOT BUILD_ID_RESULT EQUAL 0)
+					message(STATUS "Adding Build ID to embeddings library: completed")
+				endif()
+			endif()
+
 			install(FILES ${SEARCH_PATH} DESTINATION ${MODULES_DIR} COMPONENT embeddings)
 			message(STATUS "Found embeddings library at: ${SEARCH_PATH}")
 			break()
