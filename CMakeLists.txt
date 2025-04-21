@@ -250,14 +250,14 @@ if (INSTALL_KNN)
 			# Add build-id to the embeddings library for Linux systems
 			if(UNIX AND NOT APPLE)
 				# Using a different approach to add build ID via strip
-				# Make a backup of the original file
-				set(BACKUP_FILE "${CMAKE_BINARY_DIR}/${EMBEDDINGS_LIB_NAME}.bak")
-				file(COPY ${SEARCH_PATH} DESTINATION ${CMAKE_BINARY_DIR})
-				file(RENAME "${CMAKE_BINARY_DIR}/${EMBEDDINGS_LIB_NAME}" "${BACKUP_FILE}")
+				set(TEMP_FILE "${CMAKE_BINARY_DIR}/temp_${EMBEDDINGS_LIB_NAME}")
 				
-				# Process the file directly without temp prefix
+				# Make a copy of the original file
+				file(COPY ${SEARCH_PATH} DESTINATION ${CMAKE_BINARY_DIR})
+				
+				# Use strip to ensure build ID is properly set
 				execute_process(
-					COMMAND strip --strip-unneeded -o ${SEARCH_PATH} ${SEARCH_PATH}
+					COMMAND strip --strip-unneeded -o ${TEMP_FILE} ${SEARCH_PATH}
 					RESULT_VARIABLE STRIP_RESULT
 					OUTPUT_VARIABLE STRIP_OUTPUT
 					ERROR_VARIABLE STRIP_ERROR
@@ -265,17 +265,16 @@ if (INSTALL_KNN)
 				
 				if(STRIP_RESULT EQUAL 0)
 					message(STATUS "Successfully processed embeddings library for build ID")
-					# Remove backup file since processing was successful
-					file(REMOVE ${BACKUP_FILE})
+					
+					# Verify the file still exists and use it for installation
+					if(EXISTS ${TEMP_FILE})
+						set(SEARCH_PATH ${TEMP_FILE})
+						message(STATUS "Using processed embeddings library for installation")
+					else()
+						message(WARNING "Processed file not found, using original library")
+					endif()
 				else()
 					message(WARNING "Failed to process embeddings library: ${STRIP_ERROR}")
-					# Restore from backup
-					if(EXISTS ${BACKUP_FILE})
-						file(COPY ${BACKUP_FILE} DESTINATION ${CMAKE_BINARY_DIR})
-						file(RENAME "${CMAKE_BINARY_DIR}/${EMBEDDINGS_LIB_NAME}" "${SEARCH_PATH}")
-						file(REMOVE ${BACKUP_FILE})
-						message(STATUS "Restored original library from backup")
-					endif()
 				endif()
 				
 				# If strip failed, try another approach with patchelf
