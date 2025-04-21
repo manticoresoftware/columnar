@@ -79,6 +79,18 @@ jobs:
           enableCrossOsArchive: true
           key: build_linux_x86_64_deps
 
+      - name: Update package lists
+        run: sudo apt-get update
+
+      - name: Install Rust and Cargo
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Verify Cargo installation
+        run: |
+          source "$HOME/.cargo/env"
+          cargo --version
 
       - name: List files
         run: find .
