@@ -226,7 +226,36 @@ if (INSTALL_KNN)
 	add_subdirectory ( knn )
 	install ( TARGETS knn_lib RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT knn )
 	install ( FILES "$<TARGET_FILE_DIR:knn_lib>/lib_manticore_knn.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
+	
+	# Add embeddings library as a component to be included in packages
+
+	# Define platform-specific embeddings library names
+	if(WIN32)
+		set(EMBEDDINGS_LIB_NAME "manticoresearch_text_embeddings.dll")
+	elseif(APPLE)
+		set(EMBEDDINGS_LIB_NAME "libmanticoresearch_text_embeddings.dylib")
+	else()
+		set(EMBEDDINGS_LIB_NAME "libmanticoresearch_text_embeddings.so")
+	endif()
+
+	# Look for embeddings library in various places
+	set(EMBEDDINGS_SEARCH_PATHS
+		"${CMAKE_BINARY_DIR}/${EMBEDDINGS_LIB_NAME}"
+		"${CMAKE_BINARY_DIR}/embeddings/${EMBEDDINGS_LIB_NAME}"
+		"${CMAKE_SOURCE_DIR}/embeddings/target/release/${EMBEDDINGS_LIB_NAME}"
+	)
+
+	foreach(SEARCH_PATH ${EMBEDDINGS_SEARCH_PATHS})
+		if(EXISTS ${SEARCH_PATH})
+			install(FILES ${SEARCH_PATH} DESTINATION ${MODULES_DIR} COMPONENT embeddings)
+			message(STATUS "Found embeddings library at: ${SEARCH_PATH}")
+			break()
+		endif()
+	endforeach()
 endif ()
+
+# Add component dependency - KNN depends on embeddings
+set(CPACK_COMPONENT_KNN_DEPENDS embeddings)
 
 include ( CPack )
 include ( testing.cmake )
