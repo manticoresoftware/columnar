@@ -249,16 +249,22 @@ if (INSTALL_KNN)
 		if(EXISTS ${SEARCH_PATH})
 			# Add build-id to the embeddings library for Linux systems
 			if(UNIX AND NOT APPLE)
+				# Generate a temporary file with random content for build ID
+				string(RANDOM LENGTH 20 ALPHABET "0123456789abcdef" BUILD_ID_CONTENT)
+				file(WRITE "${CMAKE_BINARY_DIR}/build-id-content" "${BUILD_ID_CONTENT}")
+				
+				# Use objcopy to add a build ID section
 				execute_process(
-					COMMAND objcopy --enable-deterministic-archives --add-gnu-debuglink=${SEARCH_PATH} ${SEARCH_PATH}
+					COMMAND objcopy --force-add-build-id ${SEARCH_PATH}
 					RESULT_VARIABLE BUILD_ID_RESULT
 					OUTPUT_VARIABLE BUILD_ID_OUTPUT
 					ERROR_VARIABLE BUILD_ID_ERROR
-					OUTPUT_QUIET
-					ERROR_QUIET
 				)
-				if(NOT BUILD_ID_RESULT EQUAL 0)
-					message(STATUS "Adding Build ID to embeddings library: completed")
+				
+				if(BUILD_ID_RESULT EQUAL 0)
+					message(STATUS "Successfully added build ID to embeddings library")
+				else()
+					message(WARNING "Failed to add build ID to embeddings library: ${BUILD_ID_ERROR}")
 				endif()
 			endif()
 
