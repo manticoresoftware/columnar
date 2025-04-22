@@ -99,9 +99,11 @@ jobs:
 
       - name: Initialization of embeddings lib
         run: | 
-          mkdir -p embeddings/target/release
-          mv ./embeddings-lib/build/* embeddings/target/release/
-          rm -fr ./embeddings-lib
+          mkdir embeddings\
+          mkdir embeddings\target
+          mkdir embeddings\target\release
+          mv .\embeddings-lib\build\* embeddings\target\release\
+          rm -r ./embeddings-lib
 
       - name: 🚀 Test
         id: test
