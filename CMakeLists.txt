@@ -249,26 +249,25 @@ if (INSTALL_KNN)
 		if(EXISTS ${SEARCH_PATH})
 			# Add build-id to the embeddings library for Linux systems
 			if(UNIX AND NOT APPLE)
-				# Using a different approach to add build ID via strip
-				set(TEMP_FILE "${CMAKE_BINARY_DIR}/temp_${EMBEDDINGS_LIB_NAME}")
-				
+				set(PROCESSED_LIB_PATH "${CMAKE_BINARY_DIR}/${EMBEDDINGS_LIB_NAME}")
+
 				# Make a copy of the original file
 				file(COPY ${SEARCH_PATH} DESTINATION ${CMAKE_BINARY_DIR})
-				
+
 				# Use strip to ensure build ID is properly set
 				execute_process(
-					COMMAND strip --strip-unneeded -o ${TEMP_FILE} ${SEARCH_PATH}
+					COMMAND strip --strip-unneeded -o ${PROCESSED_LIB_PATH} ${SEARCH_PATH}
 					RESULT_VARIABLE STRIP_RESULT
 					OUTPUT_VARIABLE STRIP_OUTPUT
 					ERROR_VARIABLE STRIP_ERROR
 				)
-				
+
 				if(STRIP_RESULT EQUAL 0)
 					message(STATUS "Successfully processed embeddings library for build ID")
-					
+
 					# Verify the file still exists and use it for installation
-					if(EXISTS ${TEMP_FILE})
-						set(SEARCH_PATH ${TEMP_FILE})
+					if(EXISTS ${PROCESSED_LIB_PATH})
+						set(SEARCH_PATH ${PROCESSED_LIB_PATH})
 						message(STATUS "Using processed embeddings library for installation")
 					else()
 						message(WARNING "Processed file not found, using original library")
@@ -276,7 +275,7 @@ if (INSTALL_KNN)
 				else()
 					message(WARNING "Failed to process embeddings library: ${STRIP_ERROR}")
 				endif()
-				
+
 				# If strip failed, try another approach with patchelf
 				if(NOT STRIP_RESULT EQUAL 0)
 					execute_process(
@@ -285,7 +284,7 @@ if (INSTALL_KNN)
 						OUTPUT_QUIET
 						ERROR_QUIET
 					)
-					
+
 					if(INSTALL_RESULT EQUAL 0)
 						execute_process(
 							COMMAND patchelf --set-soname libmanticoresearch_text_embeddings.so ${SEARCH_PATH}
@@ -293,14 +292,12 @@ if (INSTALL_KNN)
 							OUTPUT_VARIABLE PATCHELF_OUTPUT
 							ERROR_VARIABLE PATCHELF_ERROR
 						)
-						
+
 						if(PATCHELF_RESULT EQUAL 0)
 							message(STATUS "Successfully set soname with patchelf")
 						else()
 							message(WARNING "Failed to set soname with patchelf: ${PATCHELF_ERROR}")
 						endif()
-					else()
-						message(WARNING "Failed to install patchelf")
 					endif()
 				endif()
 			endif()
