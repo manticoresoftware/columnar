@@ -49,8 +49,8 @@ else()
 	set(EMBEDDINGS_LIB_FILE "lib${EMBEDDINGS_LIB_NAME}.so")
 endif()
 
-if(NOT DEFINED ENV{SYSROOT_URL})
-	message(STATUS "SYSROOT_URL not set, building embeddings locally...")
+if(NOT DEFINED ENV{SYSROOT_URL} AND NOT ENV{NO_BUILD})
+	message(STATUS "SYSROOT_URL and NO_BUILD not set, building embeddings locally...")
 
 	if(NOT DEFINED CARGO_COMMAND)
 		find_program(CARGO_COMMAND cargo)
