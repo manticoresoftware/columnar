@@ -99,7 +99,6 @@ jobs:
 
       - name: Initialization of embeddings lib
         run: | 
-          mkdir embeddings\
           mkdir embeddings\target
           mkdir embeddings\target\release
           mv .\embeddings-lib\build\* embeddings\target\release\
