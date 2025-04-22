@@ -82,6 +82,9 @@ jobs:
       - name: List files
         run: find .
 
+      - name: Dump env
+        run: env
+
       - name: 🚀 Test
         id: test
         # --timeout may be not working https://gitlab.kitware.com/cmake/cmake/-/issues/23979
