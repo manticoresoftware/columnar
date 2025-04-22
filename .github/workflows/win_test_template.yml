@@ -89,6 +89,20 @@ jobs:
         with:
           php-version: '8.2'
           extensions: mysqli
+
+      - name: Download embeddings lib 
+        uses: manticoresoftware/download_artifact_with_retries@v4
+        continue-on-error: true
+        with:
+          name: embeddings_windows_x86_64
+          path: ./embeddings-lib/
+
+      - name: Initialization of embeddings lib
+        run: | 
+          mkdir -p embeddings/target/release
+          mv ./embeddings-lib/build/* embeddings/target/release/
+          rm -fr ./embeddings-lib
+
       - name: 🚀 Test
         id: test
         # --timeout may be not working https://gitlab.kitware.com/cmake/cmake/-/issues/23979
