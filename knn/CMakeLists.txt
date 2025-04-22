@@ -38,7 +38,7 @@ set_target_properties( knn_lib PROPERTIES PREFIX "" OUTPUT_NAME lib_manticore_kn
 message(STATUS "Looking for manticoresearch text embeddings library...")
 
 # Set the library name
-set(EMBEDDINGS_LIB_NAME manticoresearch_text_embeddings)
+set(EMBEDDINGS_LIB_NAME manticore_knn_embeddings)
 
 # Set platform-specific library file names
 if(WIN32)
