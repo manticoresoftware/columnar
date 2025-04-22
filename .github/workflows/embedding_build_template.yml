@@ -112,7 +112,7 @@ jobs:
           mkdir build
           lib_dir="${{ steps.vars.outputs.lib_dir }}"
           ls -la $lib_dir/*
-          find $lib_dir -type f \( -name "libmanticoresearch*.so" -o -name "libmanticoresearch*.dylib" -o -name "manticoresearch*.dll" \) -exec cp {} build/ \;
+          find $lib_dir -type f \( -name "libmanticore*.so" -o -name "libmanticore*.dylib" -o -name "manticore*.dll" \) -exec cp {} build/ \;
 
       - name: Install current Bash on macOS
         if: inputs.distr == 'macos'

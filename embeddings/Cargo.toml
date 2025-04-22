@@ -1,5 +1,5 @@
 [package]
-name = "manticoresearch-text-embeddings"
+name = "manticore-knn-embeddings"
 version = "0.1.0"
 edition = "2021"
 
@@ -22,7 +22,7 @@ cbindgen = "0.26.0"
 
 # Example of customizing the library in Cargo.toml.
 [lib]
-name = "manticoresearch_text_embeddings"
+name = "manticore_knn_embeddings"
 crate-type = ["cdylib"]
 
 [profile.release]

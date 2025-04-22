@@ -231,11 +231,11 @@ if (INSTALL_KNN)
 
 	# Define platform-specific embeddings library names
 	if(WIN32)
-		set(EMBEDDINGS_LIB_NAME "manticoresearch_text_embeddings.dll")
+		set(EMBEDDINGS_LIB_NAME "manticore_knn_embeddings.dll")
 	elseif(APPLE)
-		set(EMBEDDINGS_LIB_NAME "libmanticoresearch_text_embeddings.dylib")
+		set(EMBEDDINGS_LIB_NAME "libmanticore_knn_embeddings.dylib")
 	else()
-		set(EMBEDDINGS_LIB_NAME "libmanticoresearch_text_embeddings.so")
+		set(EMBEDDINGS_LIB_NAME "libmanticore_knn_embeddings.so")
 	endif()
 
 	# Look for embeddings library in various places
@@ -287,7 +287,7 @@ if (INSTALL_KNN)
 
 					if(INSTALL_RESULT EQUAL 0)
 						execute_process(
-							COMMAND patchelf --set-soname libmanticoresearch_text_embeddings.so ${SEARCH_PATH}
+							COMMAND patchelf --set-soname libmanticore_knn_embeddings.so ${SEARCH_PATH}
 							RESULT_VARIABLE PATCHELF_RESULT
 							OUTPUT_VARIABLE PATCHELF_OUTPUT
 							ERROR_VARIABLE PATCHELF_ERROR

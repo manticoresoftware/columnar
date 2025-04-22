@@ -18,7 +18,7 @@ set -e
 # Ensure proper permissions for the modules directory
 if [ -d /usr/share/manticore/modules ]; then
     chmod 755 /usr/share/manticore/modules
-    chmod 644 /usr/share/manticore/modules/libmanticoresearch_text_embeddings.so
+    chmod 644 /usr/share/manticore/modules/libmanticore_knn_embeddings.so
 fi
 
 exit 0
