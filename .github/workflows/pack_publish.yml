@@ -163,28 +163,24 @@ jobs:
   publish:
     name: OK to publish?
     runs-on: ubuntu-22.04
-    needs: [pack_debian_ubuntu, pack_rhel, pack_macos, pack_windows]
+    needs: [pack_debian_ubuntu, pack_rhel, pack_macos, pack_windows, pack]
     if: |
       (github.repository == 'manticoresoftware/columnar')
       && (
         (github.event_name == 'pull_request' && (contains(github.event.pull_request.labels.*.name, 'publish')))
         || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
         || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/columnar-'))
+        || (needs.pack.outputs.target == 'release')
       )
     outputs:
       target: ${{ steps.set-target.outputs.target }}
     steps:
       - run: echo "Ready to publish"
-      - id: set-target
-        run: |
-          if [[ "${{ github.ref }}" == refs/heads/columnar-* ]]; then
-            echo "target=release" >> $GITHUB_OUTPUT
-          else
-            echo "target=" >> $GITHUB_OUTPUT
-          fi
 
   publish_debian_ubuntu:
-    needs: publish
+    needs:
+      - pack
+      - publish
     runs-on: ubuntu-22.04
     strategy:
       fail-fast: true
@@ -201,10 +197,12 @@ jobs:
           artifact: build_${{ matrix.DISTR }}_RelWithDebInfo_${{ matrix.arch }}
           type: deb
           delimiter: "-"
-          target: ${{ needs.publish.outputs.target }}
+          target: ${{ needs.pack.outputs.target }}
 
   publish_rhel:
-    needs: publish
+    needs:
+      - pack
+      - publish
     runs-on: ubuntu-22.04
     strategy:
       fail-fast: true
@@ -221,10 +219,12 @@ jobs:
           artifact: build_rhel${{ matrix.DISTR }}_RelWithDebInfo_${{ matrix.arch }}
           type: rpm
           delimiter: "_"
-          target: ${{ needs.publish.outputs.target }}
+          target: ${{ needs.pack.outputs.target }}
 
   publish_macos:
-    needs: publish
+    needs:
+      - pack
+      - publish
     runs-on: ubuntu-22.04
     strategy:
       fail-fast: true
@@ -240,11 +240,13 @@ jobs:
           artifact: build_macos_RelWithDebInfo_${{ matrix.arch }}
           type: arc
           delimiter: "-"
-          target: ${{ needs.publish.outputs.target }}
+          target: ${{ needs.pack.outputs.target }}
 
   publish_windows:
     name: Publishing Windows packages to repo.manticoresearch.com
-    needs: publish
+    needs:
+      - pack
+      - publish
     runs-on: ubuntu-22.04
     steps:
       - uses: manticoresoftware/publish_to_repo@main
@@ -255,7 +257,7 @@ jobs:
           artifact: build_windows_RelWithDebInfo_x64
           type: arc
           delimiter: "-"
-          target: ${{ needs.publish.outputs.target }}
+          target: ${{ needs.pack.outputs.target }}
 
   update-manticoresearch-deps:
     needs:
