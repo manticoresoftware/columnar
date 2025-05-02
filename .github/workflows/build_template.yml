@@ -19,6 +19,10 @@ on:
         required: false
         type: string
         default: RelWithDebInfo
+      version:
+        required: false
+        type: string
+        default: ""
       cmake_command:
         required: false
         type: string
@@ -73,6 +77,12 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           set-safe-directory: true
+
+      - name: Patch version
+        if: inputs.version != ''
+        run: |
+          sed -i "s/0\.0\.0/${{ inputs.version }}/g" CMakeLists.txt
+          cat CMakeLists.txt
 
       - name: Initialization
         run: | # without adding the safe.directory cmake fails to do git log -1 --date=short --format=%cd
