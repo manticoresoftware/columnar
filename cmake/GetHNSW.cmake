@@ -1,4 +1,4 @@
-# Copyright (c) 2023-2024, Manticore Software LTD (https://manticoresearch.com)
+# Copyright (c) 2023-2025, Manticore Software LTD (https://manticoresearch.com)
 # All rights reserved
 #
 #
