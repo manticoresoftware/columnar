@@ -1,7 +1,6 @@
 // Copyright (c) 2025, Manticore Software LTD (https://manticoresearch.com)
 // All rights reserved
 //
-//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -13,6 +12,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// The binary distance calculation implementations are based on Elasticsearch's Java implementation:
+// https://github.com/elastic/elasticsearch/blob/1dd41ec2b683a7b7c9c16af404b842cf85cbd5bc/server/src/main/java/org/elasticsearch/index/codec/vectors/es816/ES816BinaryFlatVectorsScorer.java
+// Modifications copyright (C) 2024 Elasticsearch B.V.
+// Original implementation licensed under the Apache License, Version 2.0.
+// The algorithm is based on the paper "RaBitQ" (https://arxiv.org/abs/2405.12497)
 
 #include "space.h"
 
@@ -26,9 +31,21 @@ float DistFuncParamIP_t::CalcIP ( int iDotProduct ) const
 	return m_fK*iDotProduct + m_fB;
 }
 
+
+static float DotProduct ( const std::vector<float> & tA, const std::vector<float> & tB )
+{
+	assert ( tA.size()==tB.size() );
+
+	float fRes = 0.0f;
+	for ( size_t i = 0; i < tA.size(); i++ )
+		fRes += tA[i]*tB[i];
+
+	return fRes;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
-static FORCE_INLINE int L2Sqr8Bit ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pQty )
+static FORCE_INLINE int L2Sqr8Bit ( const void * __restrict pVect1, const void * __restrict pVect2, size_t, size_t, const void * __restrict pQty )
 {
 	size_t uQty = *((size_t*)pQty);
 	auto pV1 = (uint8_t*)pVect1;
@@ -47,10 +64,10 @@ static FORCE_INLINE int L2Sqr8Bit ( const void * __restrict pVect1, const void *
 }
 
 
-static float L2Sqr8BitFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pParam )
+static float L2Sqr8BitFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, size_t, size_t, const void * __restrict pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamL2_t*)pParam;
-	int iDist = L2Sqr8Bit ( pVect1, pVect2, &(pDistFuncParam->m_uDim) );
+	int iDist = L2Sqr8Bit ( pVect1, pVect2, (size_t)-1, (size_t)-1, &(pDistFuncParam->m_uDim) );
 	return pDistFuncParam->m_fA*iDist;
 }
 
@@ -94,7 +111,7 @@ static FORCE_INLINE int L2Sqr8BitSIMD16 ( const void * __restrict pVect1, const 
 }
 
 
-static float L2Sqr8BitSIMD16FloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pParam )
+static float L2Sqr8BitSIMD16FloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, size_t, size_t, const void * __restrict pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamL2_t*)pParam;
 	int iDist = L2Sqr8BitSIMD16 ( pVect1, pVect2, &(pDistFuncParam->m_uDim) );
@@ -102,7 +119,7 @@ static float L2Sqr8BitSIMD16FloatDistance ( const void * __restrict pVect1, cons
 }
 
 
-static float L2Sqr8BitSIMD16FloatResiduals ( const void * pVect1, const void * pVect2, const void * pParam )
+static float L2Sqr8BitSIMD16FloatResiduals ( const void * __restrict pVect1, const void * __restrict pVect2, size_t, size_t, const void * __restrict pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamL2_t*)pParam;
 	size_t uQty = pDistFuncParam->m_uDim;
@@ -113,7 +130,7 @@ static float L2Sqr8BitSIMD16FloatResiduals ( const void * pVect1, const void * p
 	auto pV1 = (uint8_t *)pVect1 + uQty16;
 	auto pV2 = (uint8_t *)pVect2 + uQty16;
 	size_t uQtyLeft = uQty - uQty16;
-	int iDist2 = L2Sqr8Bit ( pV1, pV2, &uQtyLeft );
+	int iDist2 = L2Sqr8Bit ( pV1, pV2, (size_t)-1, (size_t)-1, &uQtyLeft );
 
 	return pDistFuncParam->m_fA*(iDist1 + iDist2);
 }
@@ -133,8 +150,9 @@ L2Space8BitFloat_c::L2Space8BitFloat_c ( size_t uDim )
 }
 
 
-void L2Space8BitFloat_c::SetQuantizationSettings ( const QuantizationSettings_t & tSettings )
+void L2Space8BitFloat_c::SetQuantizationSettings ( ScalarQuantizer_i & tQuantizer )
 {
+	const QuantizationSettings_t & tSettings = tQuantizer.GetSettings();
 	float fAlpha = CalcAlpha(tSettings);
 	m_tDistFuncParam.m_fA = fAlpha*fAlpha;
 }
@@ -168,7 +186,7 @@ static FORCE_INLINE int L2Sqr4Bit ( const void * __restrict pVect1, const void *
 }
 
 
-static float L2Sqr4BitFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pParam )
+static float L2Sqr4BitFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, size_t, size_t, const void * __restrict pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamL2_t*)pParam;
 	int iDist = L2Sqr4Bit ( pVect1, pVect2, &(pDistFuncParam->m_uDim) );
@@ -176,7 +194,7 @@ static float L2Sqr4BitFloatDistance ( const void * __restrict pVect1, const void
 }
 
 
-static FORCE_INLINE int L2Sqr4BitSIMD16 ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pQty )
+static FORCE_INLINE int L2Sqr4BitSIMD16 ( const void * __restrict pVect1, const void * __restrict pVect2, size_t, size_t, const void * __restrict pQty )
 {
 	size_t uQty = *((size_t *)pQty);
 	uQty = uQty >> 5;  // 32x 4-bit components
@@ -232,22 +250,22 @@ static FORCE_INLINE int L2Sqr4BitSIMD16 ( const void * __restrict pVect1, const 
 }
 
 
-static float L2Sqr4BitSIMD16FloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pParam )
+static float L2Sqr4BitSIMD16FloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, size_t, size_t, const void * __restrict pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamL2_t*)pParam;
-	int iDist = L2Sqr4BitSIMD16 ( pVect1, pVect2, &(pDistFuncParam->m_uDim) );
+	int iDist = L2Sqr4BitSIMD16 ( pVect1, pVect2, (size_t)-1, (size_t)-1, &(pDistFuncParam->m_uDim) );
 	return pDistFuncParam->m_fA*iDist;
 }
 
 
-static float L2Sqr4BitSIMD16FloatResiduals ( const void * pVect1, const void * pVect2, const void * pParam )
+static float L2Sqr4BitSIMD16FloatResiduals ( const void * pVect1, const void * pVect2, size_t, size_t, const void * pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamL2_t*)pParam;
 	size_t uQty = pDistFuncParam->m_uDim;
 	size_t uQty16 = uQty >> 4 << 4;
 	size_t uNumBytes16 = uQty16 >> 1;
 
-	int iDist1 = L2Sqr4BitSIMD16 ( pVect1, pVect2, &uQty16 );
+	int iDist1 = L2Sqr4BitSIMD16 ( pVect1, pVect2, (size_t)-1, (size_t)-1, &uQty16 );
 
 	auto pV1 = (uint8_t *)pVect1 + uNumBytes16;
 	auto pV2 = (uint8_t *)pVect2 + uNumBytes16;
@@ -296,7 +314,7 @@ static FORCE_INLINE int L2Sqr1Bit ( const void * __restrict pVect1, const void *
 }
 
 
-static float L2Sqr1BitFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pParam )
+static float L2Sqr1BitFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, size_t, size_t, const void * __restrict pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamIP_t*)pParam;
 	int iMismatchingBits = L2Sqr1Bit ( pVect1, pVect2, pDistFuncParam->m_uDim );
@@ -321,7 +339,7 @@ static FORCE_INLINE int L2Sqr1Bit8x ( const void * __restrict pVect1, const void
 }
 
 
-static float L2Sqr1Bit8xFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pParam )
+static float L2Sqr1Bit8xFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, size_t, size_t, const void * __restrict pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamIP_t*)pParam;
 	int iMismatchingBits = L2Sqr1Bit8x ( pVect1, pVect2, pDistFuncParam->m_uDim );
@@ -330,7 +348,7 @@ static float L2Sqr1Bit8xFloatDistance ( const void * __restrict pVect1, const vo
 }
 
 
-static float L2Sqr1Bit8xFloatResiduals ( const void * pVect1, const void * pVect2, const void * pParam )
+static float L2Sqr1Bit8xFloatResiduals ( const void * __restrict pVect1, const void * __restrict pVect2, size_t, size_t, const void * __restrict pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamL2_t*)pParam;
 	size_t uQty = pDistFuncParam->m_uDim;
@@ -376,7 +394,7 @@ static FORCE_INLINE int IP8Bit ( const uint8_t * __restrict pVect1, const uint8_
 }
 
 
-static float IP8BitFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pParam )
+static float IP8BitFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, size_t, size_t, const void * __restrict pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamIP_t*)pParam;
 	float fVect1B = *(float*)pVect1;
@@ -436,7 +454,7 @@ static FORCE_INLINE int IP8BitSIMD16 ( const void * __restrict pVect1, const voi
 }
 
 
-static float IP8BitSIMD16FloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pParam )
+static float IP8BitSIMD16FloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, size_t, size_t, const void * __restrict pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamIP_t*)pParam;
 	float fVect1B = *(float*)pVect1;
@@ -446,7 +464,7 @@ static float IP8BitSIMD16FloatDistance ( const void * __restrict pVect1, const v
 }
 
 
-static float IP8BitSIMD16FloatResiduals ( const void * pVect1, const void * pVect2, const void * pParam )
+static float IP8BitSIMD16FloatResiduals ( const void * pVect1, const void * pVect2, size_t, size_t, const void * pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamIP_t*)pParam;
 
@@ -480,8 +498,9 @@ IPSpace8BitFloat_c::IPSpace8BitFloat_c ( size_t uDim )
 }
 
 
-void IPSpace8BitFloat_c::SetQuantizationSettings ( const QuantizationSettings_t & tSettings )
+void IPSpace8BitFloat_c::SetQuantizationSettings ( ScalarQuantizer_i & tQuantizer )
 {
+	const QuantizationSettings_t & tSettings = tQuantizer.GetSettings();
 	m_tDistFuncParam.m_fK = tSettings.m_fK;
 	m_tDistFuncParam.m_fB = tSettings.m_fB;
 }
@@ -511,7 +530,7 @@ static FORCE_INLINE int IP4Bit ( const void * __restrict pVect1, const void * __
 }
 
 
-static float IP4BitFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pParam )
+static float IP4BitFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, size_t, size_t, const void * __restrict pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamIP_t*)pParam;
 	float fVect1B = *(float*)pVect1;
@@ -574,7 +593,7 @@ static FORCE_INLINE int IP4BitSIMD16 ( const void * __restrict pVect1, const voi
 }
 
 
-static float IP4BitSIMD16FloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pParam )
+static float IP4BitSIMD16FloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, size_t, size_t, const void * __restrict pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamIP_t*)pParam;
 	float fVect1B = *(float*)pVect1;
@@ -584,7 +603,7 @@ static float IP4BitSIMD16FloatDistance ( const void * __restrict pVect1, const v
 }
 
 
-static float IP4BitSIMD16FloatResiduals ( const void * pVect1, const void * pVect2, const void * pParam )
+static float IP4BitSIMD16FloatResiduals ( const void * __restrict pVect1, const void * __restrict pVect2, size_t, size_t, const void * __restrict pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamIP_t*)pParam;
 	size_t uQty = pDistFuncParam->m_uDim;
@@ -622,7 +641,7 @@ IPSpace4BitFloat_c::IPSpace4BitFloat_c ( size_t uDim )
 
 ///////////////////////////////////////////////////////////////////////////////
 
-static float IP1BitFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pParam )
+static float IP1BitFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, size_t, size_t, const void * __restrict pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamIP_t*)pParam;
 	int iMismatchingBits = L2Sqr1Bit ( pVect1, pVect2, pDistFuncParam->m_uDim );
@@ -631,7 +650,7 @@ static float IP1BitFloatDistance ( const void * __restrict pVect1, const void * 
 }
 
 #if !defined(USE_SIMDE)
-static float IP1Bit8xFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pParam )
+static float IP1Bit8xFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, size_t, size_t, const void * __restrict pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamIP_t*)pParam;
 	int iMismatchingBits = L2Sqr1Bit8x ( pVect1, pVect2, pDistFuncParam->m_uDim );
@@ -640,7 +659,7 @@ static float IP1Bit8xFloatDistance ( const void * __restrict pVect1, const void 
 }
 
 
-static float IP1Bit8xFloatResiduals ( const void * __restrict pVect1, const void * __restrict pVect2, const void * __restrict pParam )
+static float IP1Bit8xFloatResiduals ( const void * __restrict pVect1, const void * __restrict pVect2, size_t, size_t, const void * __restrict pParam )
 {
 	auto pDistFuncParam = (const DistFuncParamIP_t*)pParam;
 	size_t uQty = pDistFuncParam->m_uDim;
@@ -671,6 +690,286 @@ IPSpace1BitFloat_c::IPSpace1BitFloat_c ( size_t uDim )
 	else
 #endif
 		m_fnDist = IP1BitFloatDistance;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+static int64_t BinaryDotProduct ( const uint8_t * pVec4Bit, const uint8_t * pVec1Bit, int iBytes )
+{
+    int64_t iResult = 0;
+	auto pVec4BitPtr = pVec4Bit;
+    for ( int i = 0; i < 4; i++ )
+    {
+        int64_t iPopCntSum = 0;
+        
+		int j = 0;        
+        const int iLimit4Bytes = iBytes & ~( sizeof(uint32_t) - 1 );
+        for ( ; j < iLimit4Bytes; j += sizeof(uint32_t) )
+        {
+            uint32_t uVal4Bit = *(const uint32_t*)pVec4BitPtr;
+            uint32_t uVal1Bit = *(const uint32_t*)( &pVec1Bit[j] );
+
+            iPopCntSum += PopCnt32 ( uVal4Bit & uVal1Bit );
+			pVec4BitPtr += sizeof(uint32_t);
+        }
+        
+        for ( ; j < iBytes; j++ )
+		{
+            iPopCntSum += PopCnt32 ( ( *pVec4BitPtr & pVec1Bit[j] ) & 0xFF );
+			pVec4BitPtr++;
+		}
+
+        iResult += iPopCntSum << i;
+    }
+    
+    return iResult;
+}
+
+#if !defined(USE_SIMDE)
+template <bool RESIDUALS>
+static int64_t BinaryDotProduct16 ( const uint8_t * pVec4Bit, const uint8_t * pVec1Bit, int iBytes )
+{
+    int64_t iPopCnt0 = 0;
+    int64_t iPopCnt1 = 0;
+    int64_t iPopCnt2 = 0;
+    int64_t iPopCnt3 = 0;
+    int i = 0;
+
+    const int iLimit16Bytes = iBytes & ~15;
+    for ( ; i < iLimit16Bytes; i += 16 )
+    {
+        __m128i iVec1Bit = _mm_loadu_si128 ( (__m128i*)&pVec1Bit[i] );
+        
+        __m128i iVec4Bit0 = _mm_loadu_si128 ( (__m128i*)&pVec4Bit[i] );
+        __m128i iVec4Bit1 = _mm_loadu_si128 ( (__m128i*)&pVec4Bit[i + iBytes] );
+        __m128i iVec4Bit2 = _mm_loadu_si128 ( (__m128i*)&pVec4Bit[i + 2 * iBytes] );
+        __m128i iVec4Bit3 = _mm_loadu_si128 ( (__m128i*)&pVec4Bit[i + 3 * iBytes] );
+
+        __m128i iAnd0 = _mm_and_si128 ( iVec1Bit, iVec4Bit0 );
+        __m128i iAnd1 = _mm_and_si128 ( iVec1Bit, iVec4Bit1 );
+        __m128i iAnd2 = _mm_and_si128 ( iVec1Bit, iVec4Bit2 );
+        __m128i iAnd3 = _mm_and_si128 ( iVec1Bit, iVec4Bit3 );
+
+        uint64_t uLow0 = _mm_cvtsi128_si64(iAnd0);
+        uint64_t uHigh0 = _mm_cvtsi128_si64 ( _mm_srli_si128 ( iAnd0, 8 ) );
+        uint64_t uLow1 = _mm_cvtsi128_si64(iAnd1);
+        uint64_t uHigh1 = _mm_cvtsi128_si64 ( _mm_srli_si128 ( iAnd1, 8 ) );
+        uint64_t uLow2 = _mm_cvtsi128_si64(iAnd2);
+        uint64_t uHigh2 = _mm_cvtsi128_si64 ( _mm_srli_si128 ( iAnd2, 8 ) );
+        uint64_t uLow3 = _mm_cvtsi128_si64(iAnd3);
+        uint64_t uHigh3 = _mm_cvtsi128_si64 ( _mm_srli_si128 ( iAnd3, 8 ) );
+
+        iPopCnt0 += _mm_popcnt_u64(uLow0) + _mm_popcnt_u64(uHigh0);
+        iPopCnt1 += _mm_popcnt_u64(uLow1) + _mm_popcnt_u64(uHigh1);
+        iPopCnt2 += _mm_popcnt_u64(uLow2) + _mm_popcnt_u64(uHigh2);
+        iPopCnt3 += _mm_popcnt_u64(uLow3) + _mm_popcnt_u64(uHigh3);
+    }
+
+    if constexpr ( RESIDUALS )
+    {
+        for (; i < iBytes; i++)
+        {
+            uint8_t uValue = pVec1Bit[i];
+            iPopCnt0 += _mm_popcnt_u32 ( ( uValue & pVec4Bit[i] ) & 0xFF );
+            iPopCnt1 += _mm_popcnt_u32 ( ( uValue & pVec4Bit[i + iBytes] ) & 0xFF );
+            iPopCnt2 += _mm_popcnt_u32 ( ( uValue & pVec4Bit[i + 2 * iBytes] ) & 0xFF );
+            iPopCnt3 += _mm_popcnt_u32 ( ( uValue & pVec4Bit[i + 3 * iBytes] ) & 0xFF );
+        }
+    }
+
+    return iPopCnt0 + ( iPopCnt1 << 1 ) + ( iPopCnt2 << 2 ) + ( iPopCnt3 << 3 );
+}
+#endif
+
+// This binary distance calculation is derived from Elasticsearch's Java implementation
+// in org.elasticsearch.index.codec.vectors.es816.ES816BinaryFlatVectorsScorer
+// Permalink: https://github.com/elastic/elasticsearch/blob/1dd41ec2b683a7b7c9c16af404b842cf85cbd5bc/server/src/main/java/org/elasticsearch/index/codec/vectors/es816/ES816BinaryFlatVectorsScorer.java
+template<bool BUILD, int64_t (*DOTPRODUCT_FN)( const uint8_t * pVec4Bit, const uint8_t * pVec1Bit, int iBytes )>
+static float IPBinaryFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, size_t uRowID1, size_t uRowID2, const void * __restrict pParam )
+{
+	auto tBinaryParam = *(const DistFuncParamBinary_t*)pParam;
+
+	auto pV1 = (const uint8_t *)pVect1;
+	auto pV2 = (const uint8_t *)pVect2;
+
+	// ignore uRowID2, pull uRowID1 from the pool
+	if constexpr (BUILD)
+	{
+		// we are getting 1-bit data as first argument, but we need 4-bit data
+		if ( uRowID1!=(size_t)-1 )
+		{	
+			// fetch 4-bit data from the pool
+			pV1 = tBinaryParam.m_fnFetcher(uRowID1);
+		}
+	}
+
+	assert ( uRowID2!=(size_t)-1 );
+
+	float * pV1f = (float*)pV1;
+	float fQuantizedSum			= *pV1f++;
+	pV1f++;	// skip fDistanceToCentroidSq
+	float fMin					= *pV1f++;
+	float fRange				= *pV1f++;
+	float fVecMinusCentroidNorm	= *pV1f++;
+	float fVecDotCentroid		= *pV1f++;
+
+	float * pV2f = (float*)pV2;
+	float fQuality				= *pV2f++;
+	float fVec2MinusCentroidNorm= *pV2f++;
+	float fVec2DocCentroid		= *pV2f++;
+	float fPopCnt2				= *pV2f++;
+
+	int iBytes = ( tBinaryParam.m_uDim+7 ) >> 3;
+	int64_t iHammingDist = DOTPRODUCT_FN ( (const uint8_t*)pV1f, (const uint8_t*)pV2f, iBytes );
+
+	float fDist = 0.0f;
+	if ( fVec2MinusCentroidNorm==0.0f || fQuality==0.0f )
+		fDist = fVec2DocCentroid + fVecDotCentroid - tBinaryParam.m_fCentroidDotCentroid;
+	else
+	{
+		assert ( std::isfinite(fQuality) );
+		float fEstimatedDot = ( 2.0f*fRange/tBinaryParam.m_fSqrtDim * iHammingDist + 2.0f*fMin/tBinaryParam.m_fSqrtDim*fPopCnt2 - fRange/tBinaryParam.m_fSqrtDim*fQuantizedSum - tBinaryParam.m_fSqrtDim*fMin ) / fQuality;
+		fDist = fVecMinusCentroidNorm*fVec2MinusCentroidNorm*fEstimatedDot + fVec2DocCentroid + fVecDotCentroid - tBinaryParam.m_fCentroidDotCentroid;
+	}
+
+	assert ( std::isfinite(fDist) );
+
+	float fQualitySqr = fQuality*fQuality;
+	float fErrorBound = fVecMinusCentroidNorm*fVec2MinusCentroidNorm*( tBinaryParam.m_fMaxError*std::sqrt ( ( 1.0f - fQualitySqr )/fQualitySqr ) );
+	float fAdjustedDist = std::isfinite(fErrorBound) ? fDist - fErrorBound : fDist;
+	return 1.0f - std::max ( ( 1.0f + fAdjustedDist ) / 2.0f, 0.0f );
+}
+
+// This binary distance calculation is derived from Elasticsearch's Java implementation
+// in org.elasticsearch.index.codec.vectors.es816.ES816BinaryFlatVectorsScorer
+// Permalink: https://github.com/elastic/elasticsearch/blob/1dd41ec2b683a7b7c9c16af404b842cf85cbd5bc/server/src/main/java/org/elasticsearch/index/codec/vectors/es816/ES816BinaryFlatVectorsScorer.java
+template<bool BUILD, int64_t (*DOTPRODUCT_FN)( const uint8_t * pVec4Bit, const uint8_t * pVec1Bit, int iBytes )>
+static float L2BinaryFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, size_t uRowID1, size_t uRowID2, const void * __restrict pParam )
+{
+	auto tBinaryParam = *(const DistFuncParamBinary_t*)pParam;
+
+	auto pV1 = (const uint8_t *)pVect1;
+	auto pV2 = (const uint8_t *)pVect2;
+
+	// ignore uRowID2, pull uRowID1 from the pool
+	if constexpr (BUILD)
+	{
+		// we are getting 1-bit data as first argument, but we need 4-bit data
+		if ( uRowID1!=(size_t)-1 )
+		{	
+			// fetch 4-bit data from the pool
+			pV1 = tBinaryParam.m_fnFetcher(uRowID1);
+		}
+	}
+
+	assert ( uRowID2!=(size_t)-1 );
+
+	float * pV1f = (float*)pV1;
+	float fQuantizedSum			= *pV1f++;
+	float fDistanceToCentroidSq	= *pV1f++;
+	float fMin					= *pV1f++;
+	float fRange				= *pV1f++;
+	pV1f += 2;	// skip fVecMinusCentroidNorm, fVecDotCentroid
+
+	float * pV2f = (float*)pV2;
+	float fDistanceToCentroid2	= *pV2f++;
+	float fVectorMagnitude2		= *pV2f++;
+	float fPopCnt2				= *pV2f++;
+
+    float fDistanceToCentroid2Sqr = fDistanceToCentroid2 * fDistanceToCentroid2;
+    double fCentroidDistToMagnitude2Ratio = fDistanceToCentroid2 / fVectorMagnitude2;
+
+    float fPopCntCoeff = -2.0f / tBinaryParam.m_fSqrtDim * fCentroidDistToMagnitude2Ratio * (fPopCnt2 * 2.0f - tBinaryParam.m_uDim );
+    float fIPCoeff = -2.0f / tBinaryParam.m_fSqrtDim * fCentroidDistToMagnitude2Ratio;
+
+	int iBytes = ( tBinaryParam.m_uDim+7 ) >> 3;
+    int64_t iHammingDist = DOTPRODUCT_FN ( (const uint8_t*)pV1f, (const uint8_t*)pV2f, iBytes );
+    float fDist = fDistanceToCentroid2Sqr + fDistanceToCentroidSq + fPopCntCoeff * fMin + ( iHammingDist*2 - fQuantizedSum )*fIPCoeff*fRange;
+
+    float fProjectionDist = std::sqrt ( fCentroidDistToMagnitude2Ratio*fCentroidDistToMagnitude2Ratio - fDistanceToCentroid2Sqr );
+    float fError = 2.0f*tBinaryParam.m_fMaxError*fProjectionDist;
+    float fErrorBound = fError*std::sqrt(fDistanceToCentroidSq);
+    if ( std::isfinite(fErrorBound) )
+        fDist += fErrorBound;
+
+    return 1.0f - std::max ( 1.0f / ( 1.0f + fDist ), 0.0f );
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+IPSpaceBinaryFloat_c::IPSpaceBinaryFloat_c ( size_t uDim, bool bBuild )
+	: Space_c ( uDim )
+	, m_tDistFuncParam ( uDim )
+{
+#if defined(USE_SIMDE)
+	if ( bBuild )
+	m_fnDist = IPBinaryFloatDistance<true,BinaryDotProduct>;
+else
+	m_fnDist = IPBinaryFloatDistance<false,BinaryDotProduct>;
+#else
+	int iBytes = ( uDim+7 ) >> 3;
+	bool bUseSSE = iBytes>=16;
+	bool bNeedResiduals = (iBytes % 16) != 0;
+
+	int iSwitch = (bBuild ? 1 : 0)*4 + (bUseSSE ? 1 : 0)*2 + (bNeedResiduals ? 1 : 0)*1;
+
+	switch ( iSwitch )
+	{
+	case 0:	m_fnDist = IPBinaryFloatDistance<false,	BinaryDotProduct>; break;
+	case 1:	m_fnDist = IPBinaryFloatDistance<false,	BinaryDotProduct>; break;
+	case 2: m_fnDist = IPBinaryFloatDistance<false,	BinaryDotProduct16<false>>; break;
+	case 3: m_fnDist = IPBinaryFloatDistance<false,	BinaryDotProduct16<true>>; break;
+	case 4: m_fnDist = IPBinaryFloatDistance<true,	BinaryDotProduct>; break;
+	case 5: m_fnDist = IPBinaryFloatDistance<true,	BinaryDotProduct>; break;
+	case 6: m_fnDist = IPBinaryFloatDistance<true,	BinaryDotProduct16<false>>; break;
+	case 7: m_fnDist = IPBinaryFloatDistance<true,	BinaryDotProduct16<true>>; break;
+	}
+#endif
+}
+
+
+void IPSpaceBinaryFloat_c::SetQuantizationSettings ( ScalarQuantizer_i & tQuantizer )
+{
+	m_tDistFuncParam.m_fCentroidDotCentroid	= DotProduct ( tQuantizer.GetSettings().m_dCentroid, tQuantizer.GetSettings().m_dCentroid );
+	m_tDistFuncParam.m_fnFetcher			= tQuantizer.GetPoolFetcher();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+L2SpaceBinaryFloat_c::L2SpaceBinaryFloat_c ( size_t uDim, bool bBuild )
+	: Space_c ( uDim )
+	, m_tDistFuncParam ( uDim )
+{
+#if defined(USE_SIMDE)
+	if ( bBuild )
+	m_fnDist = L2BinaryFloatDistance<true,BinaryDotProduct>;
+else
+	m_fnDist = L2BinaryFloatDistance<false,BinaryDotProduct>;
+#else
+	int iBytes = ( uDim+7 ) >> 3;
+	bool bUseSSE = iBytes>=16;
+	bool bNeedResiduals = (iBytes % 16) != 0;
+
+	int iSwitch = (bBuild ? 1 : 0)*4 + (bUseSSE ? 1 : 0)*2 + (bNeedResiduals ? 1 : 0)*1;
+
+	switch ( iSwitch )
+	{
+	case 0:	m_fnDist = L2BinaryFloatDistance<false,	BinaryDotProduct>; break;
+	case 1:	m_fnDist = L2BinaryFloatDistance<false,	BinaryDotProduct>; break;
+	case 2: m_fnDist = L2BinaryFloatDistance<false,	BinaryDotProduct16<false>>; break;
+	case 3: m_fnDist = L2BinaryFloatDistance<false,	BinaryDotProduct16<true>>; break;
+	case 4: m_fnDist = L2BinaryFloatDistance<true,	BinaryDotProduct>; break;
+	case 5: m_fnDist = L2BinaryFloatDistance<true,	BinaryDotProduct>; break;
+	case 6: m_fnDist = L2BinaryFloatDistance<true,	BinaryDotProduct16<false>>; break;
+	case 7: m_fnDist = L2BinaryFloatDistance<true,	BinaryDotProduct16<true>>; break;
+	}
+#endif
+}
+
+
+void L2SpaceBinaryFloat_c::SetQuantizationSettings ( ScalarQuantizer_i & tQuantizer )
+{
+	m_tDistFuncParam.m_fnFetcher = tQuantizer.GetPoolFetcher();
 }
 
 } // namespace knn

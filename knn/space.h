@@ -18,6 +18,7 @@
 
 #include "hnswlib.h"
 #include "quantizer.h"
+#include <functional>
 
 namespace knn
 {
@@ -27,7 +28,7 @@ struct QuantizationSettings_t;
 class Space_i : public hnswlib::SpaceInterface<float>
 {
 public:
-	virtual void SetQuantizationSettings ( const QuantizationSettings_t & tSettings ) {}
+	virtual void SetQuantizationSettings ( ScalarQuantizer_i & tQuantizer ) {}
 };
 
 class Space_c : public Space_i
@@ -78,7 +79,7 @@ class L2Space8BitFloat_c : public Space_c
 	void *	get_dist_func_param() override	{ return &m_tDistFuncParam; }
 	size_t	get_data_size() override		{ return m_uDim; }
 
-	void	SetQuantizationSettings ( const QuantizationSettings_t & tSettings ) override;
+	void	SetQuantizationSettings ( ScalarQuantizer_i & tQuantizer ) override;
 
 protected:
 	DistFuncParamL2_t m_tDistFuncParam;
@@ -143,7 +144,7 @@ class IPSpace8BitFloat_c : public Space_c
 	void *	get_dist_func_param() override	{ return &m_tDistFuncParam; }
 	size_t	get_data_size() override		{ return m_uDim + sizeof(float); }
 
-	void	SetQuantizationSettings ( const QuantizationSettings_t & tSettings ) override;
+	void	SetQuantizationSettings ( ScalarQuantizer_i & tQuantizer ) override;
 
 private:
 	DistFuncParamIP_t m_tDistFuncParam;
@@ -165,5 +166,59 @@ class IPSpace1BitFloat_c : public IPSpace8BitFloat_c
 
 	size_t	get_data_size() override		{ return (m_uDim+7)>>3; }
 };
+
+
+struct DistFuncParamBinary_t
+{
+	size_t		m_uDim = 0;
+	std::function<const uint8_t *(uint32_t)> m_fnFetcher;
+	float		m_fCentroidDotCentroid = 0.0f;
+	float		m_fSqrtDim = 0.0f;
+	float		m_fMaxError = 0.0f;
+
+	DistFuncParamBinary_t ( size_t uDim )
+	{
+		m_uDim = uDim;
+		m_fSqrtDim = sqrt(uDim);
+		float fDiscretizedDimensions = discretize ( m_uDim, 64 );
+		m_fMaxError = (float) ( 1.9f / sqrt(fDiscretizedDimensions - 1.0) );
+	}
+
+	int discretize(int value, int bucket)
+	{
+        return ((value + (bucket - 1)) / bucket) * bucket;
+    }
+};
+
+
+class IPSpaceBinaryFloat_c : public Space_c
+{
+ public:
+			IPSpaceBinaryFloat_c ( size_t uDim, bool bBuild );
+
+	void *	get_dist_func_param() override	{ return &m_tDistFuncParam; }
+	size_t	get_data_size() override		{ return ( (m_uDim+7)>>3 ) + sizeof(float)*4; }
+
+	void	SetQuantizationSettings ( ScalarQuantizer_i & tQuantizer ) override;
+
+private:
+	DistFuncParamBinary_t m_tDistFuncParam;
+};
+
+class L2SpaceBinaryFloat_c : public Space_c
+{
+ public:
+			L2SpaceBinaryFloat_c ( size_t uDim, bool bBuild );
+
+	void *	get_dist_func_param() override	{ return &m_tDistFuncParam; }
+	size_t	get_data_size() override		{ return ( (m_uDim+7)>>3 ) + sizeof(float)*3; }
+
+	void	SetQuantizationSettings ( ScalarQuantizer_i & tQuantizer ) override;
+
+private:
+	DistFuncParamBinary_t m_tDistFuncParam;
+};
+
+
 
 } // namespace knn
