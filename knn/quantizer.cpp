@@ -14,7 +14,7 @@
 // limitations under the License.
 //
 // This implementation of binary vector quantization is based on Elasticsearch's Java implementation:
-// https://github.com/elastic/elasticsearch
+// https://github.com/elastic/elasticsearch/blob/1dd41ec2b683a7b7c9c16af404b842cf85cbd5bc/server/src/main/java/org/elasticsearch/index/codec/vectors/es816/BinaryQuantizer.java
 // Modifications copyright (C) 2024 Elasticsearch B.V.
 // Original implementation licensed under the Apache License, Version 2.0.
 // The algorithm is based on the paper "RaBitQ" (https://arxiv.org/abs/2405.12497)
@@ -394,6 +394,7 @@ bool ScalarQuantizer1Bit_T<COSINE>::Encode ( const Span_T<float> & dPoint, std::
 
 // BinaryQuantizer_c implements binary vector quantization based on Elasticsearch's Java implementation
 // in org.elasticsearch.index.codec.vectors.es816.BinaryQuantizer
+// Permalink: https://github.com/elastic/elasticsearch/blob/1dd41ec2b683a7b7c9c16af404b842cf85cbd5bc/server/src/main/java/org/elasticsearch/index/codec/vectors/es816/BinaryQuantizer.java
 // See: https://arxiv.org/abs/2405.12497 for the RaBitQ paper
 class BinaryQuantizer_c
 {

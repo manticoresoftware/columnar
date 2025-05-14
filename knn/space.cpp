@@ -14,7 +14,7 @@
 // limitations under the License.
 //
 // The binary distance calculation implementations are based on Elasticsearch's Java implementation:
-// https://github.com/elastic/elasticsearch
+// https://github.com/elastic/elasticsearch/blob/1dd41ec2b683a7b7c9c16af404b842cf85cbd5bc/server/src/main/java/org/elasticsearch/index/codec/vectors/es816/ES816BinaryFlatVectorsScorer.java
 // Modifications copyright (C) 2024 Elasticsearch B.V.
 // Original implementation licensed under the Apache License, Version 2.0.
 // The algorithm is based on the paper "RaBitQ" (https://arxiv.org/abs/2405.12497)
@@ -783,6 +783,7 @@ static int64_t BinaryDotProduct16 ( const uint8_t * pVec4Bit, const uint8_t * pV
 
 // This binary distance calculation is derived from Elasticsearch's Java implementation
 // in org.elasticsearch.index.codec.vectors.es816.ES816BinaryFlatVectorsScorer
+// Permalink: https://github.com/elastic/elasticsearch/blob/1dd41ec2b683a7b7c9c16af404b842cf85cbd5bc/server/src/main/java/org/elasticsearch/index/codec/vectors/es816/ES816BinaryFlatVectorsScorer.java
 template<bool BUILD, int64_t (*DOTPRODUCT_FN)( const uint8_t * pVec4Bit, const uint8_t * pVec1Bit, int iBytes )>
 static float IPBinaryFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, size_t uRowID1, size_t uRowID2, const void * __restrict pParam )
 {
@@ -841,6 +842,7 @@ static float IPBinaryFloatDistance ( const void * __restrict pVect1, const void 
 
 // This binary distance calculation is derived from Elasticsearch's Java implementation
 // in org.elasticsearch.index.codec.vectors.es816.ES816BinaryFlatVectorsScorer
+// Permalink: https://github.com/elastic/elasticsearch/blob/1dd41ec2b683a7b7c9c16af404b842cf85cbd5bc/server/src/main/java/org/elasticsearch/index/codec/vectors/es816/ES816BinaryFlatVectorsScorer.java
 template<bool BUILD, int64_t (*DOTPRODUCT_FN)( const uint8_t * pVec4Bit, const uint8_t * pVec1Bit, int iBytes )>
 static float L2BinaryFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, size_t uRowID1, size_t uRowID2, const void * __restrict pParam )
 {
@@ -970,4 +972,4 @@ void L2SpaceBinaryFloat_c::SetQuantizationSettings ( ScalarQuantizer_i & tQuanti
 	m_tDistFuncParam.m_fnFetcher = tQuantizer.GetPoolFetcher();
 }
 
-} // namespace knn[
+} // namespace knn
