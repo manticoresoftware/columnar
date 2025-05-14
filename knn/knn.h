@@ -26,8 +26,8 @@
 namespace knn
 {
 
-static const int LIB_VERSION = 4;
-static const uint32_t STORAGE_VERSION = 2;
+static const int LIB_VERSION = 5;
+static const uint32_t STORAGE_VERSION = 3;
 
 enum class HNSWSimilarity_e
 {
@@ -103,7 +103,7 @@ extern "C"
 {
 	DLLEXPORT knn::Distance_i *			CreateDistanceCalc ( const knn::IndexSettings_t & tSettings );
 	DLLEXPORT knn::KNN_i *				CreateKNN();
-	DLLEXPORT knn::Builder_i *			CreateKNNBuilder ( const knn::Schema_t & tSchema, int64_t iNumElements );
+	DLLEXPORT knn::Builder_i *			CreateKNNBuilder ( const knn::Schema_t & tSchema, int64_t iNumElements, const std::string & sTmpFilename );
 	DLLEXPORT int						GetKNNLibVersion();
 	DLLEXPORT const char *				GetKNNLibVersionStr();
 }

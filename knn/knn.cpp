@@ -50,6 +50,13 @@ static void LoadQuantizationSettings ( QuantizationSettings_t & tSettings, FileR
 	tSettings.m_fMax = UintToFloat ( tReader.Read_uint32() );
 	tSettings.m_fK = UintToFloat ( tReader.Read_uint32() );
 	tSettings.m_fB = UintToFloat ( tReader.Read_uint32() );
+
+	if ( uVersion>=3 )
+	{
+		tSettings.m_dCentroid.resize ( tReader.Read_uint32() );
+		for ( auto & i : tSettings.m_dCentroid )
+			i = UintToFloat ( tReader.Read_uint32() );
+	}
 }
 
 
@@ -69,6 +76,10 @@ static void SaveQuantizationSettings ( const QuantizationSettings_t & tSettings,
 	tWriter.Write_uint32 ( FloatToUint ( tSettings.m_fMax ) );
 	tWriter.Write_uint32 ( FloatToUint ( tSettings.m_fK ) );
 	tWriter.Write_uint32 ( FloatToUint ( tSettings.m_fB ) );
+
+	tWriter.Write_uint32 ( tSettings.m_dCentroid.size() );
+	for ( auto & i : tSettings.m_dCentroid )
+		tWriter.Write_uint32 ( FloatToUint(i) );
 }
 
 /////////////////////////////////////////////////////////////////////
@@ -76,7 +87,7 @@ static void SaveQuantizationSettings ( const QuantizationSettings_t & tSettings,
 class HNSWDist_c
 {
 public:
-			HNSWDist_c ( int iDim, HNSWSimilarity_e eSimilarity, Quantization_e eQuantization );
+			HNSWDist_c ( int iDim, HNSWSimilarity_e eSimilarity, Quantization_e eQuantization, bool bBuild );
 
 protected:
 	int							m_iDim = 0;
@@ -85,18 +96,18 @@ protected:
 	std::unique_ptr<Space_i>	m_pSpace;
 
 private:
-	Space_i * CreateSpaceInterface() const;
+	Space_i * CreateSpaceInterface ( bool bBuild ) const;
 };
 
-HNSWDist_c::HNSWDist_c ( int iDim, HNSWSimilarity_e eSimilarity, Quantization_e eQuantization )
+HNSWDist_c::HNSWDist_c ( int iDim, HNSWSimilarity_e eSimilarity, Quantization_e eQuantization, bool bBuild )
 	: m_iDim ( iDim )
 	, m_eSimilarity ( eSimilarity )
 	, m_eQuantization ( eQuantization )
-	, m_pSpace ( CreateSpaceInterface() )
+	, m_pSpace ( CreateSpaceInterface(bBuild) )
 {}
 
 
-Space_i * HNSWDist_c::CreateSpaceInterface() const
+Space_i * HNSWDist_c::CreateSpaceInterface ( bool bBuild ) const
 {
 	switch ( m_eSimilarity )
 	{
@@ -104,7 +115,7 @@ Space_i * HNSWDist_c::CreateSpaceInterface() const
 	case HNSWSimilarity_e::COSINE:
 		switch ( m_eQuantization )
 		{
-		case Quantization_e::BIT1:	return new IPSpace1BitFloat_c(m_iDim);
+		case Quantization_e::BIT1:	return new IPSpaceBinaryFloat_c ( m_iDim, bBuild );
 		case Quantization_e::BIT4:	return new IPSpace4BitFloat_c(m_iDim);
 		case Quantization_e::BIT8:	return new IPSpace8BitFloat_c(m_iDim);
 		default:					return new IPSpace32BitFloat_c(m_iDim);
@@ -113,7 +124,7 @@ Space_i * HNSWDist_c::CreateSpaceInterface() const
 	case HNSWSimilarity_e::L2:
 		switch ( m_eQuantization )
 		{
-		case Quantization_e::BIT1:	return new L2Space1BitFloat_c(m_iDim);
+		case Quantization_e::BIT1:	return new L2SpaceBinaryFloat_c ( m_iDim, bBuild );
 		case Quantization_e::BIT4:	return new L2Space4BitFloat_c(m_iDim);
 		case Quantization_e::BIT8:	return new L2Space8BitFloat_c(m_iDim);
 		default:					return new L2Space32BitFloat_c(m_iDim);
@@ -141,7 +152,7 @@ private:
 
 
 Distance_c::Distance_c ( const knn::IndexSettings_t & tSettings )
-	: HNSWDist_c ( tSettings.m_iDims, tSettings.m_eHNSWSimilarity, tSettings.m_eQuantization )
+	: HNSWDist_c ( tSettings.m_iDims, tSettings.m_eHNSWSimilarity, tSettings.m_eQuantization, false )
 {
 	m_fnDistFunc = m_pSpace->get_dist_func();
 	m_pDistFuncParam = m_pSpace->get_dist_func_param();
@@ -152,7 +163,7 @@ float Distance_c::CalcDist ( const util::Span_T<float> & dPoint1, const util::Sp
 {
 	assert ( dPoint1.size()==m_iDim && dPoint2.size()==m_iDim );
 	assert ( m_fnDistFunc );
-	return m_fnDistFunc ( dPoint1.data(), dPoint2.data(), m_pDistFuncParam );
+	return m_fnDistFunc ( dPoint1.data(), dPoint2.data(), (size_t)-1, (size_t)-1, m_pDistFuncParam );
 }
 
 /////////////////////////////////////////////////////////////////////
@@ -182,11 +193,11 @@ private:
 
 
 HNSWIndex_c::HNSWIndex_c ( const std::string & sName, int64_t iNumElements, const knn::IndexSettings_t & tSettings, const QuantizationSettings_t & tQuantSettings, ScalarQuantizer_i * pQuantizer )
-	: HNSWDist_c ( tSettings.m_iDims, tSettings.m_eHNSWSimilarity,  tSettings.m_eQuantization )
+	: HNSWDist_c ( tSettings.m_iDims, tSettings.m_eHNSWSimilarity,  tSettings.m_eQuantization, false )
 	, m_sName ( sName )
 	, m_pQuantizer ( pQuantizer )
 {
-	m_pSpace->SetQuantizationSettings(tQuantSettings);
+	m_pSpace->SetQuantizationSettings(*pQuantizer);
 	m_pAlg = std::make_unique<hnswlib::HierarchicalNSW<float>>( m_pSpace.get(), iNumElements, tSettings.m_iHNSWM, tSettings.m_iHNSWEFConstruction );
 }
 
@@ -196,7 +207,8 @@ void HNSWIndex_c::Search ( std::vector<DocDist_t> & dResults, const Span_T<float
 	const void * pData = dData.begin();
 	if ( m_pQuantizer )
 	{
-		m_pQuantizer->Encode ( dData, dQuantized );
+		std::string sError;
+		m_pQuantizer->Encode ( dData, dQuantized, sError );
 		pData = dQuantized.data();
 	}
 
@@ -313,7 +325,7 @@ public:
 
 	void	Train ( const util::Span_T<float> & dData ) override;
 	bool	AddDoc ( const util::Span_T<float> & dData, std::string & sError ) override;
-	void	Save ( FileWriter_c & tWriter ) override						{ m_pAlg->saveIndex(tWriter); }
+	void	Save ( FileWriter_c & tWriter ) override;
 	const AttrWithSettings_t & GetAttr() const override						{ return m_tAttr; }
 	const QuantizationSettings_t & GetQuantizationSettings() const override { return m_pQuantizer->GetSettings(); }
 
@@ -328,7 +340,7 @@ private:
 
 
 HNSWIndexBuilder_c::HNSWIndexBuilder_c ( const AttrWithSettings_t & tAttr, int64_t iNumElements, ScalarQuantizer_i * pQuantizer )
-	: HNSWDist_c ( tAttr.m_iDims, tAttr.m_eHNSWSimilarity, tAttr.m_eQuantization )
+	: HNSWDist_c ( tAttr.m_iDims, tAttr.m_eHNSWSimilarity, tAttr.m_eQuantization, true )
 	, m_tAttr ( tAttr )
 	, m_pQuantizer ( pQuantizer )
 {
@@ -363,9 +375,11 @@ bool HNSWIndexBuilder_c::AddDoc ( const util::Span_T<float> & dData, std::string
 	if ( m_pQuantizer )
 	{
 		if ( !m_tRowID )
-			m_pSpace->SetQuantizationSettings ( m_pQuantizer->GetSettings() );
+			m_pSpace->SetQuantizationSettings ( *m_pQuantizer );
 
-		m_pQuantizer->Encode ( dToAdd, m_dQuantized );
+		if ( !m_pQuantizer->Encode ( dToAdd, m_dQuantized, sError ) )
+			return false;
+
 		m_pAlg->addPoint ( (void*)m_dQuantized.data(), (size_t)m_tRowID++ );
 	}
 	else
@@ -374,12 +388,19 @@ bool HNSWIndexBuilder_c::AddDoc ( const util::Span_T<float> & dData, std::string
 	return true;
 }
 
+
+void HNSWIndexBuilder_c::Save ( FileWriter_c & tWriter )
+{
+	m_pQuantizer->Done();
+	m_pAlg->saveIndex(tWriter);
+}
+
 /////////////////////////////////////////////////////////////////////
 
 class HNSWBuilder_c : public Builder_i
 {
 public:
-			HNSWBuilder_c ( const Schema_t & tSchema, int64_t iNumElements );
+			HNSWBuilder_c ( const Schema_t & tSchema, int64_t iNumElements, const std::string & sTmpFilename );
 
 	void	Train ( int iAttr, const util::Span_T<float> & dData ) override			{ m_dIndexes[iAttr]->Train(dData); }
 	bool	SetAttr ( int iAttr, const util::Span_T<float> & dData ) override		{ return m_dIndexes[iAttr]->AddDoc ( dData, m_sError ); }
@@ -392,10 +413,10 @@ private:
 };
 
 
-HNSWBuilder_c::HNSWBuilder_c ( const Schema_t & tSchema, int64_t iNumElements )
+HNSWBuilder_c::HNSWBuilder_c ( const Schema_t & tSchema, int64_t iNumElements, const std::string & sTmpFilename )
 {
 	for ( const auto & i : tSchema )
-		m_dIndexes.push_back ( std::make_unique<HNSWIndexBuilder_c> ( i, iNumElements, CreateQuantizer ( i.m_eQuantization, i.m_eHNSWSimilarity ) ) );
+		m_dIndexes.push_back ( std::make_unique<HNSWIndexBuilder_c> ( i, iNumElements, CreateQuantizer ( i.m_eQuantization, i.m_eHNSWSimilarity, sTmpFilename ) ) );
 }
 
 
@@ -437,9 +458,9 @@ knn::KNN_i * CreateKNN()
 }
 
 
-knn::Builder_i * CreateKNNBuilder ( const knn::Schema_t & tSchema, int64_t iNumElements )
+knn::Builder_i * CreateKNNBuilder ( const knn::Schema_t & tSchema, int64_t iNumElements, const std::string & sTmpFilename )
 {
-	return new knn::HNSWBuilder_c ( tSchema, iNumElements );
+	return new knn::HNSWBuilder_c ( tSchema, iNumElements, sTmpFilename );
 }
 
 

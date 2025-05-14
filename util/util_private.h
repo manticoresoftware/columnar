@@ -381,7 +381,30 @@ constexpr int Log2 ( T tValue )
 int     CalcNumBits ( uint64_t uNumber );
 bool    CopySingleFile ( const std::string & sSource, const std::string & sDest, std::string & sError, int iMode, size_t tBufferSize=1048576 );
 bool	FloatEqual ( float fA, float fB );
-void	NormalizeVec ( Span_T<float> & dData );
+
+float	CalcNorm ( const Span_T<float> & dData );
+float	NormalizeVec ( Span_T<float> & dData );
+
+template <typename T1, typename T2>
+FORCE_INLINE float VecDist ( const T1 & dVec1, const T2 & dVec2 )
+{
+	return sqrtf ( VecDistSq ( dVec1, dVec2 ) );
+}
+
+template <typename T1, typename T2>
+FORCE_INLINE float VecDistSq ( const T1 & dVec1, const T2 & dVec2 )
+{
+	assert ( dVec1.size()==dVec2.size() );
+
+	float fDist = 0.0f;
+	for ( size_t i = 0; i < dVec1.size(); i++ )
+	{
+		float fDiff = dVec1[i]-dVec2[i];
+		fDist += fDiff * fDiff;
+	}
+
+	return fDist;
+}
 
 inline int FillWithIncreasingValues ( uint32_t *& pRowID, size_t uNumValues, uint32_t & tRowID )
 {
