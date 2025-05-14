@@ -128,7 +128,7 @@ public:
 			BASE::m_pData = m_dData.data();
 		}
 		else
-			memset ( BASE::m_pData + tLength, 0, m_tMaxLength - tLength );
+			std::fill(BASE::m_pData + tLength, BASE::m_pData + m_tMaxLength, T{});
 
 		BASE::m_tLength = tLength;
 	}
