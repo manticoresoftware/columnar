@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2024, Manticore Software LTD (https://manticoresearch.com)
+// Copyright (c) 2020-2025, Manticore Software LTD (https://manticoresearch.com)
 // All rights reserved
 //
 //
@@ -813,6 +813,7 @@ struct ScopedFilesRemoval_t
 class Builder_c final : public Builder_i
 {
 public:
+	virtual ~Builder_c();
 	bool	Setup ( const Settings_t & tSettings, const Schema_t & tSchema, size_t tMemoryLimit, const std::string & sFile, size_t tBufferSize, std::string & sError );
 
 	void	SetRowID ( uint32_t tRowID ) final;
@@ -837,6 +838,13 @@ private:
 	bool WriteMeta ( const std::string & sPgmName, const std::string & sBlocksName, const std::vector<uint64_t> & dBlocksOffStart, const std::vector<uint64_t> & dBlocksCount, uint64_t uMetaOff, std::string & sError ) const;
 };
 
+Builder_c::~Builder_c()
+{
+	// need to close all writers prior to cleanup step
+	// in case of error and clean up take place with the opened files
+	VectorReset ( m_dRawWriter );
+	VectorReset ( m_dCidWriter );
+}
 
 bool Builder_c::Setup ( const Settings_t & tSettings, const Schema_t & tSchema, size_t tMemoryLimit, const std::string & sFile, size_t tBufferSize, std::string & sError )
 {

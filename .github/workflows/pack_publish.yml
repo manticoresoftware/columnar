@@ -13,6 +13,8 @@ on:
   push:
     branches:
       - columnar-*
+    tags:
+      - 'release*'
 
 # cancels the previous workflow run when a new one appears in the same branch (e.g. master or a PR's branch)
 concurrency:
@@ -24,16 +26,55 @@ jobs:
   pack:
     name: OK to pack?
     runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.semver-tagger.outputs.version }}
+      version_full: ${{ steps.semver-tagger.outputs.version_full }}
+      target: ${{ steps.semver-tagger.outputs.target }}
+      should_continue: ${{ steps.check-should-continue.outputs.should_continue }}
     if: |
       (github.event_name == 'pull_request' && (contains(github.event.pull_request.labels.*.name, 'pack') || contains(github.event.pull_request.labels.*.name, 'publish')))
       || (github.event_name == 'push')
       || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.ref == 'refs/heads/master' && github.event.workflow_run.event != 'schedule')
     steps:
-      - run: echo "All set to build packages"
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Update version
+        id: semver-tagger
+        uses: manticoresoftware/semver-tagger-action@main  
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          conventional_commits_authors: alexey@manticoresearch.com
+          ignore_patterns: '\.md$|^test/|^manual/|\.clt|\.github|\.patterns|\.yml|\.gitignore'
+      - name: Check if we should continue packing
+        id: check-should-continue
+        run: |
+          # Continue if version was updated or if we have the "pack" label on PR
+          if [[ "${{ steps.semver-tagger.outputs.version_updated }}" == "true" ]]; then
+            echo "Continuing because version was updated"
+            echo "should_continue=true" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.event_name }}" == "pull_request" && "${{ contains(github.event.pull_request.labels.*.name, 'pack') }}" == "true" ]]; then
+            echo "Continuing because PR has 'pack' label"
+            echo "should_continue=true" >> $GITHUB_OUTPUT
+          else
+          echo "Skipping packing because version wasn't updated and there's no 'pack' label"
+            echo "should_continue=false" >> $GITHUB_OUTPUT
+          fi          
+      - run: |
+          echo "# Packing and publishing all for commit ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "* Commit URL: [${{ github.sha }}](/${{ github.repository }}/commit/${{ github.sha }})" >> $GITHUB_STEP_SUMMARY
+          echo "* Initiated by: [@${{ github.actor }}](https://github.com/${{ github.actor }})" >> $GITHUB_STEP_SUMMARY
+          echo "* Ref: ${{ github.ref_type }} \"${{ github.ref_name }}\"" >> $GITHUB_STEP_SUMMARY
+          echo "* Attempt: ${{ github.run_attempt }}" >> $GITHUB_STEP_SUMMARY
+          echo "* Version updated: ${{ steps.semver-tagger.outputs.version_updated }}" >> $GITHUB_STEP_SUMMARY
+          echo "* Should continue packing: ${{ steps.check-should-continue.outputs.should_continue }}" >> $GITHUB_STEP_SUMMARY
 
   pack_debian_ubuntu:
     uses: ./.github/workflows/build_template.yml
     needs: pack
+    if: needs.pack.outputs.should_continue == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -50,10 +91,12 @@ jobs:
         cmake --build . --target package
       cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
       artifact_list: "build/manticore*deb"
+      version: ${{ needs.pack.outputs.version }}
 
   pack_rhel:
     uses: ./.github/workflows/build_template.yml
     needs: pack
+    if: needs.pack.outputs.should_continue == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -73,10 +116,12 @@ jobs:
         cmake --build . --target package
       cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
       artifact_list: "build/manticore*rpm"
+      version: ${{ needs.pack.outputs.version }}
 
   pack_macos:
     uses: ./.github/workflows/build_template.yml
     needs: pack
+    if: needs.pack.outputs.should_continue == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -94,11 +139,13 @@ jobs:
         cmake --build . --target package
       cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
       artifact_list: "build/manticore*tar.gz"
+      version: ${{ needs.pack.outputs.version }}
 
   pack_windows:
     name: Windows x64 package
     uses: ./.github/workflows/build_template.yml
     needs: pack
+    if: needs.pack.outputs.should_continue == 'true'
     with:
       DISTR: windows
       arch: x64
@@ -109,25 +156,31 @@ jobs:
         cmake --build . --target package
       cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
       artifact_list: "build/manticore*exe build/manticore*zip"
+      version: ${{ needs.pack.outputs.version }}
 
   # virtual job to simplify the CI
   # This job depends on all the package preparation jobs that have to pass before we can start publishing packages
   publish:
     name: OK to publish?
     runs-on: ubuntu-22.04
-    needs: [pack_debian_ubuntu, pack_rhel, pack_macos, pack_windows]
+    needs: [pack_debian_ubuntu, pack_rhel, pack_macos, pack_windows, pack]
     if: |
       (github.repository == 'manticoresoftware/columnar')
       && (
         (github.event_name == 'pull_request' && (contains(github.event.pull_request.labels.*.name, 'publish')))
         || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
         || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/columnar-'))
+        || (needs.pack.outputs.target == 'release')
       )
+    outputs:
+      target: ${{ steps.set-target.outputs.target }}
     steps:
       - run: echo "Ready to publish"
 
   publish_debian_ubuntu:
-    needs: publish
+    needs:
+      - pack
+      - publish
     runs-on: ubuntu-22.04
     strategy:
       fail-fast: true
@@ -144,9 +197,12 @@ jobs:
           artifact: build_${{ matrix.DISTR }}_RelWithDebInfo_${{ matrix.arch }}
           type: deb
           delimiter: "-"
+          target: ${{ needs.pack.outputs.target }}
 
   publish_rhel:
-    needs: publish
+    needs:
+      - pack
+      - publish
     runs-on: ubuntu-22.04
     strategy:
       fail-fast: true
@@ -163,9 +219,12 @@ jobs:
           artifact: build_rhel${{ matrix.DISTR }}_RelWithDebInfo_${{ matrix.arch }}
           type: rpm
           delimiter: "_"
+          target: ${{ needs.pack.outputs.target }}
 
   publish_macos:
-    needs: publish
+    needs:
+      - pack
+      - publish
     runs-on: ubuntu-22.04
     strategy:
       fail-fast: true
@@ -181,10 +240,13 @@ jobs:
           artifact: build_macos_RelWithDebInfo_${{ matrix.arch }}
           type: arc
           delimiter: "-"
+          target: ${{ needs.pack.outputs.target }}
 
   publish_windows:
     name: Publishing Windows packages to repo.manticoresearch.com
-    needs: publish
+    needs:
+      - pack
+      - publish
     runs-on: ubuntu-22.04
     steps:
       - uses: manticoresoftware/publish_to_repo@main
@@ -195,40 +257,18 @@ jobs:
           artifact: build_windows_RelWithDebInfo_x64
           type: arc
           delimiter: "-"
-  vars:
-    name: Detecting versions
-    needs:
-      - publish_debian_ubuntu
-      - publish_rhel
-      - publish_macos
-      - publish_windows
-    runs-on: ubuntu-22.04
-    outputs:
-      app_version: ${{ steps.vars.outputs.app_version }}
-      app_date: ${{ steps.vars.outputs.app_date }}
-      app_commit: ${{ steps.vars.outputs.app_commit }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-      - id: vars
-        run: |
-          version=$( cat CMakeLists.txt | grep 'columnar VERSION' | cut -d' ' -f5  )
-          date=$( git log -1 --date=format-local:"%y%m%d%H" --format=%cd )
-          commit=${GITHUB_SHA:0:7}
-
-          echo "app_version=$version" >> $GITHUB_OUTPUT
-          echo "app_date=$date" >> $GITHUB_OUTPUT
-          echo "app_commit=$commit" >> $GITHUB_OUTPUT
+          target: ${{ needs.pack.outputs.target }}
 
   update-manticoresearch-deps:
     needs:
-      - vars
+      - pack
+      - publish
     runs-on: ubuntu-22.04
+    if: needs.publish.outputs.target != 'release'
     steps:
       - name: Update deps
         uses: manticoresoftware/manticoresearch/actions/update-deps@master
         with:
           name: mcl
-          version: "${{ needs.vars.outputs.app_version }} ${{ needs.vars.outputs.app_date }} ${{ needs.vars.outputs.app_commit }}"
+          version: ${{ needs.pack.outputs.version_full }}
           token: ${{ secrets.PR_TOKEN }}
