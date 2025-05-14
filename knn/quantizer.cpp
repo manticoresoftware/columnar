@@ -531,7 +531,7 @@ float BinaryQuantizer_c::QuantizeVecL2 ( const Span_T<float> & dVector, const st
 {
 	m_dVecMinusCentroid.resize ( dVector.size() );
 	for ( size_t i = 0; i < m_dVecMinusCentroid.size(); i++ )
-		m_dVecMinusCentroid[i] = dVector[i]-dCentroid[i];
+		m_dVecMinusCentroid[i] = dVector[i] - dCentroid[i];
 
 	float fNorm = CalcNorm(m_dVecMinusCentroid);
 	PadToDim(m_dVecMinusCentroid);
@@ -554,7 +554,7 @@ BinaryQuantizer_c::IPMetrics_t BinaryQuantizer_c::QuantizeVecIP ( const Span_T<f
 	for ( size_t i = 0; i < dVector.size(); i++ )
 	{
 		fVecDotCentroid += dVector[i]*dCentroid[i];
-		m_dVecMinusCentroid[i] = dVector[i]-dCentroid[i];
+		m_dVecMinusCentroid[i] = dVector[i] - dCentroid[i];
 	}
 
 	float fVecMinusCentroidNorm = CalcNorm(m_dVecMinusCentroid);
@@ -564,7 +564,7 @@ BinaryQuantizer_c::IPMetrics_t BinaryQuantizer_c::QuantizeVecIP ( const Span_T<f
 	for ( float & i : m_dVecMinusCentroid )
 		i /= fVecMinusCentroidNorm;
 
-	float fQuality = ComputeQuality ( dVector.size (), m_dVecMinusCentroid, dResult );
+	float fQuality = ComputeQuality ( dVector.size(), m_dVecMinusCentroid, dResult );
 	return { fQuality, fVecMinusCentroidNorm, fVecDotCentroid };
 }
 
@@ -639,7 +639,7 @@ void BinaryQuantizer_c::Transpose ( const Span_T<uint8_t> & dQuantized, size_t u
 		for ( int j = 0; j < 4; j++ )
 		{
 			PackHighBitsToByte ( { dSpreadBits, NUM_BYTES }, dTmp );
-			auto pTransposed = dTransposed.data() + ( 4 - j - 1 ) * uDimDiv8 + iDiv8;
+			auto pTransposed = dTransposed.data() + ( 3 - j ) * uDimDiv8 + iDiv8;
 			for ( int k = 0; k < 4; k++ )
 				pTransposed[k] = dTmp[k];
 
@@ -719,11 +719,11 @@ public:
 
 private:
 	std::unique_ptr<BinaryQuantizer_c> m_pQuantizer;
+	QuantizationSettings_t	m_tSettings;
 	HNSWSimilarity_e		m_eSimilarity = HNSWSimilarity_e::COSINE;
 	std::string				m_sTmpFilename;
 	std::vector<double>		m_dCentroid64;
 	std::vector<uint8_t>	m_dQuantizedForQuery;
-	QuantizationSettings_t	m_tSettings;
 	MappedBuffer_T<uint8_t>	m_tBuffer4Bit;
 	size_t		m_uDim = 0;
 	bool		m_bTrained = false;
