@@ -28,6 +28,13 @@
 #include <cmath>
 #include <numeric>
 
+#ifdef _MSC_VER
+	#include <io.h>
+#else
+	#include <unistd.h>
+#endif
+
+
 using namespace util;
 
 namespace knn

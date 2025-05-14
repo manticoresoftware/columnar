@@ -18,6 +18,8 @@
 
 #include "util.h"
 
+#include <cmath>
+
 #if defined(USE_SIMDE)
 	#define SIMDE_ENABLE_NATIVE_ALIASES 1
 	#include <simde/x86/sse4.2.h>
