@@ -1,7 +1,6 @@
 // Copyright (c) 2025, Manticore Software LTD (https://manticoresearch.com)
 // All rights reserved
 //
-//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -13,6 +12,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// The binary distance calculation implementations are based on Elasticsearch's Java implementation:
+// https://github.com/elastic/elasticsearch
+// Modifications copyright (C) 2024 Elasticsearch B.V.
+// Original implementation licensed under the Apache License, Version 2.0.
+// The algorithm is based on the paper "RaBitQ" (https://arxiv.org/abs/2405.12497)
 
 #include "space.h"
 
@@ -776,6 +781,8 @@ static int64_t BinaryDotProduct16 ( const uint8_t * pVec4Bit, const uint8_t * pV
 }
 #endif
 
+// This binary distance calculation is derived from Elasticsearch's Java implementation
+// in org.elasticsearch.index.codec.vectors.es816.ES816BinaryFlatVectorsScorer
 template<bool BUILD, int64_t (*DOTPRODUCT_FN)( const uint8_t * pVec4Bit, const uint8_t * pVec1Bit, int iBytes )>
 static float IPBinaryFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, size_t uRowID1, size_t uRowID2, const void * __restrict pParam )
 {
@@ -832,6 +839,8 @@ static float IPBinaryFloatDistance ( const void * __restrict pVect1, const void 
 	return 1.0f - std::max ( ( 1.0f + fAdjustedDist ) / 2.0f, 0.0f );
 }
 
+// This binary distance calculation is derived from Elasticsearch's Java implementation
+// in org.elasticsearch.index.codec.vectors.es816.ES816BinaryFlatVectorsScorer
 template<bool BUILD, int64_t (*DOTPRODUCT_FN)( const uint8_t * pVec4Bit, const uint8_t * pVec1Bit, int iBytes )>
 static float L2BinaryFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, size_t uRowID1, size_t uRowID2, const void * __restrict pParam )
 {
