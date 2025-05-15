@@ -119,6 +119,20 @@ public:
 		BASE::m_tLength = tLength;
 	}
 
+	FORCE_INLINE void resize ( size_t tLength, T tValue )
+	{
+		if ( tLength>m_tMaxLength )
+		{
+			m_tMaxLength = tLength;
+			m_dData.resize ( m_tMaxLength, tValue );
+			BASE::m_pData = m_dData.data();
+		}
+		else
+			std::fill(BASE::m_pData + tLength, BASE::m_pData + m_tMaxLength, T{});
+
+		BASE::m_tLength = tLength;
+	}
+
 private:
 	std::vector<T>	m_dData;
 	size_t			m_tMaxLength = 0;
