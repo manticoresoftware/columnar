@@ -250,8 +250,7 @@ static bool MMapOpen ( const std::string & sFile, bool bWrite, std::string & sEr
 		}
 	}
 #else
-
-	int iFD = ::open ( sFile.c_str(), O_RDONLY | O_BINARY, 0644 );
+	int iFD = ::open ( sFile.c_str(), bWrite ? O_RDWR : O_RDONLY, 0644 );
 	if ( iFD<0 )
 		return false;
 	tBuf.m_iFD = iFD;

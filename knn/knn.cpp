@@ -207,8 +207,7 @@ void HNSWIndex_c::Search ( std::vector<DocDist_t> & dResults, const Span_T<float
 	const void * pData = dData.begin();
 	if ( m_pQuantizer )
 	{
-		std::string sError;
-		m_pQuantizer->Encode ( dData, dQuantized, sError );
+		m_pQuantizer->Encode ( dData, dQuantized );
 		pData = dQuantized.data();
 	}
 
@@ -375,11 +374,14 @@ bool HNSWIndexBuilder_c::AddDoc ( const util::Span_T<float> & dData, std::string
 	if ( m_pQuantizer )
 	{
 		if ( !m_tRowID )
+		{
+			if ( !m_pQuantizer->FinalizeTraining(sError) )
+				return false;
+
 			m_pSpace->SetQuantizationSettings ( *m_pQuantizer );
+		}
 
-		if ( !m_pQuantizer->Encode ( dToAdd, m_dQuantized, sError ) )
-			return false;
-
+		m_pQuantizer->Encode ( dToAdd, m_dQuantized );
 		m_pAlg->addPoint ( (void*)m_dQuantized.data(), (size_t)m_tRowID++ );
 	}
 	else
@@ -391,7 +393,7 @@ bool HNSWIndexBuilder_c::AddDoc ( const util::Span_T<float> & dData, std::string
 
 void HNSWIndexBuilder_c::Save ( FileWriter_c & tWriter )
 {
-	m_pQuantizer->Done();
+	m_pQuantizer->FinalizeEncoding();
 	m_pAlg->saveIndex(tWriter);
 }
 

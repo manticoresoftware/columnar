@@ -39,8 +39,9 @@ public:
 	virtual			~ScalarQuantizer_i() = default;
 
 	virtual void	Train ( const util::Span_T<float> & dPoint ) = 0;
-	virtual bool	Encode ( const util::Span_T<float> & dPoint, std::vector<uint8_t> & dQuantized, std::string & sError ) = 0;
-	virtual void	Done() = 0;
+	virtual bool	FinalizeTraining ( std::string & sError ) = 0;
+	virtual void	Encode ( const util::Span_T<float> & dPoint, std::vector<uint8_t> & dQuantized ) = 0;
+	virtual void	FinalizeEncoding() = 0;
 	virtual const QuantizationSettings_t & GetSettings() = 0;
 
 	virtual std::function<const uint8_t *(uint32_t)> GetPoolFetcher() const = 0;
