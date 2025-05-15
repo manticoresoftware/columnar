@@ -395,6 +395,8 @@ bool ScalarQuantizer1Bit_T<COSINE>::Encode ( const Span_T<float> & dPoint, std::
 
 		dQuantized[i] = uPacked;
 	}
+
+	return true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
