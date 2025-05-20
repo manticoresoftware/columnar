@@ -507,7 +507,8 @@ int BinaryQuantizer_c::Quantize ( const Span_T<float> & dVector, float fMin, flo
 	int iQuantizedSum = 0;
 	for ( size_t i = 0; i < dVector.size(); i++ )
 	{
-		uint8_t uRes = uint8_t ( ( dVector[i] - fMin )*fDiv );
+		int iRes =  (int)std::lround( ( dVector[i] - fMin )*fDiv );
+		uint8_t uRes = (uint8_t)std::clamp ( iRes, 0, 15 );
 		dQuantized[i] = uRes;
 		iQuantizedSum += uRes;
 	}
