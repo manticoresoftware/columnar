@@ -1,0 +1,126 @@
+name: Embeddings Build Template
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        required: false
+        type: string
+        default: "ubuntu-22.04"
+      distr:
+        required: true
+        type: string
+      arch:
+        required: true
+        type: string
+      artifact_list:
+        required: false
+        type: string
+        default: "target/release/lib*.so"
+      setup:
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  build:
+    runs-on: ${{ inputs.runner }}
+    defaults:
+      run:
+        shell: bash
+    timeout-minutes: 30
+    steps:
+      - name: Setup
+        if: ${{ inputs.setup }}
+        run: |
+          ${{ inputs.setup }}
+
+      - name: Check distribution type
+        id: vars
+        run: |
+          case ${{ inputs.distr }} in
+            linux)
+              target="unknown-linux-gnu"
+              ;;
+            macos)
+              target="apple-darwin"
+              ;;
+            windows)
+              target="pc-windows-msvc"
+              ;;
+            *)
+              echo "Unsupported distribution type: ${{ inputs.distr }}"
+              exit 1
+              ;;
+          esac
+          target="${{ inputs.arch }}-${target}"
+          echo "target=${target}" >> $GITHUB_OUTPUT
+
+          lib_dir="./embeddings/target/${target}/release"
+          echo "lib_dir=${lib_dir}" >> $GITHUB_OUTPUT
+
+      - uses: actions/checkout@v3
+        with:
+          toolchain: stable
+          target: ${{ steps.vars.outputs.target }}
+          override: true
+      - name: Prepare build args
+        id: params
+        run: |
+          args=(
+            "--target" 
+            "${{ steps.vars.outputs.target }}" 
+            "--lib"
+            "--release" 
+            "--manifest-path" 
+            "./embeddings/Cargo.toml"
+          )
+          echo "args=${args[@]}" >> $GITHUB_OUTPUT
+
+      - name: Build for Linux
+        if: ${{ inputs.distr == 'linux' }}
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: ${{ inputs.arch == 'aarch64' && 'aarch64-linux-gnu-gcc' || ''}}
+          CC_aarch64_unknown_linux_gnu: ${{ inputs.arch == 'aarch64' && 'aarch64-linux-gnu-gcc' || ''}}
+          CXX_aarch64_unknown_linux_gnu: ${{ inputs.arch == 'aarch64' && 'aarch64-linux-gnu-g++' || ''}}
+
+        run: |
+          if [[ "${{ inputs.arch }}" == "aarch64" ]]; then
+            extra="apt-get install -y binutils-aarch64-linux-gnu g++-aarch64-linux-gnu gcc-aarch64-linux-gnu && rustup target add aarch64-unknown-linux-gnu && "
+          fi
+
+          docker run --rm  \
+            -e CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER \
+            -e CC_aarch64_unknown_linux_gnu \
+            -e CXX_aarch64_unknown_linux_gnu \
+            -v $(pwd):/src \
+            -w /src \
+            -u root \
+            --entrypoint bash \
+            unixgeek2/rust-min-libc:2025-01-17 \
+            -c "apt-get update -y && apt-get install -y gcc g++ && ${extra} cargo build ${{ steps.params.outputs.args }}"
+          sudo chown -hR $(id -u):$(id -g) ${{ steps.vars.outputs.lib_dir }}
+
+
+      - name: Build native 
+        if: ${{ inputs.distr == 'windows' || inputs.distr == 'macos' }}
+        run: |
+          rustup target add ${{ steps.vars.outputs.target }}
+          cargo build ${{ steps.params.outputs.args }}
+
+      - run: | 
+          mkdir build
+          lib_dir="${{ steps.vars.outputs.lib_dir }}"
+          ls -la $lib_dir/*
+          find $lib_dir -type f \( -name "libmanticore*.so" -o -name "libmanticore*.dylib" -o -name "manticore*.dll" \) -exec cp {} build/ \;
+
+      - name: Install current Bash on macOS
+        if: inputs.distr == 'macos'
+        run: brew install bash
+
+      - name: Upload build artifacts
+        if: success()
+        uses: manticoresoftware/upload_artifact_with_retries@v4
+        with:
+          name: embeddings_${{ inputs.distr }}_${{ inputs.arch }}
+          path: ./build/*
