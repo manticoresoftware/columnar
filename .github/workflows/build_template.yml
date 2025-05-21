@@ -19,6 +19,10 @@ on:
         required: false
         type: string
         default: RelWithDebInfo
+      version:
+        required: false
+        type: string
+        default: ""
       cmake_command:
         required: false
         type: string
@@ -77,6 +81,12 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           set-safe-directory: true
 
+      - name: Patch version
+        if: inputs.version != ''
+        run: |
+          sed -i "s/0\.0\.0/${{ inputs.version }}/g" CMakeLists.txt
+          cat CMakeLists.txt
+          
       - name: Download embeddings lib 
         uses: manticoresoftware/download_artifact_with_retries@v3
         continue-on-error: true
