@@ -50,6 +50,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           conventional_commits_authors: alexey@manticoresearch.com
           ignore_patterns: '\.md$|^test/|^manual/|\.clt|\.github|\.patterns|\.yml|\.gitignore'
+          debug: true
       - name: Check if we should continue packing
         id: check-should-continue
         run: |
