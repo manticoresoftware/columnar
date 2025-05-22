@@ -29,6 +29,7 @@ jobs:
     outputs:
       version: ${{ steps.semver-tagger.outputs.version }}
       version_full: ${{ steps.semver-tagger.outputs.version_full }}
+      version_rpm: ${{ steps.semver-tagger.outputs.version_rpm }}
       target: ${{ steps.semver-tagger.outputs.target }}
       should_continue: ${{ steps.check-should-continue.outputs.should_continue }}
     if: |
@@ -92,6 +93,7 @@ jobs:
       cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
       artifact_list: "build/manticore*deb"
       version: ${{ needs.pack.outputs.version }}
+      package_version: ${{ needs.pack.outputs.version_full }}
 
   pack_rhel:
     uses: ./.github/workflows/build_template.yml
@@ -112,11 +114,13 @@ jobs:
         cd /builds_manticoresearch_dev_usr_src_debug_manticore_component_src_0
         mkdir build
         cd build
-        cmake -DPACK=1 ..
+        CPACK_RPM_BUILD_SOURCE_DIRS_PREFIX=/builds_manticoresearch_dev_usr_src_debug_manticore_component cmake -DPACK=1 ..
         cmake --build . --target package
       cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
       artifact_list: "build/manticore*rpm"
       version: ${{ needs.pack.outputs.version }}
+      package_version: ${{ needs.pack.outputs.version_full }}
+      rpm_package_version: ${{ needs.pack.outputs.version_rpm }}
 
   pack_macos:
     uses: ./.github/workflows/build_template.yml
@@ -140,6 +144,7 @@ jobs:
       cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
       artifact_list: "build/manticore*tar.gz"
       version: ${{ needs.pack.outputs.version }}
+      package_version: ${{ needs.pack.outputs.version_full }}
 
   pack_windows:
     name: Windows x64 package
@@ -157,6 +162,7 @@ jobs:
       cache_key: pack_${{ matrix.DISTR }}_${{ matrix.arch }}
       artifact_list: "build/manticore*exe build/manticore*zip"
       version: ${{ needs.pack.outputs.version }}
+      package_version: ${{ needs.pack.outputs.version_full }}
 
   # virtual job to simplify the CI
   # This job depends on all the package preparation jobs that have to pass before we can start publishing packages
