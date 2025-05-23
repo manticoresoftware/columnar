@@ -209,7 +209,7 @@ struct MappedBufferData_t
 };
 
 
-bool MMapOpen ( const std::string & sFile, std::string & sError, MappedBufferData_t & tBuf )
+static bool MMapOpen ( const std::string & sFile, bool bWrite, std::string & sError, MappedBufferData_t & tBuf )
 {
 #if _WIN32
 	assert ( tBuf.m_iFD==INVALID_HANDLE_VALUE );
@@ -219,9 +219,8 @@ bool MMapOpen ( const std::string & sFile, std::string & sError, MappedBufferDat
 	assert ( !tBuf.m_pData && !tBuf.m_iBytesCount );
 
 #if _WIN32
-	int iAccessMode = GENERIC_READ;
-	DWORD uShare = FILE_SHARE_READ | FILE_SHARE_DELETE;
-
+	int iAccessMode = GENERIC_READ | ( bWrite ? GENERIC_WRITE : 0 );
+	DWORD uShare = FILE_SHARE_READ | FILE_SHARE_DELETE | ( bWrite ? FILE_SHARE_WRITE : 0 );
 	HANDLE iFD = CreateFile ( sFile.c_str(), iAccessMode, uShare, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0 );
 	if ( iFD==INVALID_HANDLE_VALUE )
 	{
@@ -242,8 +241,8 @@ bool MMapOpen ( const std::string & sFile, std::string & sError, MappedBufferDat
 	// mmap fails to map zero-size file
 	if ( tBuf.m_iBytesCount>0 )
 	{
-		tBuf.m_iMap = ::CreateFileMapping ( iFD, NULL, PAGE_READONLY, 0, 0, NULL );
-		tBuf.m_pData = ::MapViewOfFile ( tBuf.m_iMap, FILE_MAP_READ, 0, 0, 0 );
+		tBuf.m_iMap = ::CreateFileMapping ( iFD, NULL, bWrite ? PAGE_READWRITE : PAGE_READONLY, 0, 0, NULL );
+		tBuf.m_pData = ::MapViewOfFile ( tBuf.m_iMap, FILE_MAP_READ | ( bWrite ? FILE_MAP_WRITE : 0 ), 0, 0, 0 );
 		if ( !tBuf.m_pData )
 		{
 			sError = FormatStr ( "failed to map file '%s': (errno %u, length=%I64u)", sFile.c_str(), ::GetLastError(), tBuf.m_iBytesCount );
@@ -251,8 +250,7 @@ bool MMapOpen ( const std::string & sFile, std::string & sError, MappedBufferDat
 		}
 	}
 #else
-
-	int iFD = ::open ( sFile.c_str(), O_RDONLY | O_BINARY, 0644 );
+	int iFD = ::open ( sFile.c_str(), bWrite ? O_RDWR : O_RDONLY, 0644 );
 	if ( iFD<0 )
 		return false;
 	tBuf.m_iFD = iFD;
@@ -264,7 +262,7 @@ bool MMapOpen ( const std::string & sFile, std::string & sError, MappedBufferDat
 	// mmap fails to map zero-size file
 	if ( tBuf.m_iBytesCount>0 )
 	{
-		tBuf.m_pData = mmap ( NULL, tBuf.m_iBytesCount, PROT_READ, MAP_SHARED, iFD, 0 );
+		tBuf.m_pData = mmap ( NULL, tBuf.m_iBytesCount, PROT_READ | ( bWrite ? PROT_WRITE : 0 ), MAP_SHARED, iFD, 0 );
 		if ( tBuf.m_pData==MAP_FAILED )
 		{
 			sError = FormatStr ( "failed to mmap file '%s': %s (length=%lld)", sFile.c_str(), strerror(errno), tBuf.m_iBytesCount );
@@ -276,7 +274,7 @@ bool MMapOpen ( const std::string & sFile, std::string & sError, MappedBufferDat
 	return true;
 }
 
-void MMapClose ( MappedBufferData_t & tBuf )
+static void MMapClose ( MappedBufferData_t & tBuf )
 {
 #if _WIN32
 	if ( tBuf.m_pData )
@@ -284,10 +282,12 @@ void MMapClose ( MappedBufferData_t & tBuf )
 
 	if ( tBuf.m_iMap!=INVALID_HANDLE_VALUE )
 		::CloseHandle ( tBuf.m_iMap );
+
 	tBuf.m_iMap = INVALID_HANDLE_VALUE;
 
 	if ( tBuf.m_iFD!=INVALID_HANDLE_VALUE )
 		::CloseHandle ( tBuf.m_iFD );
+
 	tBuf.m_iFD = INVALID_HANDLE_VALUE;
 #else
 	if ( tBuf.m_pData )
@@ -342,10 +342,10 @@ public:
 	MappedBuffer_c() = default;
 	virtual ~MappedBuffer_c() override = default;
 
-	bool Open ( const std::string & sFile, std::string & sError ) override
+	bool Open ( const std::string & sFile, bool bWrite, std::string & sError ) override
 	{
 		m_sFileName = sFile;
-		return MMapOpen ( sFile, sError, m_tBuf );
+		return MMapOpen ( sFile, bWrite, sError, m_tBuf );
 	}
 
 	void Close () override
