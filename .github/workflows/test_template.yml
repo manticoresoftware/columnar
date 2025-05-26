@@ -60,10 +60,23 @@ jobs:
         run: bash /entry_point.sh &
 
       - name: Download build artifacts
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retries@v4
         with:
           name: build_jammy_${{ inputs.CTEST_CONFIGURATION_TYPE }}_x86_64
           path: .
+
+      - name: Download embeddings lib 
+        uses: manticoresoftware/download_artifact_with_retries@v4
+        continue-on-error: true
+        with:
+          name: embeddings_linux_x86_64
+          path: ./embeddings-lib/
+
+      - name: Initialization of embeddings lib
+        run: | 
+          mkdir -p embeddings/target/release
+          mv ./embeddings-lib/build/* embeddings/target/release/
+          rm -fr ./embeddings-lib
 
       - name: Check out main cache before building
         uses: actions/cache@v4
@@ -79,14 +92,13 @@ jobs:
           enableCrossOsArchive: true
           key: build_linux_x86_64_deps
 
-
       - name: List files
         run: find .
 
       - name: 🚀 Test
         id: test
         # --timeout may be not working https://gitlab.kitware.com/cmake/cmake/-/issues/23979
-        run: ctest -V -S cmake/citest.cmake --no-compress-output --timeout 60
+        run: ctest -VV -S cmake/citest.cmake --no-compress-output --timeout 60
         continue-on-error: true
 
       - name: Remember status
