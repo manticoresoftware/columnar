@@ -24,6 +24,7 @@
 #include "util_private.h"
 #include "reader.h"
 #include <float.h>
+#include <cfloat>
 #include <algorithm>
 #include <cmath>
 #include <numeric>
