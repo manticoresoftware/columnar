@@ -102,7 +102,7 @@ bool StorageChecker_c::Check()
 	}
 
 	uint32_t uStorageVersion = m_tReader.Read_uint32();
-	if ( uStorageVersion > STORAGE_VERSION )
+	if ( StorageVersionWrong ( uStorageVersion ) )
 	{
 		m_fnError ( FormatStr ( "Unable to load columnar storage: %s is v.%d, binary is v.%d", m_sFilename.c_str(), uStorageVersion, STORAGE_VERSION ).c_str() );
 		return false;

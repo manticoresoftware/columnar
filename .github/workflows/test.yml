@@ -269,7 +269,7 @@ jobs:
         shell: bash
       - name: Delete unneded per-shard artifacts
         if: always()
-        uses: geekyeggo/delete-artifact@v2
+        uses: geekyeggo/delete-artifact@v5
         with:
           name: debug_test_*
           failOnError: false
@@ -394,7 +394,7 @@ jobs:
         shell: bash
       - name: Delete unneded per-shard artifacts
         if: always()
-        uses: geekyeggo/delete-artifact@v2
+        uses: geekyeggo/delete-artifact@v5
         with:
           name: release_test_*
           failOnError: false
@@ -493,7 +493,7 @@ jobs:
         shell: bash
       - name: Delete unneded per-shard artifacts
         if: always()
-        uses: geekyeggo/delete-artifact@v2
+        uses: geekyeggo/delete-artifact@v5
         with:
           name: windows_test_*
           failOnError: false
