@@ -18,6 +18,9 @@
 
 #include "util.h"
 
+#include <cmath>
+#include <float.h>
+
 #if defined(USE_SIMDE)
 	#define SIMDE_ENABLE_NATIVE_ALIASES 1
 	#include <simde/x86/sse4.2.h>
@@ -381,7 +384,162 @@ constexpr int Log2 ( T tValue )
 int     CalcNumBits ( uint64_t uNumber );
 bool    CopySingleFile ( const std::string & sSource, const std::string & sDest, std::string & sError, int iMode, size_t tBufferSize=1048576 );
 bool	FloatEqual ( float fA, float fB );
-void	NormalizeVec ( Span_T<float> & dData );
+
+FORCE_INLINE float VecCalcNorm ( const Span_T<float> & dData )
+{
+	size_t uSize = dData.size();
+	size_t i = 0;
+	float fNorm = 0.0f;
+
+#if defined (USE_AVX2)
+	__m256 iNormVec = _mm256_setzero_ps();
+	size_t uLimit = uSize & ~7;
+	for ( ; i < uLimit; i += 8 )
+	{
+		__m256 iVec = _mm256_loadu_ps ( &dData[i] );
+		iNormVec = _mm256_fmadd_ps ( iVec, iVec, iNormVec );
+	}
+
+	__m128 iLow = _mm256_extractf128_ps ( iNormVec, 0 );
+	__m128 iHigh = _mm256_extractf128_ps ( iNormVec, 1 );
+	__m128 iSum = _mm_add_ps ( iLow, iHigh );
+
+	__m128 iShuf = _mm_movehdup_ps(iSum);
+	__m128 iSums = _mm_add_ps ( iSum, iShuf );
+	iShuf = _mm_movehl_ps ( iShuf, iSums );
+	iSums = _mm_add_ss ( iSums, iShuf );
+	fNorm = _mm_cvtss_f32(iSums);
+#endif
+
+	for ( ; i < uSize; i++ )
+		fNorm += dData[i]*dData[i];
+
+	return sqrtf(fNorm);
+}
+
+FORCE_INLINE float VecNormalize ( Span_T<float> & dData )
+{
+	float fNorm = VecCalcNorm(dData);
+	float fDiv = 1.0f / (fNorm + 1e-30f);
+	size_t i = 0;
+	size_t uSize = dData.size();
+
+#if defined (USE_AVX2)
+	__m256 iDivVec = _mm256_set1_ps(fDiv);
+	size_t uLimit = uSize & ~7;
+	for ( ; i < uLimit; i += 8 )
+	{
+		__m256 iVec = _mm256_loadu_ps ( &dData[i] );
+		__m256 iResult = _mm256_fmadd_ps ( iVec, iDivVec, _mm256_setzero_ps() );
+		_mm256_storeu_ps ( &dData[i], iResult );
+	}
+#endif
+
+	for ( ; i < uSize; i++ )
+		dData[i] *= fDiv;
+
+	return fNorm;
+}
+
+template <typename T1, typename T2>
+FORCE_INLINE float VecDot ( const T1 & dVec1, const T2 & dVec2 )
+{
+	assert ( dVec1.size()==dVec2.size() );
+	const size_t uSize = dVec1.size();
+	size_t i = 0;
+	float fDot = 0.0f;
+
+#if defined (USE_AVX2)
+	__m256 iDotVec = _mm256_setzero_ps();
+	size_t uLimit = uSize & ~7;
+	for ( ; i < uLimit; i += 8 )
+	{
+		__m256 iVec1 = _mm256_loadu_ps ( &dVec1[i] );
+		__m256 iVec2 = _mm256_loadu_ps ( &dVec2[i] );
+		iDotVec = _mm256_fmadd_ps ( iVec1, iVec2, iDotVec );
+	}
+
+	__m128 iLow = _mm256_extractf128_ps ( iDotVec, 0 );
+	__m128 iHigh = _mm256_extractf128_ps ( iDotVec, 1 );
+	__m128 iSum = _mm_add_ps ( iLow, iHigh );
+
+	__m128 iShuf = _mm_movehdup_ps(iSum);
+	__m128 iSums = _mm_add_ps ( iSum, iShuf );
+	iShuf = _mm_movehl_ps ( iShuf, iSums );
+	iSums = _mm_add_ss ( iSums, iShuf );
+	fDot = _mm_cvtss_f32 ( iSums );
+#endif
+
+	for ( ; i < uSize; i++ )
+		fDot += dVec1[i]*dVec2[i];
+
+	return fDot;
+}
+
+FORCE_INLINE void VecMinMax ( const Span_T<float> & dVec, float & fMin, float & fMax )
+{
+	const size_t uSize = dVec.size();
+	fMin = FLT_MAX;
+	fMax = -FLT_MAX;
+	size_t i = 0;
+
+#if defined (USE_AVX2)
+	__m256 iMinVec = _mm256_set1_ps(FLT_MAX);
+	__m256 iMaxVec = _mm256_set1_ps(-FLT_MAX);
+	size_t uLimit = uSize & ~7;
+	for ( ; i < uLimit; i += 8 )
+	{
+		__m256 iVec = _mm256_loadu_ps ( &dVec[i] );
+		iMinVec = _mm256_min_ps ( iMinVec, iVec );
+		iMaxVec = _mm256_max_ps ( iMaxVec, iVec );
+	}
+
+	__m128 iLow = _mm256_extractf128_ps ( iMinVec, 0 );
+	__m128 iHigh = _mm256_extractf128_ps ( iMinVec, 1 );
+	__m128 iMin = _mm_min_ps ( iLow, iHigh );
+	iLow = _mm_movehdup_ps(iMin);
+	iMin = _mm_min_ps ( iMin, iLow );
+	iLow = _mm_movehl_ps ( iLow, iMin );
+	iMin = _mm_min_ss ( iMin, iLow );
+	fMin = _mm_cvtss_f32(iMin);
+
+	iLow = _mm256_extractf128_ps ( iMaxVec, 0 );
+	iHigh = _mm256_extractf128_ps ( iMaxVec, 1 );
+	__m128 iMax = _mm_max_ps ( iLow, iHigh );
+	iLow = _mm_movehdup_ps(iMax);
+	iMax = _mm_max_ps ( iMax, iLow );
+	iLow = _mm_movehl_ps ( iLow, iMax );
+	iMax = _mm_max_ss ( iMax, iLow );
+	fMax = _mm_cvtss_f32(iMax);
+#endif
+
+	for ( ; i < uSize; i++ )
+	{
+		fMin = std::min ( fMin, dVec[i] );
+		fMax = std::max ( fMax, dVec[i] );
+	}
+}
+
+template <typename T1, typename T2>
+FORCE_INLINE float VecDist ( const T1 & dVec1, const T2 & dVec2 )
+{
+	return sqrtf ( VecDistSq ( dVec1, dVec2 ) );
+}
+
+template <typename T1, typename T2>
+FORCE_INLINE float VecDistSq ( const T1 & dVec1, const T2 & dVec2 )
+{
+	assert ( dVec1.size()==dVec2.size() );
+
+	float fDist = 0.0f;
+	for ( size_t i = 0; i < dVec1.size(); i++ )
+	{
+		float fDiff = dVec1[i]-dVec2[i];
+		fDist += fDiff * fDiff;
+	}
+
+	return fDist;
+}
 
 inline int FillWithIncreasingValues ( uint32_t *& pRowID, size_t uNumValues, uint32_t & tRowID )
 {

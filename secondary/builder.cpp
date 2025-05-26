@@ -723,7 +723,7 @@ bool SIWriter_T<SRC_VALUE, DST_VALUE>::Process ( FileWriter_c & tDstFile, FileWr
 
 	tTmpValsPGM.Close();
 	MappedBuffer_T<SRC_VALUE> tMappedPGM;
-	if ( !tMappedPGM.Open ( sPgmValuesName, sError ) )
+	if ( !tMappedPGM.Open ( sPgmValuesName, false, sError ) )
 		return false;
 
 	assert ( std::is_sorted ( tMappedPGM.begin(), tMappedPGM.end() ) );

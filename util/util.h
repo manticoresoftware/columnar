@@ -83,13 +83,13 @@ public:
 	T *     end() const     { return m_pData+m_tLength; }
 	size_t  size() const    { return m_tLength; }
 	bool    empty() const   { return m_tLength==0; }
-	T & operator [] ( size_t i )
+	FORCE_INLINE T & operator [] ( size_t i )
 	{
 		assert ( i < m_tLength );
 		return m_pData[i];
 	}
 
-	const T & operator [] ( size_t i ) const
+	FORCE_INLINE const T & operator [] ( size_t i ) const
 	{
 		assert ( i < m_tLength );
 		return m_pData[i];
@@ -115,6 +115,20 @@ public:
 			m_dData.resize(m_tMaxLength);
 			BASE::m_pData = m_dData.data();
 		}
+
+		BASE::m_tLength = tLength;
+	}
+
+	FORCE_INLINE void resize ( size_t tLength, T tValue )
+	{
+		if ( tLength>m_tMaxLength )
+		{
+			m_tMaxLength = tLength;
+			m_dData.resize ( m_tMaxLength, tValue );
+			BASE::m_pData = m_dData.data();
+		}
+		else
+			std::fill(BASE::m_pData + tLength, BASE::m_pData + m_tMaxLength, T{});
 
 		BASE::m_tLength = tLength;
 	}
