@@ -19,7 +19,6 @@
 #include <stdexcept>
 #include <cerrno>
 #include <cmath>
-#include <limits>
 
 #ifdef _MSC_VER
 	#include <io.h>

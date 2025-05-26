@@ -19,6 +19,7 @@
 #include "util.h"
 
 #include <cmath>
+#include <limits>
 
 #if defined(USE_SIMDE)
 	#define SIMDE_ENABLE_NATIVE_ALIASES 1
