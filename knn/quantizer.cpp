@@ -426,13 +426,13 @@ private:
 
 	static void		Pack ( const Span_T<float> & dVector, Span_T<uint8_t> & dPacked );
 	static int		Quantize ( const Span_T<float> & dVector, float fMin, float fRange, SpanResizeable_T<uint8_t> & dQuantized );
-	static void		Transpose ( const Span_T<uint8_t> & dQuantized, size_t uDim, Span_T<uint8_t> & dTransposed );
+	FORCE_INLINE static void Transpose ( const Span_T<uint8_t> & dQuantized, size_t uDim, Span_T<uint8_t> & dTransposed );
 
 	float			ComputeQuality ( int iOriginalLength, const Span_T<float> & dVecMinusCentroidNormalized, const Span_T<uint8_t> & dPacked ) const;
 	float			QuantizeVecL2 ( const Span_T<float> & dVector, const std::vector<float> & dCentroid, Span_T<uint8_t> & dResult );
 	IPMetrics_t		QuantizeVecIP ( const Span_T<float> & dVector, const std::vector<float> & dCentroid, Span_T<uint8_t> & dResult );
 
-	template <typename T> void PadToDim ( T & dVec )
+	template <typename T> FORCE_INLINE void PadToDim ( T & dVec )
 	{
 		if ( dVec.size() < m_uDimPadded )
 			dVec.resize ( m_uDimPadded, 0 );
@@ -507,7 +507,7 @@ int BinaryQuantizer_c::Quantize ( const Span_T<float> & dVector, float fMin, flo
 	int iQuantizedSum = 0;
 	for ( size_t i = 0; i < dVector.size(); i++ )
 	{
-		int iRes =  (int)std::lround( ( dVector[i] - fMin )*fDiv );
+		int iRes =  (int)std::lround ( ( dVector[i] - fMin )*fDiv );
 		uint8_t uRes = (uint8_t)std::clamp ( iRes, 0, 15 );
 		dQuantized[i] = uRes;
 		iQuantizedSum += uRes;
@@ -539,7 +539,7 @@ float BinaryQuantizer_c::QuantizeVecL2 ( const Span_T<float> & dVector, const st
 	for ( size_t i = 0; i < m_dVecMinusCentroid.size(); i++ )
 		m_dVecMinusCentroid[i] = dVector[i] - dCentroid[i];
 
-	float fNorm = CalcNorm(m_dVecMinusCentroid);
+	float fNorm = VecCalcNorm(m_dVecMinusCentroid);
 	PadToDim(m_dVecMinusCentroid);
 	Pack ( m_dVecMinusCentroid, dResult );
 	m_dVecMinusCentroid.resize ( dVector.size() );
@@ -563,7 +563,7 @@ BinaryQuantizer_c::IPMetrics_t BinaryQuantizer_c::QuantizeVecIP ( const Span_T<f
 		m_dVecMinusCentroid[i] = dVector[i] - dCentroid[i];
 	}
 
-	float fVecMinusCentroidNorm = CalcNorm(m_dVecMinusCentroid);
+	float fVecMinusCentroidNorm = VecCalcNorm(m_dVecMinusCentroid);
 	PadToDim(m_dVecMinusCentroid);
 	Pack ( m_dVecMinusCentroid, dResult );
 
@@ -679,13 +679,12 @@ void BinaryQuantizer_c::Quantize4Bit ( const Span_T<float> & dVector, const std:
 	float fVecDotCentroid = 0.0f;
 	if ( m_eSimilarity!=HNSWSimilarity_e::L2 )
 	{
-		fVecMinusCentroidNorm = NormalizeVec(m_dVecMinusCentroid);
-		for ( size_t i = 0; i < dVector.size(); i++ )
-			fVecDotCentroid += dVector[i]*dCentroid[i];
+		fVecMinusCentroidNorm = VecNormalize(m_dVecMinusCentroid);
+		fVecDotCentroid = VecDot ( dVector, dCentroid );
 	}
 
-	float fMin = *std::min_element ( m_dVecMinusCentroid.begin(), m_dVecMinusCentroid.end() );
-	float fMax = *std::max_element ( m_dVecMinusCentroid.begin(), m_dVecMinusCentroid.end() );
+	float fMin, fMax;
+	VecMinMax ( m_dVecMinusCentroid, fMin, fMax );
 	float fRange = ( fMax - fMin ) / 15.0f;
 
 	int iQuantizedSum = Quantize ( m_dVecMinusCentroid, fMin, fRange, m_dQuantized );

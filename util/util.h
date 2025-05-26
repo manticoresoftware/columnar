@@ -83,13 +83,13 @@ public:
 	T *     end() const     { return m_pData+m_tLength; }
 	size_t  size() const    { return m_tLength; }
 	bool    empty() const   { return m_tLength==0; }
-	T & operator [] ( size_t i )
+	FORCE_INLINE T & operator [] ( size_t i )
 	{
 		assert ( i < m_tLength );
 		return m_pData[i];
 	}
 
-	const T & operator [] ( size_t i ) const
+	FORCE_INLINE const T & operator [] ( size_t i ) const
 	{
 		assert ( i < m_tLength );
 		return m_pData[i];

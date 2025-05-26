@@ -33,35 +33,14 @@ namespace util
 
 int CalcNumBits ( uint64_t uNumber )
 {
-    int iNumBits = 0;
-    while ( uNumber )
-    {
-        uNumber >>= 1;
-        iNumBits++;
-    }
+	int iNumBits = 0;
+	while ( uNumber )
+	{
+		uNumber >>= 1;
+		iNumBits++;
+	}
 
-    return iNumBits;
-}
-
-
-float CalcNorm ( const Span_T<float> & dData )
-{
-	float fNorm = 0.0f;
-	for ( auto i : dData )
-		fNorm += i*i;
-
-	return sqrtf(fNorm);
-}
-
-
-float NormalizeVec ( util::Span_T<float> & dData )
-{
-	float fNorm = CalcNorm(dData);
-	float fDiv = 1.0f / ( fNorm + 1e-30f );
-	for ( auto & i : dData )
-		i *= fDiv;
-
-	return fNorm;
+	return iNumBits;
 }
 
 /////////////////////////////////////////////////////////////////////
@@ -401,7 +380,7 @@ void MemWriter_c::Write ( const uint8_t * pData, size_t tSize )
 
 bool FloatEqual ( float fA, float fB )
 {
-    return std::fabs ( fA - fB )<=std::numeric_limits<float>::epsilon();
+	return std::fabs ( fA - fB )<=std::numeric_limits<float>::epsilon();
 }
 
 } // namespace util

@@ -367,7 +367,7 @@ bool HNSWIndexBuilder_c::AddDoc ( const util::Span_T<float> & dData, std::string
 	if ( m_tAttr.m_eHNSWSimilarity==HNSWSimilarity_e::COSINE )
 	{
 		memcpy ( m_dNormalized.data(), dData.data(), dData.size()*sizeof(dData[0] ) );
-		NormalizeVec(m_dNormalized);
+		VecNormalize(m_dNormalized);
 		dToAdd = m_dNormalized;
 	}
 
