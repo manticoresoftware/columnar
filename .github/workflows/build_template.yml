@@ -23,6 +23,14 @@ on:
         required: false
         type: string
         default: ""
+      package_version:
+        required: false
+        type: string
+        default: ""
+      rpm_package_version:
+        required: false
+        type: string
+        default: ""
       cmake_command:
         required: false
         type: string
@@ -35,6 +43,9 @@ on:
         required: false
         type: string
         default: boost_nov22
+      embeddings_artifact:
+        required: true
+        type: string
       artifact_list:
         required: false
         type: string
@@ -42,7 +53,7 @@ on:
       HOMEBREW_PREFIX:
         required: false
         type: string
-        default:
+        default: ""
       MANTICORE_LOCATOR:
         required: false
         type: string
@@ -71,6 +82,8 @@ jobs:
         SYSROOT_URL: https://repo.manticoresearch.com/repository/sysroots
         HOMEBREW_PREFIX: ${{ inputs.HOMEBREW_PREFIX }}
         MANTICORE_LOCATOR: ${{ inputs.MANTICORE_LOCATOR }}
+        PACKAGE_VERSION: ${{ inputs.package_version }}
+        RPM_PACKAGE_VERSION: ${{ inputs.rpm_package_version }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -83,11 +96,21 @@ jobs:
         run: |
           sed -i "s/0\.0\.0/${{ inputs.version }}/g" CMakeLists.txt
           cat CMakeLists.txt
+          
+      - name: Download embeddings lib 
+        uses: manticoresoftware/download_artifact_with_retries@v3
+        continue-on-error: true
+        with:
+          name: ${{ inputs.embeddings_artifact }}
+          path: ./embeddings-lib/
 
       - name: Initialization
         run: | # without adding the safe.directory cmake fails to do git log -1 --date=short --format=%cd
           bash /sysroot/root/entry_point.sh
           git config --global --add safe.directory /__w/columnar/columnar
+          mkdir -p embeddings/target/release
+          mv ./embeddings-lib/build/* embeddings/target/release/
+          rm -fr ./embeddings-lib
 
       - name: Check out main cache before building
         uses: actions/cache@v4

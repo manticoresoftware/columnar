@@ -16,6 +16,7 @@
 
 #include "knn.h"
 #include "iterator.h"
+#include "embeddings.h"
 #include "quantizer.h"
 #include "space.h"
 #include "util/reader.h"
@@ -463,6 +464,12 @@ knn::KNN_i * CreateKNN()
 knn::Builder_i * CreateKNNBuilder ( const knn::Schema_t & tSchema, int64_t iNumElements, const std::string & sTmpFilename )
 {
 	return new knn::HNSWBuilder_c ( tSchema, iNumElements, sTmpFilename );
+}
+
+
+knn::EmbeddingsLib_i * LoadEmbeddingsLib ( const std::string & sLibPath, std::string & sError )
+{
+	return knn::LoadEmbeddingsLib ( sLibPath, sError );
 }
 
 

@@ -96,24 +96,55 @@ jobs:
           wget https://repo.manticoresearch.com/repository/ci/boost_1_75_0.tgz
           tar -xf boost_1_75_0.tgz
 
+
+  embedding_linux_pack:
+    needs: commit_info
+    uses: ./.github/workflows/embedding_build_template.yml
+    strategy:
+      fail-fast: false
+      matrix:
+        distr: [linux]
+        arch: [x86_64]
+    name: ${{ matrix.distr }} ${{ matrix.arch }} embedding packing
+    with:
+      runner: ubuntu-22.04
+      distr: ${{ matrix.distr }}
+      arch: ${{ matrix.arch }}
+
+  embedding_windows_pack:
+    needs: commit_info
+    uses: ./.github/workflows/embedding_build_template.yml
+    strategy:
+      fail-fast: false
+      matrix:
+        distr: [windows]
+        arch: [x86_64]
+    name: ${{ matrix.distr }} ${{ matrix.arch }} embedding packing
+    with:
+      runner: windows-2022
+      distr: ${{ matrix.distr }}
+      arch: ${{ matrix.arch }}
+
   build_linux_release:
     name: Linux release build
-    needs: check_branch
+    needs: [embedding_linux_pack, check_branch]
     uses: ./.github/workflows/build_template.yml
     with:
       MANTICORE_LOCATOR: ${{ needs.check_branch.outputs.manticore_locator }}
+      embeddings_artifact: embeddings_linux_x86_64
 
   build_linux_debug:
     name: Linux debug build
-    needs: check_branch
+    needs: [embedding_linux_pack, check_branch]
     uses: ./.github/workflows/build_template.yml
     with:
       CTEST_CONFIGURATION_TYPE: "Debug"
       MANTICORE_LOCATOR: ${{ needs.check_branch.outputs.manticore_locator }}
+      embeddings_artifact: embeddings_linux_x86_64
 
   build_windows:
     name: Windows x64 build
-    needs: check_branch
+    needs: [embedding_windows_pack, check_branch]
     uses: ./.github/workflows/build_template.yml
     with:
       DISTR: windows
@@ -123,6 +154,7 @@ jobs:
       cache_key: build_windows_x64
       artifact_list: "build/columnar/Debug/lib_manticore_columnar.dll build/secondary/Debug/lib_manticore_secondary.dll build/_deps/manticore-build/src/Debug/indexer.exe build/_deps/manticore-build/src/Debug/searchd.exe" #
       MANTICORE_LOCATOR: ${{ needs.check_branch.outputs.manticore_locator }}
+      embeddings_artifact: embeddings_windows_x86_64
 
   test_linux_debug:
     name: Linux debug mode tests
@@ -176,49 +208,49 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Download test report artifact 1_54
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retries@v4
         continue-on-error: true
         with:
           name: debug_test_1_54
           path: .
       - name: Download test report artifact 55_108
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retries@v4
         continue-on-error: true
         with:
           name: debug_test_55_108
           path: .
       - name: Download test report artifact 109_162
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retries@v4
         continue-on-error: true
         with:
           name: debug_test_109_162
           path: .
       - name: Download test report artifact 163_216
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retries@v4
         continue-on-error: true
         with:
           name: debug_test_163_216
           path: .
       - name: Download test report artifact 217_270
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retries@v4
         continue-on-error: true
         with:
           name: debug_test_217_270
           path: .
       - name: Download test report artifact 271_324
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retries@v4
         continue-on-error: true
         with:
           name: debug_test_271_324
           path: .
       - name: Download test report artifact 325_378
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retries@v4
         continue-on-error: true
         with:
           name: debug_test_325_378
           path: .
       - name: Download test report artifact 379_and_on
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retries@v4
         continue-on-error: true
         with:
           name: debug_test_379_and_on
@@ -237,7 +269,7 @@ jobs:
         shell: bash
       - name: Delete unneded per-shard artifacts
         if: always()
-        uses: geekyeggo/delete-artifact@v2
+        uses: geekyeggo/delete-artifact@v5
         with:
           name: debug_test_*
           failOnError: false
@@ -301,49 +333,49 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Download test report artifact 1_54
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retries@v4
         continue-on-error: true
         with:
           name: release_test_1_54
           path: .
       - name: Download test report artifact 55_108
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retries@v4
         continue-on-error: true
         with:
           name: release_test_55_108
           path: .
       - name: Download test report artifact 109_162
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retries@v4
         continue-on-error: true
         with:
           name: release_test_109_162
           path: .
       - name: Download test report artifact 163_216
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retries@v4
         continue-on-error: true
         with:
           name: release_test_163_216
           path: .
       - name: Download test report artifact 217_270
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retries@v4
         continue-on-error: true
         with:
           name: release_test_217_270
           path: .
       - name: Download test report artifact 271_324
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retries@v4
         continue-on-error: true
         with:
           name: release_test_271_324
           path: .
       - name: Download test report artifact 325_378
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retries@v4
         continue-on-error: true
         with:
           name: release_test_325_378
           path: .
       - name: Download test report artifact 379_and_on
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retries@v4
         continue-on-error: true
         with:
           name: release_test_379_and_on
@@ -362,7 +394,7 @@ jobs:
         shell: bash
       - name: Delete unneded per-shard artifacts
         if: always()
-        uses: geekyeggo/delete-artifact@v2
+        uses: geekyeggo/delete-artifact@v5
         with:
           name: release_test_*
           failOnError: false
@@ -416,31 +448,31 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Download test report artifact 1_86
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retries@v4
         continue-on-error: true
         with:
           name: windows_test_1_86
           path: .
       - name: Download test report artifact 87_172
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retries@v4
         continue-on-error: true
         with:
           name: windows_test_87_172
           path: .
       - name: Download test report artifact 173_258
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retries@v4
         continue-on-error: true
         with:
           name: windows_test_173_258
           path: .
       - name: Download test report artifact 259_344
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retries@v4
         continue-on-error: true
         with:
           name: windows_test_259_344
           path: .
       - name: Download test report artifact 345_and_on
-        uses: manticoresoftware/download_artifact_with_retries@v3
+        uses: manticoresoftware/download_artifact_with_retries@v4
         continue-on-error: true
         with:
           name: windows_test_345_and_on
@@ -461,7 +493,7 @@ jobs:
         shell: bash
       - name: Delete unneded per-shard artifacts
         if: always()
-        uses: geekyeggo/delete-artifact@v2
+        uses: geekyeggo/delete-artifact@v5
         with:
           name: windows_test_*
           failOnError: false

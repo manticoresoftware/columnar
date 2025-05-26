@@ -417,7 +417,7 @@ bool Columnar_c::Setup ( std::string & sError )
 		return false;
 
 	m_uVersion = m_tReader.Read_uint32();
-	if ( m_uVersion > STORAGE_VERSION )
+	if ( StorageVersionWrong ( m_uVersion ) )
 	{
 		sError = FormatStr ( "Unable to load columnar storage: %s is v.%d, binary is v.%d", m_sFilename.c_str(), m_uVersion, STORAGE_VERSION );
 		return false;
