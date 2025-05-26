@@ -70,7 +70,32 @@ if(NOT DEFINED ENV{SYSROOT_URL} AND NOT DEFINED ENV{NO_BUILD})
 endif()
 
 # Set the path to look for the library
-set(EMBEDDINGS_LIB_PATH "${CMAKE_CURRENT_BINARY_DIR}/embeddings/release")
+# Set up variable to hold potential library paths
+set(EMBEDDINGS_LIB_PATHS 
+	"${CMAKE_SOURCE_DIR}/embeddings/target/debug"
+	"${CMAKE_SOURCE_DIR}/embeddings/target/release"
+	"${CMAKE_CURRENT_BINARY_DIR}/embeddings/release"
+)
+
+# Initialize the final path variable
+set(EMBEDDINGS_LIB_PATH "")
+
+# Check each path and use the first one that exists
+foreach(path ${EMBEDDINGS_LIB_PATHS})
+	if(EXISTS "${path}")
+		set(EMBEDDINGS_LIB_PATH "${path}")
+		message(STATUS "Found embeddings library path: ${EMBEDDINGS_LIB_PATH}")
+		break()
+	endif()
+endforeach()
+
+# Check if any path was found
+if(EMBEDDINGS_LIB_PATH STREQUAL "")
+	message(WARNING "No valid embeddings library path found. Tried: ${EMBEDDINGS_LIB_PATHS}")
+	# Fallback to the first path in the list
+	list(GET EMBEDDINGS_LIB_PATHS 0 EMBEDDINGS_LIB_PATH)
+	message(STATUS "Falling back to default path: ${EMBEDDINGS_LIB_PATH}")
+endif()
 
 # Construct the full library path
 set(EMBEDDINGS_LIB "${EMBEDDINGS_LIB_PATH}/${EMBEDDINGS_LIB_FILE}")
