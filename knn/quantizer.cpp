@@ -424,9 +424,9 @@ private:
 	SpanResizeable_T<float>		m_dVecMinusCentroid;
 	SpanResizeable_T<uint8_t>	m_dQuantized;
 
-	static void		Pack ( const Span_T<float> & dVector, Span_T<uint8_t> & dPacked );
-	static int		Quantize ( const Span_T<float> & dVector, float fMin, float fRange, SpanResizeable_T<uint8_t> & dQuantized );
-	FORCE_INLINE static void Transpose ( const Span_T<uint8_t> & dQuantized, size_t uDim, Span_T<uint8_t> & dTransposed );
+	static void					Pack ( const Span_T<float> & dVector, Span_T<uint8_t> & dPacked );
+	/*FORCE_INLINE*/ static int		Quantize ( const Span_T<float> & dVector, float fMin, float fRange, SpanResizeable_T<uint8_t> & dQuantized );
+	/*FORCE_INLINE*/ static void	Transpose ( const Span_T<uint8_t> & dQuantized, size_t uDim, Span_T<uint8_t> & dTransposed );
 
 	float			ComputeQuality ( int iOriginalLength, const Span_T<float> & dVecMinusCentroidNormalized, const Span_T<uint8_t> & dPacked ) const;
 	float			QuantizeVecL2 ( const Span_T<float> & dVector, const std::vector<float> & dCentroid, Span_T<uint8_t> & dResult );
@@ -505,7 +505,40 @@ int BinaryQuantizer_c::Quantize ( const Span_T<float> & dVector, float fMin, flo
 
 	float fDiv = fRange!=0.0f ? 1.0f/fRange : 0.0f;
 	int iQuantizedSum = 0;
-	for ( size_t i = 0; i < dVector.size(); i++ )
+	int64_t i = 0;
+
+#if defined(USE_AVX2)
+	__m256 iMinVec = _mm256_set1_ps(fMin);
+	__m256 iDivVec = _mm256_set1_ps(fDiv);
+	__m256i iSumVec = _mm256_setzero_si256();
+
+	size_t uLimit = dVector.size() & ~7;
+	for ( ; i < uLimit; i += 8 )
+	{
+		__m256 iVec = _mm256_loadu_ps ( &dVector[i] );
+		iVec = _mm256_sub_ps ( iVec, iMinVec );
+		iVec = _mm256_mul_ps ( iVec, iDivVec );
+		iVec = _mm256_round_ps ( iVec, _MM_FROUND_TO_NEAREST_INT );
+		iVec = _mm256_cvtps_epi32(iVec);       
+		iVec = _mm256_max_epi32 ( iVec, _mm256_setzero_si256() );
+		iVec = _mm256_min_epi32 ( iVec, _mm256_set1_epi32(15) );
+
+		iSumVec = _mm256_add_epi32 ( iSumVec, iVec );
+
+		__m128i iLow = _mm256_castsi256_si128(iVec);
+		__m128i iHigh = _mm256_extracti128_si256 ( iVec, 1 );
+		__m128i iPack16 = _mm_packs_epi32 ( iLow, iHigh );
+		__m128i iPack8 = _mm_packus_epi16 ( iPack16, iPack16 );
+		_mm_storel_epi64 ( (__m128i*)(&dQuantized[i]), iPack8 );
+	}
+
+	__m128i iSum128 = _mm_add_epi32 ( _mm256_extracti128_si256 ( iSumVec, 0 ), _mm256_extracti128_si256 ( iSumVec, 1 ) );
+	iSum128 = _mm_add_epi32 ( iSum128, _mm_srli_si128 ( iSum128, 8) );
+	iSum128 = _mm_add_epi32 ( iSum128, _mm_srli_si128 ( iSum128, 4) );
+	iQuantizedSum = _mm_extract_epi32 ( iSum128, 0 );
+#endif
+
+	for ( ; i < dVector.size(); i++ )
 	{
 		int iRes =  (int)std::lround ( ( dVector[i] - fMin )*fDiv );
 		uint8_t uRes = (uint8_t)std::clamp ( iRes, 0, 15 );
