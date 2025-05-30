@@ -728,23 +728,37 @@ static int64_t BinaryDotProduct ( const uint8_t * pVec4Bit, const uint8_t * pVec
 #if !defined(USE_SIMDE)
 
 #if defined(USE_AVX2)
-
 FORCE_INLINE int64_t PopCnt256 ( __m256i iValue )
 {
     __m128i iLo = _mm256_castsi256_si128 ( iValue );
     __m128i iHi = _mm256_extracti128_si256 ( iValue, 1 );
     
-    uint64_t iLo_Lo = _mm_cvtsi128_si64(iLo);
-    uint64_t iLo_Hi = _mm_cvtsi128_si64 ( _mm_srli_si128 ( iLo, 8 ) );
-    uint64_t iHi_Lo = _mm_cvtsi128_si64(iHi);
-    uint64_t iHi_Hi = _mm_cvtsi128_si64 ( _mm_srli_si128 ( iHi, 8 ) );
-    
+    uint64_t iLo_Lo = _mm_extract_epi64 ( iLo, 0 );
+    uint64_t iLo_Hi = _mm_extract_epi64 ( iLo, 1 );
+    uint64_t iHi_Lo = _mm_extract_epi64 ( iHi, 0 );
+    uint64_t iHi_Hi = _mm_extract_epi64 ( iHi, 1 );
+
     return _mm_popcnt_u64 ( iLo_Lo ) + 
            _mm_popcnt_u64 ( iLo_Hi ) + 
            _mm_popcnt_u64 ( iHi_Lo ) + 
            _mm_popcnt_u64 ( iHi_Hi );
 }
 #endif
+
+#define BINARYDOTPRODUCT16_STEP(SUF, OFFS) \
+    __m256i iVec1Bit##SUF = _mm256_loadu_si256((__m256i*)(pVec1Bit0 + OFFS)); \
+    __m256i iVec4Bit0##SUF = _mm256_loadu_si256((__m256i*)(pVec4Bit0 + OFFS)); \
+    __m256i iVec4Bit1##SUF = _mm256_loadu_si256((__m256i*)(pVec4Bit1 + OFFS)); \
+    __m256i iVec4Bit2##SUF = _mm256_loadu_si256((__m256i*)(pVec4Bit2 + OFFS)); \
+    __m256i iVec4Bit3##SUF = _mm256_loadu_si256((__m256i*)(pVec4Bit3 + OFFS)); \
+    __m256i iAnd0##SUF = _mm256_and_si256(iVec4Bit0##SUF, iVec1Bit##SUF); \
+    __m256i iAnd1##SUF = _mm256_and_si256(iVec4Bit1##SUF, iVec1Bit##SUF); \
+    __m256i iAnd2##SUF = _mm256_and_si256(iVec4Bit2##SUF, iVec1Bit##SUF); \
+    __m256i iAnd3##SUF = _mm256_and_si256(iVec4Bit3##SUF, iVec1Bit##SUF); \
+    iPopCnt0 += PopCnt256(iAnd0##SUF); \
+    iPopCnt1 += PopCnt256(iAnd1##SUF); \
+    iPopCnt2 += PopCnt256(iAnd2##SUF); \
+    iPopCnt3 += PopCnt256(iAnd3##SUF);
 
 template <bool RESIDUALS>
 static int64_t BinaryDotProduct16 ( const uint8_t * pVec4Bit, const uint8_t * pVec1Bit, int iBytes )
@@ -756,8 +770,8 @@ static int64_t BinaryDotProduct16 ( const uint8_t * pVec4Bit, const uint8_t * pV
 	int i = 0;
 
 #if defined(USE_AVX2)
-	size_t uLimit = iBytes & ~63;
-	for ( ; i < uLimit; i += 64 )
+	size_t uLimit128 = iBytes & ~127;
+	for ( ; i < uLimit128; i += 128 )
 	{
 		auto pVec1Bit0 = pVec1Bit + i;
 
@@ -766,49 +780,43 @@ static int64_t BinaryDotProduct16 ( const uint8_t * pVec4Bit, const uint8_t * pV
 		auto pVec4Bit2 = pVec4Bit1 + iBytes;
 		auto pVec4Bit3 = pVec4Bit2 + iBytes;
 
-		_mm_prefetch ((const char*)(pVec1Bit + 64), _MM_HINT_T0);
-		_mm_prefetch ((const char*)(pVec4Bit0 + 64), _MM_HINT_T0);
-		_mm_prefetch ((const char*)(pVec4Bit1 + 64), _MM_HINT_T0);
-		_mm_prefetch ((const char*)(pVec4Bit2 + 64), _MM_HINT_T0);
-		_mm_prefetch ((const char*)(pVec4Bit3 + 64), _MM_HINT_T0);
-
-		__m256i iVec1Bit_0 = _mm256_loadu_si256 ( (__m256i*)pVec1Bit0 );
-		__m256i iVec1Bit_1 = _mm256_loadu_si256 ( (__m256i*)(pVec1Bit0+32) );
-
-		__m256i iVec4Bit0_0 = _mm256_loadu_si256((__m256i*)pVec4Bit0);
-		__m256i iVec4Bit0_1 = _mm256_loadu_si256((__m256i*)(pVec4Bit0 + 32) );
-		__m256i iVec4Bit1_0 = _mm256_loadu_si256((__m256i*)pVec4Bit1);
-		__m256i iVec4Bit1_1 = _mm256_loadu_si256((__m256i*)(pVec4Bit1 + 32) );
-		__m256i iVec4Bit2_0 = _mm256_loadu_si256((__m256i*)pVec4Bit2);
-		__m256i iVec4Bit2_1 = _mm256_loadu_si256((__m256i*)(pVec4Bit2 + 32) );
-		__m256i iVec4Bit3_0 = _mm256_loadu_si256((__m256i*)pVec4Bit3);
-		__m256i iVec4Bit3_1 = _mm256_loadu_si256((__m256i*)(pVec4Bit3 + 32) );
-
-		__m256i iAnd0_0 = _mm256_and_si256 ( iVec4Bit0_0, iVec1Bit_0 );
-		__m256i iAnd1_0 = _mm256_and_si256 ( iVec4Bit1_0, iVec1Bit_0 );
-		__m256i iAnd2_0 = _mm256_and_si256 ( iVec4Bit2_0, iVec1Bit_0 );
-		__m256i iAnd3_0 = _mm256_and_si256 ( iVec4Bit3_0, iVec1Bit_0 );
-
-		__m256i iAnd0_1 = _mm256_and_si256 ( iVec4Bit0_1, iVec1Bit_1 );
-		__m256i iAnd1_1 = _mm256_and_si256 ( iVec4Bit1_1, iVec1Bit_1 );
-		__m256i iAnd2_1 = _mm256_and_si256 ( iVec4Bit2_1, iVec1Bit_1 );
-		__m256i iAnd3_1 = _mm256_and_si256 ( iVec4Bit3_1, iVec1Bit_1 );
-
-		iPopCnt0 += PopCnt256(iAnd0_0) + PopCnt256(iAnd0_1);
-		iPopCnt1 += PopCnt256(iAnd1_0) + PopCnt256(iAnd1_1);
-		iPopCnt2 += PopCnt256(iAnd2_0) + PopCnt256(iAnd2_1);
-		iPopCnt3 += PopCnt256(iAnd3_0) + PopCnt256(iAnd3_1);
+		BINARYDOTPRODUCT16_STEP(0, 0);
+		BINARYDOTPRODUCT16_STEP(1, 32);
+		BINARYDOTPRODUCT16_STEP(2, 64);
+		BINARYDOTPRODUCT16_STEP(3, 96);
 	}
-#else
-	size_t uLimit = iBytes & ~15;
-	for ( ; i < uLimit; i += 16 )
+
+	size_t uLimit64 = iBytes & ~63;
+	for ( ; i < uLimit64; i += 64 )
 	{
-		__m128i iVec1Bit = _mm_loadu_si128 ( (__m128i*)(pVec1Bit + i) );
-		
-		__m128i iVec4Bit0 = _mm_loadu_si128 ( (__m128i*)(pVec4Bit + i) );
-		__m128i iVec4Bit1 = _mm_loadu_si128 ( (__m128i*)(pVec4Bit + i + iBytes) );
-		__m128i iVec4Bit2 = _mm_loadu_si128 ( (__m128i*)(pVec4Bit + i + 2*iBytes) );
-		__m128i iVec4Bit3 = _mm_loadu_si128 ( (__m128i*)(pVec4Bit + i + 3*iBytes) );
+		auto pVec1Bit0 = pVec1Bit + i;
+
+		auto pVec4Bit0 = pVec4Bit + i;
+		auto pVec4Bit1 = pVec4Bit0 + iBytes;
+		auto pVec4Bit2 = pVec4Bit1 + iBytes;
+		auto pVec4Bit3 = pVec4Bit2 + iBytes;
+
+		BINARYDOTPRODUCT16_STEP(0, 0);
+		BINARYDOTPRODUCT16_STEP(1, 32);
+	}
+#endif
+
+	size_t uLimit16 = iBytes & ~15;
+	for ( ; i < uLimit16; i += 16 )
+	{
+		auto pVec1Bit0 = pVec1Bit + i;
+
+		auto pVec4Bit0 = pVec4Bit + i;
+		auto pVec4Bit1 = pVec4Bit0 + iBytes;
+		auto pVec4Bit2 = pVec4Bit1 + iBytes;
+		auto pVec4Bit3 = pVec4Bit2 + iBytes;
+
+		__m128i iVec1Bit = _mm_loadu_si128 ( (__m128i*)pVec1Bit0 );
+
+		__m128i iVec4Bit0 = _mm_loadu_si128 ( (__m128i*)pVec4Bit0 );
+		__m128i iVec4Bit1 = _mm_loadu_si128 ( (__m128i*)pVec4Bit1 );
+		__m128i iVec4Bit2 = _mm_loadu_si128 ( (__m128i*)pVec4Bit2 );
+		__m128i iVec4Bit3 = _mm_loadu_si128 ( (__m128i*)pVec4Bit3 );
 
 		__m128i iAnd0 = _mm_and_si128 ( iVec1Bit, iVec4Bit0 );
 		__m128i iAnd1 = _mm_and_si128 ( iVec1Bit, iVec4Bit1 );
@@ -829,17 +837,21 @@ static int64_t BinaryDotProduct16 ( const uint8_t * pVec4Bit, const uint8_t * pV
 		iPopCnt2 += _mm_popcnt_u64(uLow2) + _mm_popcnt_u64(uHigh2);
 		iPopCnt3 += _mm_popcnt_u64(uLow3) + _mm_popcnt_u64(uHigh3);
 	}
-#endif
 
 	if constexpr ( RESIDUALS )
 	{
 		for ( ; i < iBytes; i++ )
 		{
 			uint8_t uValue = pVec1Bit[i];
-			iPopCnt0 += _mm_popcnt_u32 ( ( uValue & pVec4Bit[i] ) & 0xFF );
-			iPopCnt1 += _mm_popcnt_u32 ( ( uValue & pVec4Bit[i + iBytes] ) & 0xFF );
-			iPopCnt2 += _mm_popcnt_u32 ( ( uValue & pVec4Bit[i + 2 * iBytes] ) & 0xFF );
-			iPopCnt3 += _mm_popcnt_u32 ( ( uValue & pVec4Bit[i + 3 * iBytes] ) & 0xFF );
+			auto pVec4Bit0 = pVec4Bit + i;
+			auto pVec4Bit1 = pVec4Bit0 + iBytes;
+			auto pVec4Bit2 = pVec4Bit1 + iBytes;
+			auto pVec4Bit3 = pVec4Bit2 + iBytes;
+
+			iPopCnt0 += _mm_popcnt_u32 ( ( uValue & *pVec4Bit0 ) & 0xFF );
+			iPopCnt1 += _mm_popcnt_u32 ( ( uValue & *pVec4Bit1 ) & 0xFF );
+			iPopCnt2 += _mm_popcnt_u32 ( ( uValue & *pVec4Bit2 ) & 0xFF );
+			iPopCnt3 += _mm_popcnt_u32 ( ( uValue & *pVec4Bit3 ) & 0xFF );
 		}
 	}
 
