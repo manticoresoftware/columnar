@@ -75,9 +75,6 @@ set(EMBEDDINGS_LIB_PATHS
 	"${CMAKE_SOURCE_DIR}/embeddings/target/debug"
 	"${CMAKE_SOURCE_DIR}/embeddings/target/release"
 	"${CMAKE_CURRENT_BINARY_DIR}/embeddings/release"
-	"${CMAKE_SOURCE_DIR}/build"
-	"${CMAKE_CURRENT_BINARY_DIR}"
-	"${CMAKE_CURRENT_SOURCE_DIR}"
 )
 
 # Initialize the final path variable
