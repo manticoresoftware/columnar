@@ -883,37 +883,29 @@ static float IPBinaryFloatDistance ( const void * __restrict pVect1, const void 
 
 	assert ( uRowID2!=(size_t)-1 );
 
-	float * pV1f = (float*)pV1;
-	float fQuantizedSum			= *pV1f++;
-	pV1f++;	// skip fDistanceToCentroidSq
-	float fMin					= *pV1f++;
-	float fRange				= *pV1f++;
-	float fVecMinusCentroidNorm	= *pV1f++;
-	float fVecDotCentroid		= *pV1f++;
+	auto tFactors4Bit = *(Binary4BitFactors_t*)pV1;
+	pV1 += sizeof(Binary4BitFactors_t);
 
-	float * pV2f = (float*)pV2;
-	float fQuality				= *pV2f++;
-	float fVec2MinusCentroidNorm= *pV2f++;
-	float fVec2DocCentroid		= *pV2f++;
-	float fPopCnt2				= *pV2f++;
-
+	auto tFactors1Bit = *(Binary1BitFactorsIP_t*)pV2;
+	pV2 += sizeof(Binary1BitFactorsIP_t);
+	
 	int iBytes = ( tBinaryParam.m_uDim+7 ) >> 3;
-	int64_t iHammingDist = DOTPRODUCT_FN ( (const uint8_t*)pV1f, (const uint8_t*)pV2f, iBytes );
+	int64_t iHammingDist = DOTPRODUCT_FN ( (const uint8_t*)pV1, (const uint8_t*)pV2, iBytes );
 
 	float fDist = 0.0f;
-	if ( fVec2MinusCentroidNorm==0.0f || fQuality==0.0f )
-		fDist = fVec2DocCentroid + fVecDotCentroid - tBinaryParam.m_fCentroidDotCentroid;
+	if ( tFactors1Bit.m_fVecMinusCentroidNorm==0.0f || tFactors1Bit.m_fQuality==0.0f )
+		fDist = tFactors1Bit.m_fVecDocCentroid + tFactors4Bit.m_fVecDotCentroid - tBinaryParam.m_fCentroidDotCentroid;
 	else
 	{
-		assert ( std::isfinite(fQuality) );
-		float fEstimatedDot = ( 2.0f*fRange/tBinaryParam.m_fSqrtDim * iHammingDist + 2.0f*fMin/tBinaryParam.m_fSqrtDim*fPopCnt2 - fRange/tBinaryParam.m_fSqrtDim*fQuantizedSum - tBinaryParam.m_fSqrtDim*fMin ) / fQuality;
-		fDist = fVecMinusCentroidNorm*fVec2MinusCentroidNorm*fEstimatedDot + fVec2DocCentroid + fVecDotCentroid - tBinaryParam.m_fCentroidDotCentroid;
+		assert ( std::isfinite ( tFactors1Bit.m_fQuality ) );
+		float fEstimatedDot = ( 2.0f*tFactors4Bit.m_fRange/tBinaryParam.m_fSqrtDim * iHammingDist + 2.0f*tFactors4Bit.m_fMin/tBinaryParam.m_fSqrtDim*tFactors1Bit.m_fPopCnt - tFactors4Bit.m_fRange/tBinaryParam.m_fSqrtDim*tFactors4Bit.m_fQuantizedSum - tBinaryParam.m_fSqrtDim*tFactors4Bit.m_fMin ) / tFactors1Bit.m_fQuality;
+		fDist = tFactors4Bit.m_fVecMinusCentroidNorm*tFactors1Bit.m_fVecMinusCentroidNorm*fEstimatedDot + tFactors1Bit.m_fVecDocCentroid + tFactors4Bit.m_fVecDotCentroid - tBinaryParam.m_fCentroidDotCentroid;
 	}
 
 	assert ( std::isfinite(fDist) );
 
-	float fQualitySqr = fQuality*fQuality;
-	float fErrorBound = fVecMinusCentroidNorm*fVec2MinusCentroidNorm*( tBinaryParam.m_fMaxError*std::sqrt ( ( 1.0f - fQualitySqr )/fQualitySqr ) );
+	float fQualitySqr = tFactors1Bit.m_fQuality*tFactors1Bit.m_fQuality;
+	float fErrorBound = tFactors4Bit.m_fVecMinusCentroidNorm*tFactors1Bit.m_fVecMinusCentroidNorm*( tBinaryParam.m_fMaxError*std::sqrt ( ( 1.0f - fQualitySqr )/fQualitySqr ) );
 	float fAdjustedDist = std::isfinite(fErrorBound) ? fDist - fErrorBound : fDist;
 	return 1.0f - std::max ( ( 1.0f + fAdjustedDist ) / 2.0f, 0.0f );
 }
@@ -942,31 +934,25 @@ static float L2BinaryFloatDistance ( const void * __restrict pVect1, const void 
 
 	assert ( uRowID2!=(size_t)-1 );
 
-	float * pV1f = (float*)pV1;
-	float fQuantizedSum			= *pV1f++;
-	float fDistanceToCentroidSq	= *pV1f++;
-	float fMin					= *pV1f++;
-	float fRange				= *pV1f++;
-	pV1f += 2;	// skip fVecMinusCentroidNorm, fVecDotCentroid
+	auto tFactors4Bit = *(Binary4BitFactors_t*)pV1;
+	pV1 += sizeof(Binary4BitFactors_t);
 
-	float * pV2f = (float*)pV2;
-	float fDistanceToCentroid2	= *pV2f++;
-	float fVectorMagnitude2		= *pV2f++;
-	float fPopCnt2				= *pV2f++;
+	auto tFactors1Bit = *(Binary1BitFactorsL2_t*)pV2;
+	pV2 += sizeof(Binary1BitFactorsL2_t);
 
-	float fDistanceToCentroid2Sqr = fDistanceToCentroid2 * fDistanceToCentroid2;
-	double fCentroidDistToMagnitude2Ratio = fDistanceToCentroid2 / fVectorMagnitude2;
+	float fDistanceToCentroid2Sqr = tFactors1Bit.m_fDistanceToCentroid * tFactors1Bit.m_fDistanceToCentroid;
+	double fCentroidDistToMagnitude2Ratio = tFactors1Bit.m_fDistanceToCentroid / tFactors1Bit.m_fVectorMagnitude;
 
-	float fPopCntCoeff = -2.0f / tBinaryParam.m_fSqrtDim * fCentroidDistToMagnitude2Ratio * (fPopCnt2 * 2.0f - tBinaryParam.m_uDim );
+	float fPopCntCoeff = -2.0f / tBinaryParam.m_fSqrtDim * fCentroidDistToMagnitude2Ratio * (tFactors1Bit.m_fPopCnt * 2.0f - tBinaryParam.m_uDim );
 	float fIPCoeff = -2.0f / tBinaryParam.m_fSqrtDim * fCentroidDistToMagnitude2Ratio;
 
 	int iBytes = ( tBinaryParam.m_uDim+7 ) >> 3;
-	int64_t iHammingDist = DOTPRODUCT_FN ( (const uint8_t*)pV1f, (const uint8_t*)pV2f, iBytes );
-	float fDist = fDistanceToCentroid2Sqr + fDistanceToCentroidSq + fPopCntCoeff * fMin + ( iHammingDist*2 - fQuantizedSum )*fIPCoeff*fRange;
+	int64_t iHammingDist = DOTPRODUCT_FN ( (const uint8_t*)pV1, (const uint8_t*)pV2, iBytes );
+	float fDist = fDistanceToCentroid2Sqr + tFactors4Bit.m_fDistanceToCentroidSq + fPopCntCoeff * tFactors4Bit.m_fMin + ( iHammingDist*2 - tFactors4Bit.m_fQuantizedSum )*fIPCoeff*tFactors4Bit.m_fRange;
 
 	float fProjectionDist = std::sqrt ( fCentroidDistToMagnitude2Ratio*fCentroidDistToMagnitude2Ratio - fDistanceToCentroid2Sqr );
 	float fError = 2.0f*tBinaryParam.m_fMaxError*fProjectionDist;
-	float fErrorBound = fError*std::sqrt(fDistanceToCentroidSq);
+	float fErrorBound = fError*std::sqrt(tFactors4Bit.m_fDistanceToCentroidSq);
 	if ( std::isfinite(fErrorBound) )
 		fDist += fErrorBound;
 

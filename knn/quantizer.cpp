@@ -410,13 +410,6 @@ public:
 	void	Quantize4Bit ( const Span_T<float> & dVector, const std::vector<float> & dCentroid, std::vector<uint8_t> & dResult );
 
 private:
-	struct IPMetrics_t
-	{
-		float m_fQuality;
-		float m_fVecMinusCentroidNorm;
-		float m_fVecDotCentroid;
-	};
-
 	size_t				m_uDimPadded = 0;
 	HNSWSimilarity_e	m_eSimilarity = HNSWSimilarity_e::COSINE;
 	float				m_fSqrtDim = 0.0f;
@@ -428,9 +421,9 @@ private:
 	FORCE_INLINE static int		Quantize ( const Span_T<float> & dVector, float fMin, float fRange, SpanResizeable_T<uint8_t> & dQuantized );
 	FORCE_INLINE static void	Transpose ( const Span_T<uint8_t> & dQuantized, size_t uDim, Span_T<uint8_t> & dTransposed );
 
-	float			ComputeQuality ( int iOriginalLength, const Span_T<float> & dVecMinusCentroidNormalized, const Span_T<uint8_t> & dPacked ) const;
-	float			QuantizeVecL2 ( const Span_T<float> & dVector, const std::vector<float> & dCentroid, Span_T<uint8_t> & dResult );
-	IPMetrics_t		QuantizeVecIP ( const Span_T<float> & dVector, const std::vector<float> & dCentroid, Span_T<uint8_t> & dResult );
+	float					ComputeQuality ( int iOriginalLength, const Span_T<float> & dVecMinusCentroidNormalized, const Span_T<uint8_t> & dPacked ) const;
+	float					QuantizeVecL2 ( const Span_T<float> & dVector, const std::vector<float> & dCentroid, Span_T<uint8_t> & dResult );
+	Binary1BitFactorsIP_t	QuantizeVecIP ( const Span_T<float> & dVector, const std::vector<float> & dCentroid, Span_T<uint8_t> & dResult );
 
 	template <typename T> FORCE_INLINE void PadToDim ( T & dVec )
 	{
@@ -586,7 +579,7 @@ float BinaryQuantizer_c::QuantizeVecL2 ( const Span_T<float> & dVector, const st
 }
 
 
-BinaryQuantizer_c::IPMetrics_t BinaryQuantizer_c::QuantizeVecIP ( const Span_T<float> & dVector, const std::vector<float> & dCentroid, Span_T<uint8_t> & dResult )
+Binary1BitFactorsIP_t BinaryQuantizer_c::QuantizeVecIP ( const Span_T<float> & dVector, const std::vector<float> & dCentroid, Span_T<uint8_t> & dResult )
 {
 	float fVecDotCentroid = 0.0f;
 	m_dVecMinusCentroid.resize ( dVector.size() );
@@ -604,35 +597,34 @@ BinaryQuantizer_c::IPMetrics_t BinaryQuantizer_c::QuantizeVecIP ( const Span_T<f
 		i /= fVecMinusCentroidNorm;
 
 	float fQuality = ComputeQuality ( dVector.size(), m_dVecMinusCentroid, dResult );
-	return { fQuality, fVecMinusCentroidNorm, fVecDotCentroid };
+	return { fQuality, fVecMinusCentroidNorm, fVecDotCentroid, (float)PopCnt(dResult) };
 }
 
 
 void BinaryQuantizer_c::Quantize1Bit ( const Span_T<float> & dVector, const std::vector<float> & dCentroid, std::vector<uint8_t> & dResult )
 {
 	size_t uDataSize = ( ( dVector.size()+7 ) >> 3 );
-	size_t uHeaderSize = m_eSimilarity==HNSWSimilarity_e::L2 ? sizeof(float)*3 : sizeof(float)*4;
+	size_t uHeaderSize = m_eSimilarity==HNSWSimilarity_e::L2 ? sizeof(Binary1BitFactorsL2_t) : sizeof(Binary1BitFactorsIP_t);
 	dResult.resize ( uHeaderSize + uDataSize );
 	Span_T<uint8_t> dData { dResult.data()+uHeaderSize, uDataSize };
-	auto pHeader = (float*)dResult.data();
 
 	std::vector<float> dCorrections;
 	switch ( m_eSimilarity )
 	{
 	case HNSWSimilarity_e::L2:
-		*pHeader++ = VecDist ( dVector, dCentroid );
-		*pHeader++ = QuantizeVecL2 ( dVector, dCentroid, dData );
-		*pHeader++ = PopCnt(dData);
+		{
+			auto & tFactors = *(Binary1BitFactorsL2_t*)(dResult.data());
+			tFactors.m_fDistanceToCentroid = VecDist ( dVector, dCentroid );
+			tFactors.m_fVectorMagnitude = QuantizeVecL2 ( dVector, dCentroid, dData );
+			tFactors.m_fPopCnt = PopCnt(dData);
+		}
 		break;
 
 	case HNSWSimilarity_e::IP:
 	case HNSWSimilarity_e::COSINE:
 		{
-			IPMetrics_t tMetrics = QuantizeVecIP ( dVector, dCentroid, dData );
-			*pHeader++ = tMetrics.m_fQuality;
-			*pHeader++ = tMetrics.m_fVecMinusCentroidNorm;
-			*pHeader++ = tMetrics.m_fVecDotCentroid;
-			*pHeader++ = PopCnt(dData);
+			auto & tFactors = *(Binary1BitFactorsIP_t*)(dResult.data());
+			tFactors = QuantizeVecIP ( dVector, dCentroid, dData );
 		}
 		break;
 
@@ -776,40 +768,34 @@ void BinaryQuantizer_c::Quantize4Bit ( const Span_T<float> & dVector, const std:
 
 	m_dVecMinusCentroid.resize ( dVector.size() );
 
-	float fDistanceToCentroidSq = 0.0f;
+	Binary4BitFactors_t tFactors = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+
 	for ( size_t i = 0; i < dVector.size(); i++ )
 	{
 		float fDiff = dVector[i] - dCentroid[i];
-		fDistanceToCentroidSq += fDiff*fDiff;
+		tFactors.m_fDistanceToCentroidSq += fDiff*fDiff;
 		m_dVecMinusCentroid[i] = fDiff;
 	}
 
-	float fVecMinusCentroidNorm = 0.0f;
-	float fVecDotCentroid = 0.0f;
 	if ( m_eSimilarity!=HNSWSimilarity_e::L2 )
 	{
-		fVecMinusCentroidNorm = VecNormalize(m_dVecMinusCentroid);
-		fVecDotCentroid = VecDot ( dVector, dCentroid );
+		tFactors.m_fVecMinusCentroidNorm = VecNormalize(m_dVecMinusCentroid);
+		tFactors.m_fVecDotCentroid = VecDot ( dVector, dCentroid );
 	}
 
-	float fMin, fMax;
-	VecMinMax ( m_dVecMinusCentroid, fMin, fMax );
-	float fRange = ( fMax - fMin ) / 15.0f;
+	float fMax;
+	VecMinMax ( m_dVecMinusCentroid, tFactors.m_fMin, fMax );
+	tFactors.m_fRange = ( fMax - tFactors.m_fMin ) / 15.0f;
 
-	int iQuantizedSum = Quantize ( m_dVecMinusCentroid, fMin, fRange, m_dQuantized );
+	tFactors.m_fQuantizedSum = (float)Quantize ( m_dVecMinusCentroid, tFactors.m_fMin, tFactors.m_fRange, m_dQuantized );
 	PadToDim(m_dQuantized);
 
 	size_t uDataSize = dVector.size() >> 1;
 	size_t uHeaderSize = sizeof(float)*6;
 	dResult.resize ( uHeaderSize + uDataSize );
 
-	auto pHeader = (float *)dResult.data();
-	*pHeader++ = iQuantizedSum;
-	*pHeader++ = fDistanceToCentroidSq;
-	*pHeader++ = fMin;
-	*pHeader++ = fRange;
-	*pHeader++ = fVecMinusCentroidNorm;
-	*pHeader++ = fVecDotCentroid;
+	auto pHeader = (Binary4BitFactors_t *)dResult.data();
+	*pHeader++ = tFactors;
 
 	Span_T<uint8_t> dTransposed ( (uint8_t*)pHeader, uDataSize );
 	Transpose ( m_dQuantized, m_uDimPadded, dTransposed );

@@ -32,6 +32,30 @@ struct QuantizationSettings_t
 	std::vector<float> m_dCentroid;
 };
 
+struct Binary4BitFactors_t
+{
+	float	m_fQuantizedSum;
+	float	m_fDistanceToCentroidSq;
+	float	m_fMin;
+	float	m_fRange;
+	float	m_fVecMinusCentroidNorm;
+	float	m_fVecDotCentroid;
+};
+
+struct Binary1BitFactorsL2_t
+{
+	float	m_fDistanceToCentroid;
+	float	m_fVectorMagnitude;
+	float	m_fPopCnt;
+};
+
+struct Binary1BitFactorsIP_t
+{
+	float	m_fQuality;
+	float	m_fVecMinusCentroidNorm;
+	float	m_fVecDocCentroid;
+	float	m_fPopCnt;
+};
 
 class ScalarQuantizer_i
 {
