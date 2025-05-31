@@ -730,35 +730,35 @@ static int64_t BinaryDotProduct ( const uint8_t * pVec4Bit, const uint8_t * pVec
 #if defined(USE_AVX2)
 FORCE_INLINE int64_t PopCnt256 ( __m256i iValue )
 {
-    __m128i iLo = _mm256_castsi256_si128 ( iValue );
-    __m128i iHi = _mm256_extracti128_si256 ( iValue, 1 );
-    
-    uint64_t iLo_Lo = _mm_extract_epi64 ( iLo, 0 );
-    uint64_t iLo_Hi = _mm_extract_epi64 ( iLo, 1 );
-    uint64_t iHi_Lo = _mm_extract_epi64 ( iHi, 0 );
-    uint64_t iHi_Hi = _mm_extract_epi64 ( iHi, 1 );
+	__m128i iLo = _mm256_castsi256_si128 ( iValue );
+	__m128i iHi = _mm256_extracti128_si256 ( iValue, 1 );
+	
+	uint64_t iLo_Lo = _mm_extract_epi64 ( iLo, 0 );
+	uint64_t iLo_Hi = _mm_extract_epi64 ( iLo, 1 );
+	uint64_t iHi_Lo = _mm_extract_epi64 ( iHi, 0 );
+	uint64_t iHi_Hi = _mm_extract_epi64 ( iHi, 1 );
 
-    return _mm_popcnt_u64 ( iLo_Lo ) + 
-           _mm_popcnt_u64 ( iLo_Hi ) + 
-           _mm_popcnt_u64 ( iHi_Lo ) + 
-           _mm_popcnt_u64 ( iHi_Hi );
+	return _mm_popcnt_u64 ( iLo_Lo ) + 
+		   _mm_popcnt_u64 ( iLo_Hi ) + 
+		   _mm_popcnt_u64 ( iHi_Lo ) + 
+		   _mm_popcnt_u64 ( iHi_Hi );
 }
 #endif
 
 #define BINARYDOTPRODUCT16_STEP(SUF, OFFS) \
-    __m256i iVec1Bit##SUF = _mm256_loadu_si256((__m256i*)(pVec1Bit0 + OFFS)); \
-    __m256i iVec4Bit0##SUF = _mm256_loadu_si256((__m256i*)(pVec4Bit0 + OFFS)); \
-    __m256i iVec4Bit1##SUF = _mm256_loadu_si256((__m256i*)(pVec4Bit1 + OFFS)); \
-    __m256i iVec4Bit2##SUF = _mm256_loadu_si256((__m256i*)(pVec4Bit2 + OFFS)); \
-    __m256i iVec4Bit3##SUF = _mm256_loadu_si256((__m256i*)(pVec4Bit3 + OFFS)); \
-    __m256i iAnd0##SUF = _mm256_and_si256(iVec4Bit0##SUF, iVec1Bit##SUF); \
-    __m256i iAnd1##SUF = _mm256_and_si256(iVec4Bit1##SUF, iVec1Bit##SUF); \
-    __m256i iAnd2##SUF = _mm256_and_si256(iVec4Bit2##SUF, iVec1Bit##SUF); \
-    __m256i iAnd3##SUF = _mm256_and_si256(iVec4Bit3##SUF, iVec1Bit##SUF); \
-    iPopCnt0 += PopCnt256(iAnd0##SUF); \
-    iPopCnt1 += PopCnt256(iAnd1##SUF); \
-    iPopCnt2 += PopCnt256(iAnd2##SUF); \
-    iPopCnt3 += PopCnt256(iAnd3##SUF);
+	__m256i iVec1Bit##SUF = _mm256_loadu_si256((__m256i*)(pVec1Bit0 + OFFS)); \
+	__m256i iVec4Bit0##SUF = _mm256_loadu_si256((__m256i*)(pVec4Bit0 + OFFS)); \
+	__m256i iVec4Bit1##SUF = _mm256_loadu_si256((__m256i*)(pVec4Bit1 + OFFS)); \
+	__m256i iVec4Bit2##SUF = _mm256_loadu_si256((__m256i*)(pVec4Bit2 + OFFS)); \
+	__m256i iVec4Bit3##SUF = _mm256_loadu_si256((__m256i*)(pVec4Bit3 + OFFS)); \
+	__m256i iAnd0##SUF = _mm256_and_si256(iVec4Bit0##SUF, iVec1Bit##SUF); \
+	__m256i iAnd1##SUF = _mm256_and_si256(iVec4Bit1##SUF, iVec1Bit##SUF); \
+	__m256i iAnd2##SUF = _mm256_and_si256(iVec4Bit2##SUF, iVec1Bit##SUF); \
+	__m256i iAnd3##SUF = _mm256_and_si256(iVec4Bit3##SUF, iVec1Bit##SUF); \
+	iPopCnt0 += PopCnt256(iAnd0##SUF); \
+	iPopCnt1 += PopCnt256(iAnd1##SUF); \
+	iPopCnt2 += PopCnt256(iAnd2##SUF); \
+	iPopCnt3 += PopCnt256(iAnd3##SUF);
 
 template <bool RESIDUALS>
 static int64_t BinaryDotProduct16 ( const uint8_t * pVec4Bit, const uint8_t * pVec1Bit, int iBytes )
@@ -898,8 +898,22 @@ static float IPBinaryFloatDistance ( const void * __restrict pVect1, const void 
 	else
 	{
 		assert ( std::isfinite ( tFactors1Bit.m_fQuality ) );
-		float fEstimatedDot = ( 2.0f*tFactors4Bit.m_fRange/tBinaryParam.m_fSqrtDim * iHammingDist + 2.0f*tFactors4Bit.m_fMin/tBinaryParam.m_fSqrtDim*tFactors1Bit.m_fPopCnt - tFactors4Bit.m_fRange/tBinaryParam.m_fSqrtDim*tFactors4Bit.m_fQuantizedSum - tBinaryParam.m_fSqrtDim*tFactors4Bit.m_fMin ) / tFactors1Bit.m_fQuality;
-		fDist = tFactors4Bit.m_fVecMinusCentroidNorm*tFactors1Bit.m_fVecMinusCentroidNorm*fEstimatedDot + tFactors1Bit.m_fVecDocCentroid + tFactors4Bit.m_fVecDotCentroid - tBinaryParam.m_fCentroidDotCentroid;
+		//float fEstimatedDot = ( 2.0f*tFactors4Bit.m_fRange/tBinaryParam.m_fSqrtDim * iHammingDist + 2.0f*tFactors4Bit.m_fMin/tBinaryParam.m_fSqrtDim*tFactors1Bit.m_fPopCnt - tFactors4Bit.m_fRange/tBinaryParam.m_fSqrtDim*tFactors4Bit.m_fQuantizedSum - tBinaryParam.m_fSqrtDim*tFactors4Bit.m_fMin ) / tFactors1Bit.m_fQuality;
+		//fDist = tFactors4Bit.m_fVecMinusCentroidNorm*tFactors1Bit.m_fVecMinusCentroidNorm*fEstimatedDot + tFactors1Bit.m_fVecDocCentroid + tFactors4Bit.m_fVecDotCentroid - tBinaryParam.m_fCentroidDotCentroid;
+		const float fA = 2.0f * tFactors4Bit.m_fRange * tBinaryParam.m_fInvSqrtDim;	// can be calculated once per query
+		const float fB = 2.0f * tFactors4Bit.m_fMin * tBinaryParam.m_fInvSqrtDim;	// can be calculated once per query
+		const float fC = tFactors4Bit.m_fRange * tBinaryParam.m_fInvSqrtDim;		// can be calculated once per query
+		const float fD = tBinaryParam.m_fSqrtDim * tFactors4Bit.m_fMin;				// can be calculated once per query
+
+		float fTmp = std::fma ( fA, (float)iHammingDist, fB * tFactors1Bit.m_fPopCnt );		// (fA * iHammingDist) + (fB * PopCnt)
+		fTmp = std::fma ( -fC, tFactors4Bit.m_fQuantizedSum, fTmp );						// fTmp - (fC * QuantizedSum)
+		fTmp = fTmp - fD;      
+		float fEstimatedDot = fTmp / tFactors1Bit.m_fQuality;
+
+		float fProd = tFactors4Bit.m_fVecMinusCentroidNorm * tFactors1Bit.m_fVecMinusCentroidNorm;
+		float fSum1 = std::fma ( fProd, fEstimatedDot, tFactors1Bit.m_fVecDocCentroid );
+		float fSum2 = std::fma ( 1.0f, tFactors4Bit.m_fVecDotCentroid, fSum1 );		// fSum1 + VecDotCentroid
+		fDist = fSum2 - tBinaryParam.m_fCentroidDotCentroid;
 	}
 
 	assert ( std::isfinite(fDist) );

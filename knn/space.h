@@ -174,12 +174,14 @@ struct DistFuncParamBinary_t
 	std::function<const uint8_t *(uint32_t)> m_fnFetcher;
 	float		m_fCentroidDotCentroid = 0.0f;
 	float		m_fSqrtDim = 0.0f;
+	float		m_fInvSqrtDim = 0.0f;
 	float		m_fMaxError = 0.0f;
 
 	DistFuncParamBinary_t ( size_t uDim )
 	{
 		m_uDim = uDim;
 		m_fSqrtDim = sqrt(uDim);
+		m_fInvSqrtDim = 1.0f / m_fSqrtDim;
 		float fDiscretizedDimensions = discretize ( m_uDim, 64 );
 		m_fMaxError = (float) ( 1.9f / sqrt(fDiscretizedDimensions - 1.0) );
 	}
