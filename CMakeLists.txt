@@ -242,62 +242,32 @@ if (INSTALL_KNN)
 		"${CMAKE_BINARY_DIR}/${EMBEDDINGS_LIB_NAME}"
 		"${CMAKE_BINARY_DIR}/embeddings/${EMBEDDINGS_LIB_NAME}"
 		"${CMAKE_SOURCE_DIR}/embeddings/target/release/${EMBEDDINGS_LIB_NAME}"
+		"${CMAKE_SOURCE_DIR}/build/${EMBEDDINGS_LIB_NAME}"
+		"${CMAKE_CURRENT_BINARY_DIR}/${EMBEDDINGS_LIB_NAME}"
+		"${CMAKE_CURRENT_SOURCE_DIR}/${EMBEDDINGS_LIB_NAME}"
 	)
 
 	foreach(SEARCH_PATH ${EMBEDDINGS_SEARCH_PATHS})
 		if(EXISTS ${SEARCH_PATH})
-			# Add build-id to the embeddings library for Linux systems
+			# For Linux systems, just ensure the library has proper permissions
 			if(UNIX AND NOT APPLE)
+				message(STATUS "Preparing embeddings library for Linux packaging")
+				
+				# Copy to a known location in build directory for consistent packaging
 				set(PROCESSED_LIB_PATH "${CMAKE_BINARY_DIR}/${EMBEDDINGS_LIB_NAME}")
-
-				# Make a copy of the original file
 				file(COPY ${SEARCH_PATH} DESTINATION ${CMAKE_BINARY_DIR})
-
-				# Use strip to ensure build ID is properly set
+				
+				# Ensure proper permissions
 				execute_process(
-					COMMAND strip --strip-unneeded -o ${PROCESSED_LIB_PATH} ${SEARCH_PATH}
-					RESULT_VARIABLE STRIP_RESULT
-					OUTPUT_VARIABLE STRIP_OUTPUT
-					ERROR_VARIABLE STRIP_ERROR
+					COMMAND chmod 644 ${PROCESSED_LIB_PATH}
+					RESULT_VARIABLE CHMOD_RESULT
 				)
-
-				if(STRIP_RESULT EQUAL 0)
-					message(STATUS "Successfully processed embeddings library for build ID")
-
-					# Verify the file still exists and use it for installation
-					if(EXISTS ${PROCESSED_LIB_PATH})
-						set(SEARCH_PATH ${PROCESSED_LIB_PATH})
-						message(STATUS "Using processed embeddings library for installation")
-					else()
-						message(WARNING "Processed file not found, using original library")
-					endif()
+				
+				if(CHMOD_RESULT EQUAL 0)
+					message(STATUS "Set proper permissions on embeddings library")
+					set(SEARCH_PATH ${PROCESSED_LIB_PATH})
 				else()
-					message(WARNING "Failed to process embeddings library: ${STRIP_ERROR}")
-				endif()
-
-				# If strip failed, try another approach with patchelf
-				if(NOT STRIP_RESULT EQUAL 0)
-					execute_process(
-						COMMAND apt-get update && apt-get install -y patchelf
-						RESULT_VARIABLE INSTALL_RESULT
-						OUTPUT_QUIET
-						ERROR_QUIET
-					)
-
-					if(INSTALL_RESULT EQUAL 0)
-						execute_process(
-							COMMAND patchelf --set-soname libmanticore_knn_embeddings.so ${SEARCH_PATH}
-							RESULT_VARIABLE PATCHELF_RESULT
-							OUTPUT_VARIABLE PATCHELF_OUTPUT
-							ERROR_VARIABLE PATCHELF_ERROR
-						)
-
-						if(PATCHELF_RESULT EQUAL 0)
-							message(STATUS "Successfully set soname with patchelf")
-						else()
-							message(WARNING "Failed to set soname with patchelf: ${PATCHELF_ERROR}")
-						endif()
-					endif()
+					message(WARNING "Failed to set permissions, using original file")
 				endif()
 			endif()
 
