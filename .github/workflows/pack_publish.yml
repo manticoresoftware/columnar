@@ -141,7 +141,7 @@ jobs:
         arch: [x86_64, aarch64]
     name: ${{ matrix.distr }} ${{ matrix.arch }} embedding packing
     with:
-      runner: ubuntu-22.04
+      runner: ubuntu-24.04
       distr: ${{ matrix.distr }}
       arch: ${{ matrix.arch }}
 

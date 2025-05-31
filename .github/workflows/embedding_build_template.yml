@@ -6,7 +6,7 @@ on:
       runner:
         required: false
         type: string
-        default: "ubuntu-22.04"
+        default: "ubuntu-24.04"
       distr:
         required: true
         type: string
@@ -64,6 +64,15 @@ jobs:
           toolchain: stable
           target: ${{ steps.vars.outputs.target }}
           override: true
+      
+      - name: Login to GitHub Container Registry
+        if: ${{ inputs.distr == 'linux' }}
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.GHCR_USER }}
+          password: ${{ secrets.GHCR_PASSWORD }}
+
       - name: Prepare build args
         id: params
         run: |
@@ -79,25 +88,22 @@ jobs:
 
       - name: Build for Linux
         if: ${{ inputs.distr == 'linux' }}
-        env:
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: ${{ inputs.arch == 'aarch64' && 'aarch64-linux-gnu-gcc' || ''}}
-          CC_aarch64_unknown_linux_gnu: ${{ inputs.arch == 'aarch64' && 'aarch64-linux-gnu-gcc' || ''}}
-          CXX_aarch64_unknown_linux_gnu: ${{ inputs.arch == 'aarch64' && 'aarch64-linux-gnu-g++' || ''}}
-
         run: |
+          # Set Docker image based on architecture
           if [[ "${{ inputs.arch }}" == "aarch64" ]]; then
-            extra="apt-get install -y binutils-aarch64-linux-gnu g++-aarch64-linux-gnu gcc-aarch64-linux-gnu && rustup target add aarch64-unknown-linux-gnu && "
+            docker_image="ghcr.io/manticoresoftware/rust-min-libc:aarch64-rust1.86.0-glibc2.28-openssl1.1.1w"
+            extra=""
+          else
+            docker_image="ghcr.io/manticoresoftware/rust-min-libc:amd64-rust1.86.0-glibc2.17-openssl1.0.1u"
+            extra=""
           fi
 
           docker run --rm  \
-            -e CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER \
-            -e CC_aarch64_unknown_linux_gnu \
-            -e CXX_aarch64_unknown_linux_gnu \
             -v $(pwd):/src \
             -w /src \
             -u root \
             --entrypoint bash \
-            unixgeek2/rust-min-libc:2025-01-17 \
+            "${docker_image}" \
             -c "apt-get update -y && apt-get install -y gcc g++ && ${extra} cargo build ${{ steps.params.outputs.args }}"
           sudo chown -hR $(id -u):$(id -g) ${{ steps.vars.outputs.lib_dir }}
 
