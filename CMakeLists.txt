@@ -246,14 +246,6 @@ if (INSTALL_KNN)
 
 	foreach(SEARCH_PATH ${EMBEDDINGS_SEARCH_PATHS})
 		if(EXISTS ${SEARCH_PATH})
-			# Check if we're building for ARM64/aarch64
-			string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" SYSTEM_PROCESSOR_LOWER)
-			set(IS_ARM64 FALSE)
-			if(SYSTEM_PROCESSOR_LOWER STREQUAL "aarch64" OR SYSTEM_PROCESSOR_LOWER STREQUAL "arm64")
-				set(IS_ARM64 TRUE)
-				message(STATUS "ARM64 detected - using alternative installation method")
-			endif()
-
 			# Add build-id to the embeddings library for Linux systems
 			if(UNIX AND NOT APPLE)
 				set(PROCESSED_LIB_PATH "${CMAKE_BINARY_DIR}/${EMBEDDINGS_LIB_NAME}")
@@ -261,102 +253,51 @@ if (INSTALL_KNN)
 				# Make a copy of the original file
 				file(COPY ${SEARCH_PATH} DESTINATION ${CMAKE_BINARY_DIR})
 
-				if(IS_ARM64)
-					message(STATUS "ARM64 embeddings library will be installed via file copy")
-					
-					# Create fake objdump script for ARM64 to bypass Build ID detection
-					set(FAKE_OBJDUMP_SCRIPT "${CMAKE_BINARY_DIR}/fake_objdump.sh")
-					file(WRITE "${FAKE_OBJDUMP_SCRIPT}"
-						"#!/bin/bash\n"
-						"# Fake objdump script for ARM64 builds to bypass Build ID issues\n"
-						"if [[ \"$1\" == \"-p\" ]]; then\n"
-						"  echo \"fake build-id output\"\n"
-						"  exit 0\n"
-						"fi\n"
-						"# For other objdump calls, try to use real objdump if available\n"
-						"if command -v objdump >/dev/null 2>&1; then\n"
-						"  exec objdump \"$@\"\n"
-						"else\n"
-						"  echo \"objdump not available\"\n"
-						"  exit 0\n"
-						"fi\n"
-					)
-					execute_process(COMMAND chmod +x "${FAKE_OBJDUMP_SCRIPT}")
-					message(STATUS "Set fake objdump for ARM64 build: ${FAKE_OBJDUMP_SCRIPT}")
+				# Use strip to ensure build ID is properly set
+				execute_process(
+					COMMAND strip --strip-unneeded -o ${PROCESSED_LIB_PATH} ${SEARCH_PATH}
+					RESULT_VARIABLE STRIP_RESULT
+					OUTPUT_VARIABLE STRIP_OUTPUT
+					ERROR_VARIABLE STRIP_ERROR
+				)
 
-					# Use objcopy to strip build ID from the library for ARM64
-					execute_process(
-						COMMAND objcopy --remove-section=.note.gnu.build-id ${PROCESSED_LIB_PATH} ${PROCESSED_LIB_PATH}.tmp
-						RESULT_VARIABLE OBJCOPY_RESULT
-						OUTPUT_VARIABLE OBJCOPY_OUTPUT
-						ERROR_VARIABLE OBJCOPY_ERROR
-					)
+				if(STRIP_RESULT EQUAL 0)
+					message(STATUS "Successfully processed embeddings library for build ID")
 
-					if(OBJCOPY_RESULT EQUAL 0)
-						file(RENAME ${PROCESSED_LIB_PATH}.tmp ${PROCESSED_LIB_PATH})
-						message(STATUS "Successfully removed build ID section for ARM64")
+					# Verify the file still exists and use it for installation
+					if(EXISTS ${PROCESSED_LIB_PATH})
+						set(SEARCH_PATH ${PROCESSED_LIB_PATH})
+						message(STATUS "Using processed embeddings library for installation")
 					else()
-						message(WARNING "Failed to remove build ID section: ${OBJCOPY_ERROR}")
-						# If objcopy fails, just use the original file copy
-						if(EXISTS ${PROCESSED_LIB_PATH}.tmp)
-							file(REMOVE ${PROCESSED_LIB_PATH}.tmp)
-						endif()
+						message(WARNING "Processed file not found, using original library")
 					endif()
-
-					# Set environment variable for fake objdump if needed by cpack
-					set(ENV{PATH} "${CMAKE_BINARY_DIR}:$ENV{PATH}")
 				else()
-					# Use strip to ensure build ID is properly set for non-ARM64
-					execute_process(
-						COMMAND strip --strip-unneeded -o ${PROCESSED_LIB_PATH} ${SEARCH_PATH}
-						RESULT_VARIABLE STRIP_RESULT
-						OUTPUT_VARIABLE STRIP_OUTPUT
-						ERROR_VARIABLE STRIP_ERROR
-					)
-
-					if(STRIP_RESULT EQUAL 0)
-						message(STATUS "Successfully processed embeddings library for build ID")
-
-						# Verify the file still exists and use it for installation
-						if(EXISTS ${PROCESSED_LIB_PATH})
-							set(SEARCH_PATH ${PROCESSED_LIB_PATH})
-							message(STATUS "Using processed embeddings library for installation")
-						else()
-							message(WARNING "Processed file not found, using original library")
-						endif()
-					else()
-						message(WARNING "Failed to process embeddings library: ${STRIP_ERROR}")
-					endif()
-
-					# If strip failed, try another approach with patchelf
-					if(NOT STRIP_RESULT EQUAL 0)
-						execute_process(
-							COMMAND apt-get update && apt-get install -y patchelf
-							RESULT_VARIABLE INSTALL_RESULT
-							OUTPUT_QUIET
-							ERROR_QUIET
-						)
-
-						if(INSTALL_RESULT EQUAL 0)
-							execute_process(
-								COMMAND patchelf --set-soname libmanticore_knn_embeddings.so ${SEARCH_PATH}
-								RESULT_VARIABLE PATCHELF_RESULT
-								OUTPUT_VARIABLE PATCHELF_OUTPUT
-								ERROR_VARIABLE PATCHELF_ERROR
-							)
-
-							if(PATCHELF_RESULT EQUAL 0)
-								message(STATUS "Successfully set soname with patchelf")
-							else()
-								message(WARNING "Failed to set soname with patchelf: ${PATCHELF_ERROR}")
-							endif()
-						endif()
-					endif()
+					message(WARNING "Failed to process embeddings library: ${STRIP_ERROR}")
 				endif()
 
-				# Use the processed library path for installation
-				if(EXISTS ${PROCESSED_LIB_PATH})
-					set(SEARCH_PATH ${PROCESSED_LIB_PATH})
+				# If strip failed, try another approach with patchelf
+				if(NOT STRIP_RESULT EQUAL 0)
+					execute_process(
+						COMMAND apt-get update && apt-get install -y patchelf
+						RESULT_VARIABLE INSTALL_RESULT
+						OUTPUT_QUIET
+						ERROR_QUIET
+					)
+
+					if(INSTALL_RESULT EQUAL 0)
+						execute_process(
+							COMMAND patchelf --set-soname libmanticore_knn_embeddings.so ${SEARCH_PATH}
+							RESULT_VARIABLE PATCHELF_RESULT
+							OUTPUT_VARIABLE PATCHELF_OUTPUT
+							ERROR_VARIABLE PATCHELF_ERROR
+						)
+
+						if(PATCHELF_RESULT EQUAL 0)
+							message(STATUS "Successfully set soname with patchelf")
+						else()
+							message(WARNING "Failed to set soname with patchelf: ${PATCHELF_ERROR}")
+						endif()
+					endif()
 				endif()
 			endif()
 
