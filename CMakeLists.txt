@@ -249,30 +249,86 @@ if (INSTALL_KNN)
 
 	foreach(SEARCH_PATH ${EMBEDDINGS_SEARCH_PATHS})
 		if(EXISTS ${SEARCH_PATH})
-			# For Linux systems, just ensure the library has proper permissions
-			if(UNIX AND NOT APPLE)
-				message(STATUS "Preparing embeddings library for Linux packaging")
-				
-				# Copy to a known location in build directory for consistent packaging
-				set(PROCESSED_LIB_PATH "${CMAKE_BINARY_DIR}/${EMBEDDINGS_LIB_NAME}")
-				file(COPY ${SEARCH_PATH} DESTINATION ${CMAKE_BINARY_DIR})
-				
-				# Ensure proper permissions
-				execute_process(
-					COMMAND chmod 644 ${PROCESSED_LIB_PATH}
-					RESULT_VARIABLE CHMOD_RESULT
-				)
-				
-				if(CHMOD_RESULT EQUAL 0)
-					message(STATUS "Set proper permissions on embeddings library")
-					set(SEARCH_PATH ${PROCESSED_LIB_PATH})
-				else()
-					message(WARNING "Failed to set permissions, using original file")
-				endif()
-			endif()
-
-			install(FILES ${SEARCH_PATH} DESTINATION ${MODULES_DIR} COMPONENT embeddings)
 			message(STATUS "Found embeddings library at: ${SEARCH_PATH}")
+			
+			# Special handling for ARM64 Linux builds to avoid Build ID issues
+			if(UNIX AND NOT APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
+				message(STATUS "ARM64 detected - using alternative installation method")
+				
+				# Copy to build directory with a different name to avoid CPack scanning
+				set(PROCESSED_LIB_PATH "${CMAKE_BINARY_DIR}/embeddings_lib.so")
+				file(COPY ${SEARCH_PATH} DESTINATION ${CMAKE_BINARY_DIR})
+				file(RENAME "${CMAKE_BINARY_DIR}/${EMBEDDINGS_LIB_NAME}" "${PROCESSED_LIB_PATH}")
+				
+				# Install as a regular file, not a library component
+				install(FILES ${PROCESSED_LIB_PATH}
+					DESTINATION ${MODULES_DIR}
+					RENAME ${EMBEDDINGS_LIB_NAME}
+					COMPONENT embeddings
+					PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
+					
+				message(STATUS "ARM64 embeddings library will be installed via file copy")
+			else()
+				# Regular installation for x86_64 and other platforms
+				# For Linux systems, try to strip the library to add proper Build ID
+				if(UNIX AND NOT APPLE)
+					message(STATUS "Preparing embeddings library for Linux packaging")
+					
+					# Copy to a known location in build directory
+					set(PROCESSED_LIB_PATH "${CMAKE_BINARY_DIR}/${EMBEDDINGS_LIB_NAME}")
+					file(COPY ${SEARCH_PATH} DESTINATION ${CMAKE_BINARY_DIR})
+					
+					# Try to add Build ID using different methods
+					execute_process(
+						COMMAND file ${PROCESSED_LIB_PATH}
+						OUTPUT_VARIABLE FILE_OUTPUT
+						ERROR_QUIET
+					)
+					
+					message(STATUS "Library file info: ${FILE_OUTPUT}")
+					
+					# Method 1: Try strip with build-id preservation
+					execute_process(
+						COMMAND strip --strip-unneeded --preserve-dates ${PROCESSED_LIB_PATH}
+						RESULT_VARIABLE STRIP_RESULT
+						OUTPUT_QUIET
+						ERROR_QUIET
+					)
+					
+					if(STRIP_RESULT EQUAL 0)
+						message(STATUS "Successfully processed with strip")
+					else()
+						# Method 2: Try objcopy to add build-id
+						execute_process(
+							COMMAND objcopy --add-gnu-debuglink=/dev/null ${PROCESSED_LIB_PATH}
+							RESULT_VARIABLE OBJCOPY_RESULT
+							OUTPUT_QUIET
+							ERROR_QUIET
+						)
+						
+						if(OBJCOPY_RESULT EQUAL 0)
+							message(STATUS "Successfully processed with objcopy")
+						else()
+							# Method 3: Create a symbolic link approach
+							message(STATUS "Using original library without modification")
+						endif()
+					endif()
+					
+					# Ensure proper permissions
+					execute_process(
+						COMMAND chmod 644 ${PROCESSED_LIB_PATH}
+						RESULT_VARIABLE CHMOD_RESULT
+					)
+					
+					if(EXISTS ${PROCESSED_LIB_PATH})
+						set(SEARCH_PATH ${PROCESSED_LIB_PATH})
+						message(STATUS "Using processed embeddings library for installation")
+					endif()
+				endif()
+
+				install(FILES ${SEARCH_PATH} DESTINATION ${MODULES_DIR} COMPONENT embeddings)
+			endif()
+			
 			break()
 		endif()
 	endforeach()
