@@ -3,20 +3,12 @@ name: Embeddings Build Template
 on:
   workflow_call:
     inputs:
-      runner:
-        required: false
-        type: string
-        default: "ubuntu-24.04"
       distr:
         required: true
         type: string
       arch:
         required: true
         type: string
-      artifact_list:
-        required: false
-        type: string
-        default: "target/release/lib*.so"
       setup:
         required: false
         type: string
@@ -24,7 +16,12 @@ on:
 
 jobs:
   build:
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ 
+      (inputs.distr == 'linux' && inputs.arch == 'aarch64' && 'ubuntu-24.04-arm') ||
+      (inputs.distr == 'linux' && 'ubuntu-24.04') ||
+      (inputs.distr == 'macos' && 'macos-14') ||
+      (inputs.distr == 'windows' && 'windows-2022') ||
+      'ubuntu-24.04' }}
     defaults:
       run:
         shell: bash
@@ -64,6 +61,14 @@ jobs:
           toolchain: stable
           target: ${{ steps.vars.outputs.target }}
           override: true
+
+      - name: Login to GitHub Container Registry
+        if: ${{ inputs.distr == 'linux' }}
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.GHCR_USER }}
+          password: ${{ secrets.GHCR_PASSWORD }}
 
       - name: Prepare build args
         id: params

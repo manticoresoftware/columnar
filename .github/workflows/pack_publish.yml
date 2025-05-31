@@ -117,65 +117,36 @@ jobs:
             echo "manticore_locator=" >> $GITHUB_OUTPUT
           fi
 
-  embedding_osx_pack:
+  embedding_builds:
     needs: pack
     uses: ./.github/workflows/embedding_build_template.yml
     strategy:
       fail-fast: false
       matrix:
-        distr: [macos]
-        arch: [x86_64, aarch64]
+        include:
+          # Linux builds
+          - distr: linux
+            arch: x86_64
+          - distr: linux
+            arch: aarch64
+          # macOS builds  
+          - distr: macos
+            arch: x86_64
+          - distr: macos
+            arch: aarch64
+          # Windows builds
+          - distr: windows
+            arch: x86_64
+          - distr: windows
+            arch: aarch64
     name: ${{ matrix.distr }} ${{ matrix.arch }} embedding packing
     with:
-      runner: macos-14
-      distr: ${{ matrix.distr }}
-      arch: ${{ matrix.arch }}
-
-  embedding_linux_amd_pack:
-    needs: pack
-    uses: ./.github/workflows/embedding_build_template.yml
-    strategy:
-      fail-fast: false
-      matrix:
-        distr: [linux]
-        arch: [x86_64]
-    name: ${{ matrix.distr }} ${{ matrix.arch }} embedding packing
-    with:
-      runner: ubuntu-24.04
-      distr: ${{ matrix.distr }}
-      arch: ${{ matrix.arch }}
-
-  embedding_linux_arm_pack:
-    needs: pack
-    uses: ./.github/workflows/embedding_build_template.yml
-    strategy:
-      fail-fast: false
-      matrix:
-        distr: [linux]
-        arch: [aarch64]
-    name: ${{ matrix.distr }} ${{ matrix.arch }} embedding packing
-    with:
-      runner: ubuntu-24.04-arm
-      distr: ${{ matrix.distr }}
-      arch: ${{ matrix.arch }}
-
-  embedding_windows_pack:
-    needs: pack
-    uses: ./.github/workflows/embedding_build_template.yml
-    strategy:
-      fail-fast: false
-      matrix:
-        distr: [windows]
-        arch: [x86_64, aarch64]
-    name: ${{ matrix.distr }} ${{ matrix.arch }} embedding packing
-    with:
-      runner: windows-2022
       distr: ${{ matrix.distr }}
       arch: ${{ matrix.arch }}
 
   pack_debian_ubuntu:
     uses: ./.github/workflows/build_template.yml
-    needs: [embedding_linux_amd_pack, embedding_linux_arm_pack, check_branch, pack]
+    needs: [embedding_builds, check_branch, pack]
     if: needs.pack.outputs.should_continue == 'true'
     strategy:
       fail-fast: false
@@ -200,7 +171,7 @@ jobs:
 
   pack_rhel:
     uses: ./.github/workflows/build_template.yml
-    needs: [embedding_linux_amd_pack, embedding_linux_arm_pack, check_branch, pack]
+    needs: [embedding_builds, check_branch, pack]
     if: needs.pack.outputs.should_continue == 'true'
     strategy:
       fail-fast: false
@@ -230,7 +201,7 @@ jobs:
       
   pack_macos:
     uses: ./.github/workflows/build_template.yml
-    needs: [embedding_osx_pack, check_branch, pack]
+    needs: [embedding_builds, check_branch, pack]
     if: needs.pack.outputs.should_continue == 'true'
     strategy:
       fail-fast: false
@@ -257,7 +228,7 @@ jobs:
   pack_windows:
     name: Windows x64 package
     uses: ./.github/workflows/build_template.yml
-    needs: [embedding_windows_pack, check_branch, pack]
+    needs: [embedding_builds, check_branch, pack]
     if: needs.pack.outputs.should_continue == 'true'
     with:
       MANTICORE_LOCATOR: ${{ needs.check_branch.outputs.manticore_locator }}
