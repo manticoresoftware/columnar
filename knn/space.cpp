@@ -900,10 +900,12 @@ static float IPBinaryFloatDistance ( const void * __restrict pVect1, const void 
 		assert ( std::isfinite ( tFactors1Bit.m_fQuality ) );
 		//float fEstimatedDot = ( 2.0f*tFactors4Bit.m_fRange/tBinaryParam.m_fSqrtDim * iHammingDist + 2.0f*tFactors4Bit.m_fMin/tBinaryParam.m_fSqrtDim*tFactors1Bit.m_fPopCnt - tFactors4Bit.m_fRange/tBinaryParam.m_fSqrtDim*tFactors4Bit.m_fQuantizedSum - tBinaryParam.m_fSqrtDim*tFactors4Bit.m_fMin ) / tFactors1Bit.m_fQuality;
 		//fDist = tFactors4Bit.m_fVecMinusCentroidNorm*tFactors1Bit.m_fVecMinusCentroidNorm*fEstimatedDot + tFactors1Bit.m_fVecDocCentroid + tFactors4Bit.m_fVecDotCentroid - tBinaryParam.m_fCentroidDotCentroid;
-		const float fA = 2.0f * tFactors4Bit.m_fRange * tBinaryParam.m_fInvSqrtDim;	// can be calculated once per query
-		const float fB = 2.0f * tFactors4Bit.m_fMin * tBinaryParam.m_fInvSqrtDim;	// can be calculated once per query
-		const float fC = tFactors4Bit.m_fRange * tBinaryParam.m_fInvSqrtDim;		// can be calculated once per query
-		const float fD = tBinaryParam.m_fSqrtDim * tFactors4Bit.m_fMin;				// can be calculated once per query
+
+		// FIXME! these can be calculated once per query
+		const float fA = tFactors4Bit.m_fRange	* tBinaryParam.m_fDoubleInvSqrtDim;	
+		const float fB = tFactors4Bit.m_fMin	* tBinaryParam.m_fDoubleInvSqrtDim;
+		const float fC = tFactors4Bit.m_fRange	* tBinaryParam.m_fInvSqrtDim;
+		const float fD = tFactors4Bit.m_fMin	* tBinaryParam.m_fSqrtDim;
 
 		float fTmp = std::fma ( fA, (float)iHammingDist, fB * tFactors1Bit.m_fPopCnt );		// (fA * iHammingDist) + (fB * PopCnt)
 		fTmp = std::fma ( -fC, tFactors4Bit.m_fQuantizedSum, fTmp );						// fTmp - (fC * QuantizedSum)
@@ -955,14 +957,23 @@ static float L2BinaryFloatDistance ( const void * __restrict pVect1, const void 
 	pV2 += sizeof(Binary1BitFactorsL2_t);
 
 	float fDistanceToCentroid2Sqr = tFactors1Bit.m_fDistanceToCentroid * tFactors1Bit.m_fDistanceToCentroid;
-	double fCentroidDistToMagnitude2Ratio = tFactors1Bit.m_fDistanceToCentroid / tFactors1Bit.m_fVectorMagnitude;
-
-	float fPopCntCoeff = -2.0f / tBinaryParam.m_fSqrtDim * fCentroidDistToMagnitude2Ratio * (tFactors1Bit.m_fPopCnt * 2.0f - tBinaryParam.m_uDim );
-	float fIPCoeff = -2.0f / tBinaryParam.m_fSqrtDim * fCentroidDistToMagnitude2Ratio;
+	float fCentroidDistToMagnitude2Ratio = tFactors1Bit.m_fDistanceToCentroid / tFactors1Bit.m_fVectorMagnitude;
+	float fIPCoeff = -tBinaryParam.m_fDoubleInvSqrtDim * fCentroidDistToMagnitude2Ratio;
+	float fPopCntCoeff = std::fma ( 2.0f, tFactors1Bit.m_fPopCnt, -float(tBinaryParam.m_uDim) ); // 2*fPopCnt - uDim
+	fPopCntCoeff = fIPCoeff * fPopCntCoeff;
 
 	int iBytes = ( tBinaryParam.m_uDim+7 ) >> 3;
 	int64_t iHammingDist = DOTPRODUCT_FN ( (const uint8_t*)pV1, (const uint8_t*)pV2, iBytes );
-	float fDist = fDistanceToCentroid2Sqr + tFactors4Bit.m_fDistanceToCentroidSq + fPopCntCoeff * tFactors4Bit.m_fMin + ( iHammingDist*2 - tFactors4Bit.m_fQuantizedSum )*fIPCoeff*tFactors4Bit.m_fRange;
+
+	//float fDist = fDistanceToCentroid2Sqr + tFactors4Bit.m_fDistanceToCentroidSq + fPopCntCoeff * tFactors4Bit.m_fMin + ( iHammingDist*2 - tFactors4Bit.m_fQuantizedSum )*fIPCoeff*tFactors4Bit.m_fRange;
+
+	float fDoubleHammingMinusQuant = std::fma ( 2.0f, float(iHammingDist), -tFactors4Bit.m_fQuantizedSum );
+	float fFmaTerm = std::fma ( fIPCoeff * tFactors4Bit.m_fRange, fDoubleHammingMinusQuant, 0.0f ); // (iHammingDist*2 - tFactors4Bit.m_fQuantizedSum)*fIPCoeff*tFactors4Bit.m_fRange
+
+	float fDist = fDistanceToCentroid2Sqr;
+	fDist = std::fma ( 1.0f, tFactors4Bit.m_fDistanceToCentroidSq, fDist );	// + DistanceToCentroidSq
+	fDist = std::fma ( fPopCntCoeff, tFactors4Bit.m_fMin, fDist );			// + fPopCntCoeff * fMin
+	fDist = std::fma ( 1.0f, fFmaTerm, fDist );								// + main term
 
 	float fProjectionDist = std::sqrt ( fCentroidDistToMagnitude2Ratio*fCentroidDistToMagnitude2Ratio - fDistanceToCentroid2Sqr );
 	float fError = 2.0f*tBinaryParam.m_fMaxError*fProjectionDist;

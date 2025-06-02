@@ -175,6 +175,7 @@ struct DistFuncParamBinary_t
 	float		m_fCentroidDotCentroid = 0.0f;
 	float		m_fSqrtDim = 0.0f;
 	float		m_fInvSqrtDim = 0.0f;
+	float		m_fDoubleInvSqrtDim = 0.0f;
 	float		m_fMaxError = 0.0f;
 
 	DistFuncParamBinary_t ( size_t uDim )
@@ -182,14 +183,16 @@ struct DistFuncParamBinary_t
 		m_uDim = uDim;
 		m_fSqrtDim = sqrt(uDim);
 		m_fInvSqrtDim = 1.0f / m_fSqrtDim;
-		float fDiscretizedDimensions = discretize ( m_uDim, 64 );
-		m_fMaxError = (float) ( 1.9f / sqrt(fDiscretizedDimensions - 1.0) );
+		m_fDoubleInvSqrtDim = 2.0f * m_fInvSqrtDim;
+
+		int iDimPadded = CalcPadding ( m_uDim, 64 );
+		m_fMaxError = (float) ( 1.9f / sqrt ( float(iDimPadded) - 1.0f ) );
 	}
 
-	int discretize(int value, int bucket)
+	static int CalcPadding ( int iValue, int iPad )
 	{
-        return ((value + (bucket - 1)) / bucket) * bucket;
-    }
+		return ( ( iValue + iPad - 1 ) / iPad ) * iPad;
+	}
 };
 
 
