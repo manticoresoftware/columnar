@@ -80,10 +80,10 @@ jobs:
         run: |
           # Set Docker image based on architecture
           if [[ "${{ inputs.arch }}" == "aarch64" ]]; then
-            docker_image="ghcr.io/manticoresoftware/rust-min-libc:aarch64-rust1.86.0-glibc2.28-openssl1.1.1w"
+            docker_image="ghcr.io/manticoresoftware/rust-min-libc:aarch64-rust1.86.0-glibc2.28-openssl1.1.1k"
             extra=""
           else
-            docker_image="ghcr.io/manticoresoftware/rust-min-libc:amd64-rust1.86.0-glibc2.17-openssl1.0.1u"
+            docker_image="ghcr.io/manticoresoftware/rust-min-libc:amd64-rust1.86.0-glibc2.28-openssl1.1.1k"
             extra=""
           fi
 
