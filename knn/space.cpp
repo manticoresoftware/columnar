@@ -981,7 +981,7 @@ static float L2BinaryFloatDistance ( const void * __restrict pVect1, const void 
 	if ( std::isfinite(fErrorBound) )
 		fDist += fErrorBound;
 
-	return 1.0f - std::max ( 1.0f / ( 1.0f + fDist ), 0.0f );
+	return fDist;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
