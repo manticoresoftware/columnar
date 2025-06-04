@@ -26,7 +26,7 @@
 namespace knn
 {
 
-static const int LIB_VERSION = 5;
+static const int LIB_VERSION = 6;
 static const uint32_t STORAGE_VERSION = 3;
 
 enum class HNSWSimilarity_e
@@ -40,6 +40,7 @@ enum class Quantization_e
 {
 	NONE,
 	BIT1,
+	BIT1SIMPLE,
 	BIT4,
 	BIT8
 };

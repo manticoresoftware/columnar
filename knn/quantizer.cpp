@@ -348,20 +348,16 @@ void ScalarQuantizer4Bit_c::Encode ( const Span_T<float> & dPoint, std::vector<u
 
 ///////////////////////////////////////////////////////////////////////////////
 
-template <bool COSINE>
-class ScalarQuantizer1Bit_T : public ScalarQuantizer8Bit_c
+class ScalarQuantizer1Bit_c : public ScalarQuantizer8Bit_c
 {
 	using ScalarQuantizer8Bit_c::ScalarQuantizer8Bit_c;
 
 public:
 	void	Encode ( const Span_T<float> & dPoint, std::vector<uint8_t> & dQuantized ) override;
-
-private:
-	HNSWSimilarity_e m_eSimilarity = HNSWSimilarity_e::L2;
 };
 
-template <bool COSINE>
-void ScalarQuantizer1Bit_T<COSINE>::Encode ( const Span_T<float> & dPoint, std::vector<uint8_t> & dQuantized )
+
+void ScalarQuantizer1Bit_c::Encode ( const Span_T<float> & dPoint, std::vector<uint8_t> & dQuantized )
 {
 	assert(m_bFinalized);
 
@@ -374,17 +370,8 @@ void ScalarQuantizer1Bit_T<COSINE>::Encode ( const Span_T<float> & dPoint, std::
 		uint8_t uPacked = 0;
 		for ( size_t uBit = 0; uBit < 8; uBit++ )
 		{
-			if constexpr ( COSINE )
-			{
-				if ( dPoint[uOff] > 0.0f )
-					uPacked |= 1 << uBit;
-			}
-			else
-			{
-				float fValue = Scale(dPoint[uOff]);
-				if ( fValue > 0.5f )
-					uPacked |= 1 << uBit;
-			}
+			if ( dPoint[uOff] > 0.0f )
+				uPacked |= 1 << uBit;
 
 			uOff++;
 			if ( uOff>=uDim )
@@ -410,6 +397,7 @@ public:
 	void	Quantize4Bit ( const Span_T<float> & dVector, const std::vector<float> & dCentroid, std::vector<uint8_t> & dResult );
 
 private:
+	size_t				m_uDim = 0;
 	size_t				m_uDimPadded = 0;
 	HNSWSimilarity_e	m_eSimilarity = HNSWSimilarity_e::COSINE;
 	float				m_fSqrtDim = 0.0f;
@@ -419,6 +407,9 @@ private:
 
 	static void					Pack ( const Span_T<float> & dVector, Span_T<uint8_t> & dPacked );
 	FORCE_INLINE static int		Quantize ( const Span_T<float> & dVector, float fMin, float fRange, SpanResizeable_T<uint8_t> & dQuantized );
+#if defined(USE_AVX2)
+	FORCE_INLINE static void	TransposeAVX ( const Span_T<uint8_t> & dQuantized, size_t uDim, Span_T<uint8_t> & dTransposed );
+#endif
 	FORCE_INLINE static void	Transpose ( const Span_T<uint8_t> & dQuantized, size_t uDim, Span_T<uint8_t> & dTransposed );
 
 	float					ComputeQuality ( int iOriginalLength, const Span_T<float> & dVecMinusCentroidNormalized, const Span_T<uint8_t> & dPacked ) const;
@@ -467,7 +458,8 @@ static int CalcPadding ( int iValue, int iPad )
 
 
 BinaryQuantizer_c::BinaryQuantizer_c ( int iDim, HNSWSimilarity_e eSimilarity )
-	: m_uDimPadded ( CalcPadding ( iDim, 64 ) )
+	: m_uDim ( iDim )
+	, m_uDimPadded ( CalcPadding ( iDim, 64 ) )
 	, m_eSimilarity ( eSimilarity )
 	, m_fSqrtDim ( std::sqrt(iDim) )
 {}
@@ -567,7 +559,7 @@ float BinaryQuantizer_c::QuantizeVecL2 ( const Span_T<float> & dVector, const st
 
 	float fNorm = VecCalcNorm(m_dVecMinusCentroid);
 	PadToDim(m_dVecMinusCentroid);
-	Pack ( m_dVecMinusCentroid, dResult );
+	Pack ( { m_dVecMinusCentroid.data(), dVector.size() }, dResult );
 	m_dVecMinusCentroid.resize ( dVector.size() );
 
 	for ( float & i : m_dVecMinusCentroid )
@@ -591,7 +583,7 @@ Binary1BitFactorsIP_t BinaryQuantizer_c::QuantizeVecIP ( const Span_T<float> & d
 
 	float fVecMinusCentroidNorm = VecCalcNorm(m_dVecMinusCentroid);
 	PadToDim(m_dVecMinusCentroid);
-	Pack ( m_dVecMinusCentroid, dResult );
+	Pack ( { m_dVecMinusCentroid.data(), dVector.size() }, dResult );
 
 	for ( float & i : m_dVecMinusCentroid )
 		i /= fVecMinusCentroidNorm;
@@ -662,7 +654,7 @@ static FORCE_INLINE uint8_t ReverseBitsUint8 ( uint8_t uByte )
 }
 
 
-void BinaryQuantizer_c::Transpose ( const Span_T<uint8_t> & dQuantized, size_t uDim, Span_T<uint8_t> & dTransposed )
+void BinaryQuantizer_c::TransposeAVX ( const Span_T<uint8_t> & dQuantized, size_t uDim, Span_T<uint8_t> & dTransposed )
 {
 	const int NUM_BYTES = 32;
 	const size_t uDimDiv8 = uDim >> 3;
@@ -709,7 +701,8 @@ void BinaryQuantizer_c::Transpose ( const Span_T<uint8_t> & dQuantized, size_t u
 		pQuantized += NUM_BYTES;
 	}
 }
-#else
+#endif
+
 static FORCE_INLINE void PackHighBitsToByte ( const Span_T<uint8_t> & dIn, uint8_t * pOut )
 {
 	for ( size_t i = 0; i < dIn.size(); i++ )
@@ -732,7 +725,9 @@ void BinaryQuantizer_c::Transpose ( const Span_T<uint8_t> & dQuantized, size_t u
 	const size_t uDimDiv8 = uDim >> 3;
 	uint8_t dTmp[4] = {0}, dSpreadBits[NUM_BYTES] = {0};
 	auto pQuantized = dQuantized.data();
-	for ( size_t i = 0; i < uDim; i += NUM_BYTES )
+	size_t uLimit32 = uDim & ~(NUM_BYTES-1);
+	size_t i = 0;
+	for ( ; i < uLimit32; i += NUM_BYTES )
 	{
 		uint64_t * pVal = (uint64_t*)dSpreadBits;
 		for ( int j = 0; j < NUM_BYTES; j += 8 )
@@ -758,8 +753,20 @@ void BinaryQuantizer_c::Transpose ( const Span_T<uint8_t> & dQuantized, size_t u
 
 		pQuantized += NUM_BYTES;
 	}
+
+	for ( ; i < uDim; i++ )
+    {
+        uint8_t uByte = *pQuantized++;
+        uint8_t uSpreadByte = ( uByte << 4 ) | ( ( uByte >> 4 ) & 0x0F );
+        
+        const int iDiv8 = i >> 3;
+        for ( int j = 0; j < 4; j++ )
+        {
+            uint8_t uBit = ( uSpreadByte >> ( 7 - j ) ) & 1;
+            dTransposed[ ( 3 - j ) * uDimDiv8 + iDiv8 ] |= uBit << ( 7 - (i & 7) );
+        }
+    }
 }
-#endif
 
 
 void BinaryQuantizer_c::Quantize4Bit ( const Span_T<float> & dVector, const std::vector<float> & dCentroid, std::vector<uint8_t> & dResult )
@@ -798,7 +805,17 @@ void BinaryQuantizer_c::Quantize4Bit ( const Span_T<float> & dVector, const std:
 	*pHeader++ = tFactors;
 
 	Span_T<uint8_t> dTransposed ( (uint8_t*)pHeader, uDataSize );
-	Transpose ( m_dQuantized, m_uDimPadded, dTransposed );
+
+	if ( uDataSize & 15 )
+		Transpose ( m_dQuantized, m_uDim, dTransposed );
+	else
+	{
+#if defined(USE_AVX2)
+		TransposeAVX ( m_dQuantized, m_uDim, dTransposed );
+#else
+		Transpose ( m_dQuantized, m_uDim, dTransposed );
+#endif
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -958,6 +975,7 @@ ScalarQuantizer_i * CreateQuantizer ( Quantization_e eQuantization, const Quanti
 	switch ( eQuantization )
 	{
 	case Quantization_e::BIT1:	return new ScalarQuantizerBinary_T<false> ( tQuantSettings, eSimilarity );
+	case Quantization_e::BIT1SIMPLE: return new ScalarQuantizer1Bit_c(tQuantSettings);
 	case Quantization_e::BIT4:	return new ScalarQuantizer4Bit_c(tQuantSettings);
 	case Quantization_e::BIT8:	return new ScalarQuantizer8Bit_c(tQuantSettings);
 	default:					return nullptr;
@@ -971,6 +989,7 @@ ScalarQuantizer_i * CreateQuantizer ( Quantization_e eQuantization, HNSWSimilari
 	switch ( eQuantization )
 	{
 	case Quantization_e::BIT1:	return new ScalarQuantizerBinary_T<true> ( eSimilarity, sTmpFilename );
+	case Quantization_e::BIT1SIMPLE: return new ScalarQuantizer1Bit_c;
 	case Quantization_e::BIT4:	return new ScalarQuantizer4Bit_c;
 	case Quantization_e::BIT8:	return new ScalarQuantizer8Bit_c;
 	default:					return nullptr;
