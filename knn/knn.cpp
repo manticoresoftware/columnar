@@ -249,7 +249,7 @@ bool KNN_c::Load ( const std::string & sFilename, std::string & sError )
 		return false;
 
 	uint32_t uVersion = tReader.Read_uint32();
-	if ( uVersion!=STORAGE_VERSION )
+	if ( uVersion < 2 )
 	{
 		sError = FormatStr ( "Unable to load KNN index: %s is v.%d, binary is v.%d", sFilename.c_str(), uVersion, STORAGE_VERSION );
 		return false;
@@ -263,6 +263,12 @@ bool KNN_c::Load ( const std::string & sFilename, std::string & sError )
 		std::string sName = tReader.Read_string();
 		knn::IndexSettings_t tSettings;
 		LoadSettings ( tSettings, tReader, uVersion );
+
+		if ( uVersion==2 && tSettings.m_eQuantization!=Quantization_e::NONE )
+		{
+			sError = FormatStr ( "Unable to load KNN index with quantization: %s is v.%d, binary is v.%d", sFilename.c_str(), uVersion, STORAGE_VERSION );
+			return false;
+		}
 		
 		QuantizationSettings_t tQuantSettings;
 		if ( tSettings.m_eQuantization!=Quantization_e::NONE )
