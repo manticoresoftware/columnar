@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set ( SVB_GITHUB "https://github.com/manticoresoftware/streamvbyte/archive/refs/heads/master.zip" )
+set ( SVB_GITHUB "https://github.com/manticoresoftware/streamvbyte/archive/efdd9dac.zip" )
 set ( SVB_BUNDLEZIP "${LIBS_BUNDLE}/streamvbyte.zip" )
 
 cmake_minimum_required ( VERSION 3.17 FATAL_ERROR )
