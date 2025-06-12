@@ -186,7 +186,7 @@ public:
 
 	bool	Load ( FileReader_c & tReader, std::string & sError ) override	{ return m_pAlg->loadIndex ( tReader, m_pSpace.get(), sError ); 	}
 	const std::string &	GetName() const override	{ return m_sName; }
-	void	Search ( std::vector<DocDist_t> & dResults, const Span_T<float> & dData, int iResults, int iEf, std::vector<uint8_t> & dQuantized ) const override;
+	void	Search ( std::vector<DocDist_t> & dResults, const Span_T<float> & dData, int64_t iResults, int iEf, std::vector<uint8_t> & dQuantized ) const override;
 
 private:
 	std::string											m_sName;
@@ -205,7 +205,7 @@ HNSWIndex_c::HNSWIndex_c ( const std::string & sName, int64_t iNumElements, cons
 }
 
 
-void HNSWIndex_c::Search ( std::vector<DocDist_t> & dResults, const Span_T<float> & dData, int iResults, int iEf, std::vector<uint8_t> & dQuantized ) const
+void HNSWIndex_c::Search ( std::vector<DocDist_t> & dResults, const Span_T<float> & dData, int64_t iResults, int iEf, std::vector<uint8_t> & dQuantized ) const
 {
 	const void * pData = dData.begin();
 	if ( m_pQuantizer )
