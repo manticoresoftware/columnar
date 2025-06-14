@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required ( VERSION 3.17 )
+cmake_minimum_required ( VERSION 3.21 ) # because of IMPORTED_RUNTIME_ARTIFACTS
 
 include ( GetHNSW )
 
@@ -27,72 +27,29 @@ set_target_properties( knn_lib PROPERTIES PREFIX "" OUTPUT_NAME lib_manticore_kn
 # Try to find manticoresearch text embeddings library
 message(STATUS "Looking for manticoresearch text embeddings library...")
 
-# Set the library name
+if ( BUILD_EMBEDDINGS_LOCALLY )
+	include (build_embeddings)
+	build_embeddings_lib()
+endif()
+
+# find embeddings library
 set(EMBEDDINGS_LIB_NAME manticore_knn_embeddings)
-
-# Set platform-specific library file names
-if(WIN32)
-	set(EMBEDDINGS_LIB_FILE "${EMBEDDINGS_LIB_NAME}.dll")
-elseif(APPLE)
-	set(EMBEDDINGS_LIB_FILE "lib${EMBEDDINGS_LIB_NAME}.dylib")
-else()
-	set(EMBEDDINGS_LIB_FILE "lib${EMBEDDINGS_LIB_NAME}.so")
-endif()
-
-if(NOT DEFINED ENV{SYSROOT_URL} AND NOT DEFINED ENV{NO_BUILD})
-	message(STATUS "SYSROOT_URL AND NO_BUILD is not set, building embeddings locally...")
-
-	if(NOT DEFINED CARGO_COMMAND)
-		find_program(CARGO_COMMAND cargo)
-		if(NOT CARGO_COMMAND)
-			message(FATAL_ERROR "Cargo command not found. Please install Rust and ensure cargo is in your PATH.")
-		endif()
-	endif()
-
-	execute_process(
-		COMMAND cargo build --manifest-path ${CMAKE_SOURCE_DIR}/embeddings/Cargo.toml --lib --release --target-dir ${CMAKE_CURRENT_BINARY_DIR}/embeddings
-		RESULT_VARIABLE CMD_RESULT
-	)
-
-	if(NOT CMD_RESULT EQUAL 0)
-		message(FATAL_ERROR "Failed to build: ${CMD_RESULT}")
-	endif()
-endif()
-
-# Set the path to look for the library
-# Set up variable to hold potential library paths
-set(EMBEDDINGS_LIB_PATHS 
-	"${CMAKE_SOURCE_DIR}/embeddings/target/debug"
-	"${CMAKE_SOURCE_DIR}/embeddings/target/release"
-	"${CMAKE_CURRENT_BINARY_DIR}/embeddings/release"
+set ( CMAKE_FIND_LIBRARY_SUFFIXES .so .dylib .dll )
+FIND_LIBRARY ( EMBEDDINGS_LIB NAMES lib${EMBEDDINGS_LIB_NAME} ${EMBEDDINGS_LIB_NAME} HINTS
+		"${CMAKE_SOURCE_DIR}/embeddings/target/debug"
+		"${CMAKE_SOURCE_DIR}/embeddings/target/release"
+		"${CMAKE_CURRENT_BINARY_DIR}/embeddings/release"
+		NO_CMAKE_FIND_ROOT_PATH
+		NO_DEFAULT_PATH
 )
 
-# Initialize the final path variable
-set(EMBEDDINGS_LIB_PATH "")
-
-# Check each path and use the first one that exists
-foreach(path ${EMBEDDINGS_LIB_PATHS})
-	if(EXISTS "${path}")
-		set(EMBEDDINGS_LIB_PATH "${path}")
-		message(STATUS "Found embeddings library path: ${EMBEDDINGS_LIB_PATH}")
-		break()
-	endif()
-endforeach()
-
-# Check if any path was found
-if(EMBEDDINGS_LIB_PATH STREQUAL "")
-	message(WARNING "No valid embeddings library path found. Tried: ${EMBEDDINGS_LIB_PATHS}")
-	# Fallback to the first path in the list
-	list(GET EMBEDDINGS_LIB_PATHS 0 EMBEDDINGS_LIB_PATH)
-	message(STATUS "Falling back to default path: ${EMBEDDINGS_LIB_PATH}")
-endif()
-
-# Construct the full library path
-set(EMBEDDINGS_LIB "${EMBEDDINGS_LIB_PATH}/${EMBEDDINGS_LIB_FILE}")
-
-# Check if library exists
-if(EXISTS ${EMBEDDINGS_LIB})
-	message(STATUS "Found manticoresearch text embeddings library: ${EMBEDDINGS_LIB}")
-else()
+if (PACK AND NOT EMBEDDINGS_LIB)
 	message(FATAL_ERROR "Could not find manticoresearch text embeddings library at: ${EMBEDDINGS_LIB}")
 endif()
+
+# Add embeddings library as a component to be included in packages
+add_library ( knn::embeddings_lib MODULE IMPORTED )
+set_target_properties ( knn::embeddings_lib PROPERTIES IMPORTED_LOCATION "${EMBEDDINGS_LIB}" INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/embeddings/")
+install ( IMPORTED_RUNTIME_ARTIFACTS knn::embeddings_lib RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT embeddings )
+
+message ( STATUS "Found manticoresearch text embeddings library: ${EMBEDDINGS_LIB}" )
