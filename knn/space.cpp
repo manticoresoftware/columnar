@@ -289,17 +289,6 @@ L2Space4BitFloat_c::L2Space4BitFloat_c ( size_t uDim )
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-
-FORCE_INLINE uint32_t PopCnt32 ( uint32_t uVal )
-{
-#if defined(USE_SIMDE)
-	return __builtin_popcount(uVal);
-#else
-	return _mm_popcnt_u32(uVal);
-#endif
-}
-
-
 static FORCE_INLINE int L2Sqr1Bit ( const void * __restrict pVect1, const void * __restrict pVect2, size_t uQty )
 {
 	size_t uLenBytes = (uQty + 7) >> 3;
@@ -308,7 +297,7 @@ static FORCE_INLINE int L2Sqr1Bit ( const void * __restrict pVect1, const void *
 	auto pV2 = (uint8_t*)pVect2;
 	int iDistance = 0;
 	for ( size_t i = 0; i < uLenBytes; i++ )
-		iDistance += PopCnt32 ( pV1[i] ^ pV2[i] );
+		iDistance += __builtin_popcount (pV1[i] ^ pV2[i]);
 
 	return iDistance;
 }
@@ -709,13 +698,13 @@ static int64_t BinaryDotProduct ( const uint8_t * pVec4Bit, const uint8_t * pVec
 			uint32_t uVal4Bit = *(const uint32_t*)pVec4BitPtr;
 			uint32_t uVal1Bit = *(const uint32_t*)( &pVec1Bit[j] );
 
-			iPopCntSum += PopCnt32 ( uVal4Bit & uVal1Bit );
+			iPopCntSum += __builtin_popcount (uVal4Bit & uVal1Bit );
 			pVec4BitPtr += sizeof(uint32_t);
 		}
 		
 		for ( ; j < iBytes; j++ )
 		{
-			iPopCntSum += PopCnt32 ( ( *pVec4BitPtr & pVec1Bit[j] ) & 0xFF );
+			iPopCntSum += __builtin_popcount ((*pVec4BitPtr & pVec1Bit[j] ) & 0xFF );
 			pVec4BitPtr++;
 		}
 

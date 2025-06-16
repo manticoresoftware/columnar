@@ -424,17 +424,6 @@ private:
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-
-FORCE_INLINE uint32_t PopCnt32 ( uint32_t uVal )
-{
-#if defined ( USE_SIMDE )
-	return __builtin_popcount ( uVal );
-#else
-	return _mm_popcnt_u32 ( uVal );
-#endif
-}
-
-
 FORCE_INLINE uint32_t PopCnt ( const Span_T<uint8_t> & dValues )
 {
 	int iCount = 0;
@@ -442,10 +431,10 @@ FORCE_INLINE uint32_t PopCnt ( const Span_T<uint8_t> & dValues )
 	const int i4ByteBlocks = dValues.size () >> 2 << 2;
 	auto pValues32 = (const uint32_t*)dValues.data();
 	for ( ; i < i4ByteBlocks; i += 4 )
-		iCount += PopCnt32 ( *pValues32++ );
+		iCount += __builtin_popcount(*pValues32++ );
 
 	for ( ; i < dValues.size (); i++ )
-		iCount += PopCnt32 ( dValues[i] & 0xFF );
+		iCount += __builtin_popcount(dValues[i] & 0xFF );
 
 	return iCount;
 }
