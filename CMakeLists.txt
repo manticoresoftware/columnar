@@ -196,10 +196,10 @@ if (SYSTEM_PROCESSOR_LOWER STREQUAL x86_64 OR SYSTEM_PROCESSOR_LOWER STREQUAL am
 	if(USE_AVX2)
 		target_compile_definitions(columnar_root INTERFACE USE_AVX2 )
 		set ( SIMD_STR "AVX2" )
-		set ( SIMD_OPT "-mavx2;-mfma" )
+		set ( SIMD_OPT "-march=x86-64-v3" )
 	else()
 		set ( SIMD_STR "SSE 4.2" )
-		set ( SIMD_OPT "-msse4.2;-mpopcnt" )
+		set ( SIMD_OPT "-march=x86-64-v2" )
 	endif()
 	message ( STATUS "Add ${SIMD_STR} to compiler flags for ${CMAKE_SYSTEM_PROCESSOR} arch" )
 
