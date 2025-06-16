@@ -111,6 +111,7 @@ public:
 	FORCE_INLINE int	GetLength() const { return m_iSize; }
 
 	void				Invert ( int iMinBit=-1, int iMaxBit=-1 ) { assert ( 0 && "Unsupported by SplitBitmap_c" ); }
+	void				Resize ( int iSize ) { assert ( 0 && "Unsupported by SplitBitmap_c" ); }
 
 	template <typename RESULT>
 	void				Fetch ( int & iIterator, int iBase, RESULT * & pRes, RESULT * pMax );
@@ -230,8 +231,8 @@ public:
 	int64_t		GetNumProcessed() const override	{ return m_iNumProcessed; }
 	void		AddDesc ( std::vector<IteratorDesc_t> & dDesc ) const override { dDesc.push_back ( { m_sAttr, "SecondaryIndex" } ); }
 
-	void		SetCutoff ( int iCutoff ) override	{ m_iRowsLeft = iCutoff; }
-	bool		WasCutoffHit() const override		{ return !m_iRowsLeft; }
+	void		SetCutoff ( int iCutoff ) override	{ m_iRowsLeft = iCutoff; m_bHasCutoff = true; }
+	bool		WasCutoffHit() const override		{ return ( m_bHasCutoff && !m_iRowsLeft ); }
 
 	void		Add ( BlockIterator_i * pIterator ) override;
 	void		Invert ( RowidRange_t * pBounds ) override	{ m_tBitmap.Invert ( pBounds ? pBounds->m_uMin : -1, pBounds ? pBounds->m_uMax : -1 ); }
@@ -243,6 +244,7 @@ private:
 	int64_t						m_iNumProcessed = 0;
 	int							m_iIndex = 0;
 	int							m_iRowsLeft = INT_MAX;
+	bool						m_bHasCutoff = false;
 	RowidRange_t				m_tBounds;
 	SpanResizeable_T<uint32_t>	m_dRows;
 };
@@ -266,6 +268,9 @@ void BitmapIterator_T<BITMAP,ROWID_RANGE>::Add ( BlockIterator_i * pIterator )
 	Span_T<uint32_t> dRowIdBlock;
 	while ( pIterator->GetNextRowIdBlock(dRowIdBlock) && m_iRowsLeft>0 )
 	{
+		uint32_t * pPtr = dRowIdBlock.data();
+		uint32_t * pEnd = dRowIdBlock.end();
+
 		if constexpr ( ROWID_RANGE )
 		{
 			// we need additional filtering only on first and last blocks
@@ -274,29 +279,37 @@ void BitmapIterator_T<BITMAP,ROWID_RANGE>::Add ( BlockIterator_i * pIterator )
 			bool bCutBack = dRowIdBlock.back() > m_tBounds.m_uMax;
 			if ( bCutFront || bCutBack )
 			{
-				uint32_t * pPtr = dRowIdBlock.data();
-				uint32_t * pEnd = dRowIdBlock.end();
 				if ( bCutFront )
 					pPtr = std::lower_bound ( pPtr, pEnd, m_tBounds.m_uMin );
 					
 				if ( bCutBack )
 					pEnd = std::upper_bound ( pPtr, pEnd, m_tBounds.m_uMax );
-
-				while ( pPtr < pEnd )
-					m_tBitmap.BitSet ( *pPtr++ );
 			}
-			else
-				for ( auto i : dRowIdBlock )
-					m_tBitmap.BitSet(i);
-		}
-		else
-		{
-			for ( auto i : dRowIdBlock )
-				m_tBitmap.BitSet(i);
 		}
 
-		m_iNumProcessed += dRowIdBlock.size();
-		m_iRowsLeft -= dRowIdBlock.size();
+		bool bWasCutoff = false;
+		int iProcessed = ( pEnd - pPtr );
+		if ( iProcessed>m_iRowsLeft )
+		{
+			pEnd = pPtr + m_iRowsLeft;
+			iProcessed = m_iRowsLeft;
+			bWasCutoff = true;
+		}
+		while ( pPtr<pEnd )
+			m_tBitmap.BitSet ( *pPtr++ );
+
+		m_iNumProcessed += iProcessed;
+		m_iRowsLeft -= iProcessed;
+
+		// cutoff lower processed count that keep some bits cleared
+		// then tFilter.m_bExclude cause bitvec to invert thouse bits
+		if ( m_bHasCutoff && bWasCutoff )
+		{
+			uint32_t iLastRow = *(--pPtr);
+			// should only srink but not extend
+			assert ( iLastRow+1<=m_tBitmap.GetLength() );
+			m_tBitmap.Resize ( iLastRow+1 );
+		}
 	}
 
 	m_iRowsLeft = std::max ( m_iRowsLeft, 0 );
