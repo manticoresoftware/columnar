@@ -107,7 +107,37 @@ jobs:
           mkdir build
           lib_dir="${{ steps.vars.outputs.lib_dir }}"
           ls -la $lib_dir/*
-          find $lib_dir -type f \( -name "lib_manticore*.so" -o -name "lib_manticore*.dylib" -o -name "lib_manticore*.dll" \) -exec cp {} build/ \;
+          find $lib_dir -type f \( -name "libmanticore*.so" -o -name "libmanticore*.dylib" -o -name "manticore*.dll" \) -exec cp {} build/ \;
+
+          # Rename libmanticore*.so to lib_manticore*.so
+          for file in build/libmanticore*.so; do
+            if [ -f "$file" ]; then
+              base=$(basename "$file")
+              newbase=$(echo "$base" | sed 's/^libmanticore/lib_manticore/')
+              mv "$file" "build/$newbase"
+              echo "Renamed $file to build/$newbase"
+            fi
+          done
+
+          # Rename libmanticore*.dylib to lib_manticore*.dylib
+          for file in build/libmanticore*.dylib; do
+              if [ -f "$file" ]; then
+                  base=$(basename "$file")
+                  newbase=$(echo "$base" | sed 's/^libmanticore/lib_manticore/')
+                  mv "$file" "build/$newbase"
+                  echo "Renamed $file to build/$newbase"
+              fi
+          done
+
+          # Rename manticore*.dll to lib_manticore*.dll
+          for file in build/manticore*.dll; do
+              if [ -f "$file" ]; then
+                  base=$(basename "$file")
+                  newbase="lib_$base"
+                  mv "$file" "build/$newbase"
+                  echo "Renamed $file to build/$newbase"
+              fi
+          done
 
       - name: Install current Bash on macOS
         if: inputs.distr == 'macos'
