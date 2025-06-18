@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required ( VERSION 3.17 )
+cmake_minimum_required ( VERSION 3.21 ) # because of IMPORTED_RUNTIME_ARTIFACTS
 
 foreach (policy CMP0048 CMP0090 CMP0092 CMP0117)
 	if (POLICY ${policy})
@@ -32,6 +32,14 @@ project ( columnar VERSION 0.0.0 )
 if (NOT _CMAKE_BUILD_TYPE AND CMAKE_BUILD_TYPE)
 	unset ( CMAKE_BUILD_TYPE CACHE )
 endif ()
+
+if (EXTERNAL_LIB)
+	set ( USE_AVX2 ON )
+	set ( SKIP_SECONDARY ON ) # actually nobody forbids to build secondary/knn for advanced arch, but not now
+	set ( SKIP_KNN ON )
+	set ( PACK ON )
+	set ( BUILD_TESTING OFF )
+endif()
 
 # check what we're build. api just packs headers and build nothing
 if (NOT API_ONLY)
@@ -211,12 +219,15 @@ set_property ( TARGET columnar_root PROPERTY INTERFACE_POSITION_INDEPENDENT_CODE
 add_subdirectory ( util )
 add_subdirectory ( common )
 
-include ( GNUInstallDirs )
+set ( REL_MODULES_DIR "manticore/modules" )
+set ( MODULE_EXT "so" ) # on config stage we can just guess; no real files yet ready to be sure
 if (WIN32)
-	set ( MODULES_DIR "${CMAKE_INSTALL_DATADIR}/modules" )
-else()
-	set ( MODULES_DIR "${CMAKE_INSTALL_DATADIR}/manticore/modules" )
+	set ( REL_MODULES_DIR "modules" )
+	set ( MODULE_EXT "dll" )
 endif()
+
+include ( GNUInstallDirs )
+set (MODULES_DIR "${CMAKE_INSTALL_DATADIR}/${REL_MODULES_DIR}")
 
 if (INSTALL_COLUMNAR)
 	set ( columnar_lib_name lib_manticore_columnar )
@@ -226,6 +237,25 @@ if (INSTALL_COLUMNAR)
 	add_subdirectory ( columnar )
 	install ( TARGETS columnar_lib RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT columnar )
 	install ( FILES "$<TARGET_FILE_DIR:columnar_lib>/${columnar_lib_name}.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
+endif ()
+
+is_amd64 ( AMD )
+if (AMD AND INSTALL_COLUMNAR AND NOT USE_AVX2)
+	message ( STATUS "Will build extra columnar with AVX2 support" )
+	include ( ExternalProject )
+	set ( EXTERNAL_PREFIX "${CMAKE_CURRENT_BINARY_DIR}/avx2" ) # here build artefacts located
+	ExternalProject_Add ( columnar_avx2
+			SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}"
+			PREFIX "${CMAKE_CURRENT_BINARY_DIR}/avx2"
+			CMAKE_ARGS -DEXTERNAL_LIB=1 -DCMAKE_INSTALL_PREFIX=${EXTERNAL_PREFIX}
+			CONFIGURE_HANDLED_BY_BUILD TRUE
+			TEST_COMMAND ""
+	)
+	set ( EXTERNAL_MODULES "${EXTERNAL_PREFIX}/share/${REL_MODULES_DIR}" )
+	add_library ( columnar_lib_avx2 MODULE IMPORTED )
+	set_target_properties ( columnar_lib_avx2 PROPERTIES IMPORTED_LOCATION "${EXTERNAL_MODULES}/lib_manticore_columnar_avx2.${MODULE_EXT}" )
+	install ( IMPORTED_RUNTIME_ARTIFACTS columnar_lib_avx2 RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT columnar )
+	install ( FILES "${EXTERNAL_MODULES}/lib_manticore_columnar_avx2.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
 endif ()
 
 if (INSTALL_SECONDARY)
