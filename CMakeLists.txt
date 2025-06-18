@@ -206,6 +206,7 @@ endif()
 
 if ( USE_AVX2 )
 	target_compile_definitions ( columnar_root INTERFACE USE_AVX2 )
+	set ( lib_name_suffix _avx2 )
 endif ()
 
 if (TARGET FastPFOR::SIMDe)
@@ -230,13 +231,9 @@ include ( GNUInstallDirs )
 set (MODULES_DIR "${CMAKE_INSTALL_DATADIR}/${REL_MODULES_DIR}")
 
 if (INSTALL_COLUMNAR)
-	set ( columnar_lib_name lib_manticore_columnar )
-	if (USE_AVX2)
-		set ( columnar_lib_name lib_manticore_columnar_avx2 )
-	endif ()
 	add_subdirectory ( columnar )
 	install ( TARGETS columnar_lib RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT columnar )
-	install ( FILES "$<TARGET_FILE_DIR:columnar_lib>/${columnar_lib_name}.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
+	install ( FILES "$<TARGET_FILE_DIR:columnar_lib>/lib_manticore_columnar${lib_name_suffix}.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
 endif ()
 
 is_amd64 ( AMD )
@@ -261,13 +258,13 @@ endif ()
 if (INSTALL_SECONDARY)
 	add_subdirectory ( secondary )
 	install ( TARGETS secondary_index RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT secondary )
-	install ( FILES "$<TARGET_FILE_DIR:secondary_index>/lib_manticore_secondary.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
+	install ( FILES "$<TARGET_FILE_DIR:secondary_index>/lib_manticore_secondary${lib_arch_suffix}.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
 endif ()
 
 if (INSTALL_KNN)
 	add_subdirectory ( knn )
 	install ( TARGETS knn_lib RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT knn )
-	install ( FILES "$<TARGET_FILE_DIR:knn_lib>/lib_manticore_knn.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
+	install ( FILES "$<TARGET_FILE_DIR:knn_lib>/lib_manticore_knn${lib_arch_suffix}.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
 
 	# Add component dependency - KNN depends on embeddings
 	set ( CPACK_COMPONENT_KNN_DEPENDS knn::embeddings_lib )

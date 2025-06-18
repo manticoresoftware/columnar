@@ -22,7 +22,7 @@ add_library ( knn_lib MODULE knn.cpp knn.h iterator.cpp iterator.h embeddings.cp
 target_include_directories(knn_lib PRIVATE ${CMAKE_SOURCE_DIR}/embeddings)
 
 target_link_libraries ( knn_lib PRIVATE hnswlib::hnswlib columnar_root util common )
-set_target_properties( knn_lib PROPERTIES PREFIX "" OUTPUT_NAME lib_manticore_knn )
+set_target_properties( knn_lib PROPERTIES PREFIX "" OUTPUT_NAME lib_manticore_knn${lib_arch_suffix} )
 
 # Try to find manticoresearch text embeddings library
 message(STATUS "Looking for manticoresearch text embeddings library...")

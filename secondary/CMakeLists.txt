@@ -27,4 +27,4 @@ set_target_properties ( secondary_index PROPERTIES
 		POSITION_INDEPENDENT_CODE ON
 		INTERPROCEDURAL_OPTIMIZATION OFF
 		PREFIX ""
-		OUTPUT_NAME lib_manticore_secondary )
+		OUTPUT_NAME lib_manticore_secondary${lib_arch_suffix} )
