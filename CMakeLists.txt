@@ -267,7 +267,7 @@ if (INSTALL_KNN)
 	install ( FILES "$<TARGET_FILE_DIR:knn_lib>/lib_manticore_knn${lib_arch_suffix}.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
 
 	# Add component dependency - KNN depends on embeddings
-	set ( CPACK_COMPONENT_KNN_DEPENDS knn::embeddings_lib )
+	set ( CPACK_COMPONENT_KNN_DEPENDS embeddings_lib )
 endif ()
 
 include ( CPack )
