@@ -206,7 +206,7 @@ endif()
 
 if ( USE_AVX2 )
 	target_compile_definitions ( columnar_root INTERFACE USE_AVX2 )
-	set ( lib_name_suffix _avx2 )
+	set ( lib_arch_suffix "_avx2" )
 endif ()
 
 if (TARGET FastPFOR::SIMDe)
@@ -233,7 +233,7 @@ set (MODULES_DIR "${CMAKE_INSTALL_DATADIR}/${REL_MODULES_DIR}")
 if (INSTALL_COLUMNAR)
 	add_subdirectory ( columnar )
 	install ( TARGETS columnar_lib RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT columnar )
-	install ( FILES "$<TARGET_FILE_DIR:columnar_lib>/lib_manticore_columnar${lib_name_suffix}.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
+	install ( FILES "$<TARGET_FILE_DIR:columnar_lib>/lib_manticore_columnar${lib_arch_suffix}.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
 endif ()
 
 is_amd64 ( AMD )
