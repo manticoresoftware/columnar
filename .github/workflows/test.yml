@@ -84,6 +84,14 @@ jobs:
     name: Windows supplementary files preparation
     runs-on: ubuntu-22.04
     steps:
+      - name: Determine branch name for cache
+        id: branch
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "branch_name=${{ github.head_ref }}" >> $GITHUB_OUTPUT
+          else
+            echo "branch_name=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          fi
       - name: Check out cache
         id: cache
         uses: actions/cache@v4
@@ -92,7 +100,7 @@ jobs:
             bundle
             boost_1_75_0
           enableCrossOsArchive: true
-          key: win_bundle
+          key: win_bundle_${{ steps.branch.outputs.branch_name }}
           lookup-only: true
       - name: Extract Windows bundle from Windows sysroot
         if: steps.cache.outputs.cache-hit != 'true'
