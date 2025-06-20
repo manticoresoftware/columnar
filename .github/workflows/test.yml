@@ -46,15 +46,22 @@ jobs:
           # Extract the actual branch name for pull requests
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+            echo "Pull request detected, using head ref: $BRANCH_NAME"
           else
             BRANCH_NAME="${{ github.ref_name }}"
+            echo "Direct push detected, using ref name: $BRANCH_NAME"
           fi
           
+          echo "Checking if branch '$BRANCH_NAME' exists in manticoresoftware/manticoresearch..."
           HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://api.github.com/repos/manticoresoftware/manticoresearch/branches/$BRANCH_NAME)
+          echo "GitHub API response status: $HTTP_STATUS"
+          
           if [ "$HTTP_STATUS" -eq "200" ]; then
+            echo "✅ Branch '$BRANCH_NAME' EXISTS in manticoresoftware/manticoresearch"
             echo "branch_exists=true" >> $GITHUB_OUTPUT
             echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
           else
+            echo "❌ Branch '$BRANCH_NAME' does NOT exist in manticoresoftware/manticoresearch (HTTP $HTTP_STATUS)"
             echo "branch_exists=false" >> $GITHUB_OUTPUT
             echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
           fi
@@ -64,10 +71,13 @@ jobs:
         run: |
           if [[ "${{ github.event.schedule }}" == "00 20 * * *" ]]; then
             echo "manticore_locator=GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG master" >> $GITHUB_OUTPUT
+            echo "Set manticore_locator: GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG master"
           elif [[ "${{ github.ref_name }}" != "master" && "${{ steps.check_branch.outputs.branch_exists }}" == "true" ]]; then
             echo "manticore_locator=GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG ${{ steps.check_branch.outputs.branch_name }}" >> $GITHUB_OUTPUT
+            echo "Set manticore_locator: GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG ${{ steps.check_branch.outputs.branch_name }}"
           else
             echo "manticore_locator=" >> $GITHUB_OUTPUT
+            echo "Set manticore_locator: (empty)"
           fi
 
   win_bundle:
