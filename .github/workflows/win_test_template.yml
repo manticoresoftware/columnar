@@ -46,7 +46,7 @@ jobs:
           } else {
             Write-Host "Manticore locator is empty, using default manticore sources"
           }
-	    - name: Determine branch name for cache
+	  - name: Determine branch name for cache
         id: branch
         run: |
           if ("${{ github.event_name }}" -eq "pull_request") {
