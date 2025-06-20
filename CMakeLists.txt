@@ -35,9 +35,16 @@ endif ()
 
 if (EXTERNAL_LIB)
 	set ( USE_AVX2 ON )
-	set ( PACK ON )
 	set ( BUILD_TESTING OFF )
 endif()
+
+if (EXTERNAL_PACK)
+	set ( USE_AVX2 ON )
+	set ( PACK ON )
+	set ( BUILD_TESTING OFF )
+endif ()
+
+set (EXTERNAL_OPTION "EXTERNAL_LIB")
 
 # check what we're build. api just packs headers and build nothing
 if (NOT API_ONLY)
@@ -162,6 +169,7 @@ endif ()
 # simpler packages: provide -DPACK=1, and DISTR_BUILD will be set from env $DISTR, easier in dockers
 if (PACK)
 	set ( DISTR_BUILD "$ENV{DISTR}" )
+	set ( EXTERNAL_OPTION "EXTERNAL_PACK" )
 endif ()
 
 if (DISTR_BUILD)
@@ -240,7 +248,7 @@ if (ADD_AVX_BUILDS)
 	ExternalProject_Add ( columnar_avx2
 			SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}"
 			PREFIX "${CMAKE_CURRENT_BINARY_DIR}/avx2"
-			CMAKE_ARGS -DEXTERNAL_LIB=1 -DCMAKE_INSTALL_PREFIX=${EXTERNAL_PREFIX}
+			CMAKE_ARGS -D${EXTERNAL_OPTION}=1 -DCMAKE_INSTALL_PREFIX=${EXTERNAL_PREFIX}
 			CONFIGURE_HANDLED_BY_BUILD TRUE
 			TEST_COMMAND ""
 	)
