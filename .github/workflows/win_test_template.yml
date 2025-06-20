@@ -38,15 +38,16 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}         
       - name: Print Manticore Locator
-        shell: powershell
+        shell: pwsh
         run: |
-          Write-Host "Using MANTICORE_LOCATOR: '${{ inputs.MANTICORE_LOCATOR }}'"
-          if ("${{ inputs.MANTICORE_LOCATOR }}") {
+          $locator = "${{ inputs.MANTICORE_LOCATOR }}"
+          Write-Host "Using MANTICORE_LOCATOR: '$locator'"
+          if ($locator) {
             Write-Host "Manticore locator is set and will be used for testing"
           } else {
             Write-Host "Manticore locator is empty, using default manticore sources"
           }
-	  - name: Determine branch name for cache
+      - name: Determine branch name for cache
         id: branch
         run: |
           if ("${{ github.event_name }}" -eq "pull_request") {
