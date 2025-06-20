@@ -24,9 +24,6 @@ jobs:
     name: ${{ inputs.CTEST_START }}_${{ inputs.CTEST_END }}
     runs-on: windows-2022
     env:
-      CACHEB: "D:/a/columnar/columnar/cache"
-      LIBS_BUNDLE: "D:/a/columnar/columnar/bundle"
-      BOOST_ROOT: "D:/a/columnar/columnar/boost_1_75_0"
       CTEST_CMAKE_GENERATOR: "Visual Studio 17 2022"
       CTEST_CONFIGURATION_TYPE: Debug
       CTEST_START: ${{ inputs.CTEST_START }}
@@ -39,8 +36,7 @@ jobs:
       - name: Checkout repository # We have to checkout to access .github/workflows/ in further steps
         uses: actions/checkout@v3
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          
+          token: ${{ secrets.GITHUB_TOKEN }}         
       - name: Print Manticore Locator
         run: |
           echo "Using MANTICORE_LOCATOR: '${{ inputs.MANTICORE_LOCATOR }}'"
@@ -49,7 +45,6 @@ jobs:
           else
             echo "Manticore locator is empty, using default manticore sources"
           fi
-          
       - name: Determine branch name for cache
         id: branch
         run: |
@@ -58,7 +53,28 @@ jobs:
           } else {
             echo "branch_name=${{ github.ref_name }}" >> $env:GITHUB_OUTPUT
           }
+      - name: Determine current disk and set environment variables
+        shell: powershell
+        run: |
+          # Get the current working directory and extract the drive letter
+          $currentPath = Get-Location
+          $driveLetter = $currentPath.Drive.Name
+          Write-Host "Current drive: $driveLetter"
           
+          # Set environment variables with the correct drive letter
+          $env:CACHEB = "$driveLetter`:/a/columnar/columnar/cache"
+          $env:LIBS_BUNDLE = "$driveLetter`:/a/columnar/columnar/bundle"
+          $env:BOOST_ROOT = "$driveLetter`:/a/columnar/columnar/boost_1_75_0"
+          
+          # Output the environment variables for debugging
+          Write-Host "CACHEB: $env:CACHEB"
+          Write-Host "LIBS_BUNDLE: $env:LIBS_BUNDLE"
+          Write-Host "BOOST_ROOT: $env:BOOST_ROOT"
+          
+          # Set these as step outputs for use in subsequent steps
+          "CACHEB=$env:CACHEB" >> $env:GITHUB_ENV
+          "LIBS_BUNDLE=$env:LIBS_BUNDLE" >> $env:GITHUB_ENV
+          "BOOST_ROOT=$env:BOOST_ROOT" >> $env:GITHUB_ENV
       - name: Download build artifacts
         uses: manticoresoftware/download_artifact_with_retries@v4
         with:
