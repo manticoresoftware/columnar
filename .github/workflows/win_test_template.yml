@@ -40,6 +40,16 @@ jobs:
         uses: actions/checkout@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Determine branch name for cache
+        id: branch
+        run: |
+          if ("${{ github.event_name }}" -eq "pull_request") {
+            echo "branch_name=${{ github.head_ref }}" >> $env:GITHUB_OUTPUT
+          } else {
+            echo "branch_name=${{ github.ref_name }}" >> $env:GITHUB_OUTPUT
+          }
+          
       - name: Download build artifacts
         uses: manticoresoftware/download_artifact_with_retries@v4
         with:
@@ -52,7 +62,7 @@ jobs:
             bundle
             boost_1_75_0
           enableCrossOsArchive: true
-          key: win_bundle
+          key: win_bundle_${{ steps.branch.outputs.branch_name }}
       - name: Remove ZSTD # since it wasn't used to save the cache and if we don't remove it here the cache won't be found. TODO: install zstd in our images, so we don't have to do these hacks
         run: rm C:\tools\zstd\zstd.exe
       - name: Check out main cache
@@ -60,13 +70,13 @@ jobs:
         with:
           path: cache
           enableCrossOsArchive: true
-          key: build_windows_x64
+          key: build_windows_x64_${{ steps.branch.outputs.branch_name }}
       - name: Check out deps cache
         uses: actions/cache@v4
         with:
           path: build/_deps/cache
           enableCrossOsArchive: true
-          key: build_windows_x64_deps
+          key: build_windows_x64_deps_${{ steps.branch.outputs.branch_name }}
       - run: mv build/_deps/cache/windows-amd64/* cache/windows-amd64/
       - name: Copy libraries close to the binaries
         run: |
