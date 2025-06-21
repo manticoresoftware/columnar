@@ -230,7 +230,7 @@ if (INSTALL_KNN)
 
 	# Define platform-specific embeddings library names
 	if(WIN32)
-		set(EMBEDDINGS_LIB_NAME "manticore_knn_embeddings.dll")
+		set(EMBEDDINGS_LIB_NAME "lib_manticore_knn_embeddings.dll")
 	elseif(APPLE)
 		set(EMBEDDINGS_LIB_NAME "libmanticore_knn_embeddings.dylib")
 	else()
