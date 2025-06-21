@@ -56,6 +56,24 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Print Manticore Locator
+        run: |
+          echo "Using MANTICORE_LOCATOR: '${{ inputs.MANTICORE_LOCATOR }}'"
+          if [[ -n "${{ inputs.MANTICORE_LOCATOR }}" ]]; then
+            echo "Manticore locator is set and will be used for testing"
+          else
+            echo "Manticore locator is empty, using default manticore sources"
+          fi
+
+      - name: Determine branch name for cache
+        id: branch
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "branch_name=${{ github.head_ref }}" >> $GITHUB_OUTPUT
+          else
+            echo "branch_name=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Tests container entrypoint
         run: bash /entry_point.sh &
 
@@ -83,14 +101,14 @@ jobs:
         with:
           path: cache
           enableCrossOsArchive: true
-          key: build_linux_x86_64
+          key: build_linux_x86_64_${{ steps.branch.outputs.branch_name }}
 
       - name: Check out deps cache before building
         uses: actions/cache@v4
         with:
           path: build/_deps/cache
           enableCrossOsArchive: true
-          key: build_linux_x86_64_deps
+          key: build_linux_x86_64_deps_${{ steps.branch.outputs.branch_name }}
 
       - name: List files
         run: find .

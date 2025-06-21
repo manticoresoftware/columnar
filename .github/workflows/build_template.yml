@@ -91,6 +91,24 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           set-safe-directory: true
 
+      - name: Print Manticore Locator
+        run: |
+          echo "Using MANTICORE_LOCATOR: '${{ inputs.MANTICORE_LOCATOR }}'"
+          if [[ -n "${{ inputs.MANTICORE_LOCATOR }}" ]]; then
+            echo "Manticore locator is set and will be used for building"
+          else
+            echo "Manticore locator is empty, using default manticore sources"
+          fi
+
+      - name: Determine branch name for cache
+        id: branch
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "branch_name=${{ github.head_ref }}" >> $GITHUB_OUTPUT
+          else
+            echo "branch_name=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Patch version
         if: inputs.version != ''
         run: |
@@ -117,14 +135,14 @@ jobs:
         with:
           path: cache
           enableCrossOsArchive: true
-          key: ${{ inputs.cache_key }}
+          key: ${{ inputs.cache_key }}_${{ steps.branch.outputs.branch_name }}
 
       - name: Check out deps cache before building
         uses: actions/cache@v4
         with:
           path: build/_deps/cache
           enableCrossOsArchive: true
-          key: ${{ inputs.cache_key }}_deps
+          key: ${{ inputs.cache_key }}_deps_${{ steps.branch.outputs.branch_name }}
 
       - name: 🚀 Build
         run: ${{ inputs.cmake_command }}

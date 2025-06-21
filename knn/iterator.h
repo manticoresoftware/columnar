@@ -13,6 +13,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+// 
+// This file is a part of the common headers (API).
+// If you make any significant changes to this file, you MUST bump the LIB_VERSION.
+
 
 #pragma once
 
@@ -25,9 +29,9 @@ class KNNIndex_i
 {
 public:
 	virtual			~KNNIndex_i() = default;
-	virtual void	Search ( std::vector<DocDist_t> & dResults, const util::Span_T<float> & dData, int iResults, int iEf, std::vector<uint8_t> & dQuantized ) const = 0;
+	virtual void	Search ( std::vector<DocDist_t> & dResults, const util::Span_T<float> & dData, int64_t iResults, int iEf, std::vector<uint8_t> & dQuantized ) const = 0;
 };
 
-Iterator_i * CreateIterator ( KNNIndex_i & tIndex, const util::Span_T<float> & dData, int iResults, int iEf );
+Iterator_i * CreateIterator ( KNNIndex_i & tIndex, const util::Span_T<float> & dData, int64_t iResults, int iEf );
 
 } // namespace knn

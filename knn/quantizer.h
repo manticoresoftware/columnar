@@ -17,6 +17,7 @@
 #pragma once
 
 #include "knn.h"
+#include <functional>
 
 namespace knn
 {
@@ -25,8 +26,36 @@ struct QuantizationSettings_t
 {
 	float	m_fMin = 0.0f;
 	float	m_fMax = 0.0f;
+	float	m_fK = 0.0f;
+	float	m_fB = 0.0f;
+
+	std::vector<float> m_dCentroid;
 };
 
+struct Binary4BitFactors_t
+{
+	float	m_fQuantizedSum;
+	float	m_fDistanceToCentroidSq;
+	float	m_fMin;
+	float	m_fRange;
+	float	m_fVecMinusCentroidNorm;
+	float	m_fVecDotCentroid;
+};
+
+struct Binary1BitFactorsL2_t
+{
+	float	m_fDistanceToCentroid;
+	float	m_fVectorMagnitude;
+	float	m_fPopCnt;
+};
+
+struct Binary1BitFactorsIP_t
+{
+	float	m_fQuality;
+	float	m_fVecMinusCentroidNorm;
+	float	m_fVecDocCentroid;
+	float	m_fPopCnt;
+};
 
 class ScalarQuantizer_i
 {
@@ -34,12 +63,15 @@ public:
 	virtual			~ScalarQuantizer_i() = default;
 
 	virtual void	Train ( const util::Span_T<float> & dPoint ) = 0;
+	virtual bool	FinalizeTraining ( std::string & sError ) = 0;
 	virtual void	Encode ( const util::Span_T<float> & dPoint, std::vector<uint8_t> & dQuantized ) = 0;
+	virtual void	FinalizeEncoding() = 0;
 	virtual const QuantizationSettings_t & GetSettings() = 0;
 
+	virtual std::function<const uint8_t *(uint32_t)> GetPoolFetcher() const = 0;
 };
 
-ScalarQuantizer_i * CreateQuantizer ( Quantization_e eQuantization, const QuantizationSettings_t & tQuantSettings );
-ScalarQuantizer_i * CreateQuantizer ( Quantization_e eQuantization );
+ScalarQuantizer_i * CreateQuantizer ( Quantization_e eQuantization, const QuantizationSettings_t & tQuantSettings, HNSWSimilarity_e eSimilarity );
+ScalarQuantizer_i * CreateQuantizer ( Quantization_e eQuantization, HNSWSimilarity_e eSimilarity, const std::string & sTmpFilename );
 
 } // namespace knn

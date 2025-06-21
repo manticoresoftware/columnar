@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.3)
+cmake_minimum_required(VERSION 3.17)
 
 set(CMAKE_MACOSX_RPATH OFF)
 project(STREAMVBYTE VERSION "1.0.0")
@@ -127,16 +127,6 @@ set_target_properties(
 set ( GNUCXX "$<COMPILE_LANG_AND_ID:CXX,Clang,AppleClang,GNU>" )
 set ( GNUC "$<COMPILE_LANG_AND_ID:C,Clang,AppleClang,GNU>" )
 set ( GNUC_CXX "$<OR:${GNUCXX},${GNUC}>" )
-
-string ( TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" SYSTEM_PROCESSOR_LOWER )
-if (SYSTEM_PROCESSOR_LOWER STREQUAL x86_64 OR SYSTEM_PROCESSOR_LOWER STREQUAL amd64)
-	message ( STATUS "Add sse 4.2 to compiler flags for ${CMAKE_SYSTEM_PROCESSOR} arch" )
-	if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC)
-		target_compile_options ( streamvbyte PUBLIC -msse4.2 -mpopcnt )
-	else()
-		target_compile_options ( streamvbyte PUBLIC $<${GNUC_CXX}:-msse4.2> )
-	endif()
-endif ()
 
 target_include_directories ( streamvbyte PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>$<INSTALL_INTERFACE:include> )
 

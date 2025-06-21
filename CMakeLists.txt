@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required ( VERSION 3.17 )
+cmake_minimum_required ( VERSION 3.21 ) # because of IMPORTED_RUNTIME_ARTIFACTS
 
 foreach (policy CMP0048 CMP0090 CMP0092 CMP0117)
 	if (POLICY ${policy})
@@ -32,6 +32,19 @@ project ( columnar VERSION 0.0.0 )
 if (NOT _CMAKE_BUILD_TYPE AND CMAKE_BUILD_TYPE)
 	unset ( CMAKE_BUILD_TYPE CACHE )
 endif ()
+
+if (EXTERNAL_LIB)
+	set ( USE_AVX2 ON )
+	set ( BUILD_TESTING OFF )
+endif()
+
+if (EXTERNAL_PACK)
+	set ( USE_AVX2 ON )
+	set ( PACK ON )
+	set ( BUILD_TESTING OFF )
+endif ()
+
+set (EXTERNAL_OPTION "EXTERNAL_LIB")
 
 # check what we're build. api just packs headers and build nothing
 if (NOT API_ONLY)
@@ -156,6 +169,7 @@ endif ()
 # simpler packages: provide -DPACK=1, and DISTR_BUILD will be set from env $DISTR, easier in dockers
 if (PACK)
 	set ( DISTR_BUILD "$ENV{DISTR}" )
+	set ( EXTERNAL_OPTION "EXTERNAL_PACK" )
 endif ()
 
 if (DISTR_BUILD)
@@ -191,6 +205,16 @@ target_compile_options ( columnar_root INTERFACE $<${ONLYGNUCLANGC_CXX}:-D_FILE_
 target_compile_options ( columnar_root INTERFACE $<${ONLYGNUCLANGCXX}:-fno-rtti>$<${MSCXX}:/GR-> ) # no rtti
 target_compile_options ( columnar_root INTERFACE $<${MSCXX}:-D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_WARNINGS> )
 
+get_avx_flags ( FLAGS )
+if ( FLAGS )
+	target_compile_options ( columnar_root INTERFACE ${FLAGS} )
+endif()
+
+if ( USE_AVX2 )
+	target_compile_definitions ( columnar_root INTERFACE USE_AVX2 )
+	set ( lib_arch_suffix "_avx2" )
+endif ()
+
 if (TARGET FastPFOR::SIMDe)
 	target_link_libraries ( columnar_root INTERFACE FastPFOR::SIMDe )
 endif ()
@@ -202,119 +226,74 @@ set_property ( TARGET columnar_root PROPERTY INTERFACE_POSITION_INDEPENDENT_CODE
 add_subdirectory ( util )
 add_subdirectory ( common )
 
-include ( GNUInstallDirs )
+set ( REL_MODULES_DIR "manticore/modules" )
+set ( MODULE_EXT "so" ) # on config stage we can just guess; no real files yet ready to be sure
 if (WIN32)
-	set ( MODULES_DIR "${CMAKE_INSTALL_DATADIR}/modules" )
-else()
-	set ( MODULES_DIR "${CMAKE_INSTALL_DATADIR}/manticore/modules" )
+	set ( REL_MODULES_DIR "modules" )
+	set ( MODULE_EXT "dll" )
 endif()
+
+include ( GNUInstallDirs )
+set (MODULES_DIR "${CMAKE_INSTALL_DATADIR}/${REL_MODULES_DIR}")
+
+is_amd64 ( AMD )
+if ((INSTALL_COLUMNAR OR INSTALL_SECONDARY OR INSTALL_KNN ) AND AMD AND NOT USE_AVX2)
+	set (ADD_AVX_BUILDS 1)
+endif()
+
+if (ADD_AVX_BUILDS)
+	message ( STATUS "Will build extra libraries with AVX2 support" )
+	include ( ExternalProject )
+	set ( EXTERNAL_PREFIX "${CMAKE_CURRENT_BINARY_DIR}/avx2" ) # here build artefacts located
+	ExternalProject_Add ( columnar_avx2
+			SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}"
+			PREFIX "${CMAKE_CURRENT_BINARY_DIR}/avx2"
+			CMAKE_ARGS -D${EXTERNAL_OPTION}=1 -DCMAKE_INSTALL_PREFIX=${EXTERNAL_PREFIX}
+			CONFIGURE_HANDLED_BY_BUILD TRUE
+			TEST_COMMAND ""
+	)
+	set ( EXTERNAL_MODULES "${EXTERNAL_PREFIX}/share/${REL_MODULES_DIR}" )
+endif ()
 
 if (INSTALL_COLUMNAR)
 	add_subdirectory ( columnar )
 	install ( TARGETS columnar_lib RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT columnar )
-	install ( FILES "$<TARGET_FILE_DIR:columnar_lib>/lib_manticore_columnar.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
-endif ()
+	install ( FILES "$<TARGET_FILE_DIR:columnar_lib>/lib_manticore_columnar${lib_arch_suffix}.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
+	if (ADD_AVX_BUILDS)
+		add_library ( columnar_lib_avx2 MODULE IMPORTED )
+		set_target_properties ( columnar_lib_avx2 PROPERTIES IMPORTED_LOCATION "${EXTERNAL_MODULES}/lib_manticore_columnar_avx2.${MODULE_EXT}" )
+		install ( IMPORTED_RUNTIME_ARTIFACTS columnar_lib_avx2 RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT columnar )
+		install ( FILES "${EXTERNAL_MODULES}/lib_manticore_columnar_avx2.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
+	endif ()
+endif()
 
 if (INSTALL_SECONDARY)
 	add_subdirectory ( secondary )
 	install ( TARGETS secondary_index RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT secondary )
-	install ( FILES "$<TARGET_FILE_DIR:secondary_index>/lib_manticore_secondary.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
+	install ( FILES "$<TARGET_FILE_DIR:secondary_index>/lib_manticore_secondary${lib_arch_suffix}.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
+	if (ADD_AVX_BUILDS)
+		add_library ( secondary_index_avx2 MODULE IMPORTED )
+		set_target_properties ( secondary_index_avx2 PROPERTIES IMPORTED_LOCATION "${EXTERNAL_MODULES}/lib_manticore_secondary_avx2.${MODULE_EXT}" )
+		install ( IMPORTED_RUNTIME_ARTIFACTS secondary_index_avx2 RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT secondary )
+		install ( FILES "${EXTERNAL_MODULES}/lib_manticore_secondary_avx2.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
+	endif ()
 endif ()
 
 if (INSTALL_KNN)
 	add_subdirectory ( knn )
 	install ( TARGETS knn_lib RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT knn )
-	install ( FILES "$<TARGET_FILE_DIR:knn_lib>/lib_manticore_knn.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
-	
-	# Add embeddings library as a component to be included in packages
+	install ( FILES "$<TARGET_FILE_DIR:knn_lib>/lib_manticore_knn${lib_arch_suffix}.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
 
-	# Define platform-specific embeddings library names
-	if(WIN32)
-		set(EMBEDDINGS_LIB_NAME "lib_manticore_knn_embeddings.dll")
-	elseif(APPLE)
-		set(EMBEDDINGS_LIB_NAME "lib_manticore_knn_embeddings.dylib")
-	else()
-		set(EMBEDDINGS_LIB_NAME "lib_manticore_knn_embeddings.so")
-	endif()
+	if (ADD_AVX_BUILDS)
+		add_library ( knn_lib_avx2 MODULE IMPORTED )
+		set_target_properties ( knn_lib_avx2 PROPERTIES IMPORTED_LOCATION "${EXTERNAL_MODULES}/lib_manticore_knn_avx2.${MODULE_EXT}" )
+		install ( IMPORTED_RUNTIME_ARTIFACTS knn_lib_avx2 RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT knn )
+		install ( FILES "${EXTERNAL_MODULES}/lib_manticore_knn_avx2.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
+	endif ()
 
-	# Look for embeddings library in various places
-	set(EMBEDDINGS_SEARCH_PATHS
-		"${CMAKE_BINARY_DIR}/${EMBEDDINGS_LIB_NAME}"
-		"${CMAKE_BINARY_DIR}/embeddings/${EMBEDDINGS_LIB_NAME}"
-		"${CMAKE_SOURCE_DIR}/embeddings/target/release/${EMBEDDINGS_LIB_NAME}"
-	)
-
-	foreach(SEARCH_PATH ${EMBEDDINGS_SEARCH_PATHS})
-		if(EXISTS ${SEARCH_PATH})
-			# Add build-id to the embeddings library for Linux systems
-			if(UNIX AND NOT APPLE)
-				set(PROCESSED_LIB_PATH "${CMAKE_BINARY_DIR}/${EMBEDDINGS_LIB_NAME}")
-
-				# Make a copy of the original file
-				file(COPY ${SEARCH_PATH} DESTINATION ${CMAKE_BINARY_DIR})
-
-				# Use strip to ensure build ID is properly set
-				execute_process(
-					COMMAND strip --strip-unneeded -o ${PROCESSED_LIB_PATH} ${SEARCH_PATH}
-					RESULT_VARIABLE STRIP_RESULT
-					OUTPUT_VARIABLE STRIP_OUTPUT
-					ERROR_VARIABLE STRIP_ERROR
-				)
-
-				if(STRIP_RESULT EQUAL 0)
-					message(STATUS "Successfully processed embeddings library for build ID")
-
-					# Verify the file still exists and use it for installation
-					if(EXISTS ${PROCESSED_LIB_PATH})
-						set(SEARCH_PATH ${PROCESSED_LIB_PATH})
-						message(STATUS "Using processed embeddings library for installation")
-					else()
-						message(WARNING "Processed file not found, using original library")
-					endif()
-				else()
-					message(WARNING "Failed to process embeddings library: ${STRIP_ERROR}")
-				endif()
-
-				# If strip failed, try another approach with patchelf
-				if(NOT STRIP_RESULT EQUAL 0)
-					execute_process(
-						COMMAND apt-get update && apt-get install -y patchelf
-						RESULT_VARIABLE INSTALL_RESULT
-						OUTPUT_QUIET
-						ERROR_QUIET
-					)
-
-					if(INSTALL_RESULT EQUAL 0)
-						execute_process(
-							COMMAND patchelf --set-soname libmanticore_knn_embeddings.so ${SEARCH_PATH}
-							RESULT_VARIABLE PATCHELF_RESULT
-							OUTPUT_VARIABLE PATCHELF_OUTPUT
-							ERROR_VARIABLE PATCHELF_ERROR
-						)
-
-						if(PATCHELF_RESULT EQUAL 0)
-							message(STATUS "Successfully set soname with patchelf")
-						else()
-							message(WARNING "Failed to set soname with patchelf: ${PATCHELF_ERROR}")
-						endif()
-					endif()
-				endif()
-			endif()
-
-			install(FILES ${SEARCH_PATH} DESTINATION ${MODULES_DIR} COMPONENT embeddings)
-			message(STATUS "Found embeddings library at: ${SEARCH_PATH}")
-			break()
-		endif()
-	endforeach()
+	# Add component dependency - KNN depends on embeddings
+	set ( CPACK_COMPONENT_KNN_DEPENDS embeddings_lib )
 endif ()
-
-# Add component dependency - KNN depends on embeddings
-set(CPACK_COMPONENT_KNN_DEPENDS embeddings)
-
-# Include custom DEB packaging settings before CPack
-if(UNIX AND NOT APPLE)
-    include(cmake/cpack/DEB.cmake)
-endif()
 
 include ( CPack )
 include ( testing.cmake )

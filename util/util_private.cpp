@@ -19,7 +19,6 @@
 #include <stdexcept>
 #include <cerrno>
 #include <cmath>
-#include <limits>
 
 #ifdef _MSC_VER
 	#include <io.h>
@@ -33,26 +32,14 @@ namespace util
 
 int CalcNumBits ( uint64_t uNumber )
 {
-    int iNumBits = 0;
-    while ( uNumber )
-    {
-        uNumber >>= 1;
-        iNumBits++;
-    }
+	int iNumBits = 0;
+	while ( uNumber )
+	{
+		uNumber >>= 1;
+		iNumBits++;
+	}
 
-    return iNumBits;
-}
-
-
-void NormalizeVec ( util::Span_T<float> & dData )
-{
-	float fNorm = 0.0f;
-	for ( auto i : dData )
-		fNorm += i*i;
-
-	fNorm = 1.0f / ( sqrtf(fNorm) + 1e-30f );
-	for ( auto & i : dData )
-		i *= fNorm;
+	return iNumBits;
 }
 
 /////////////////////////////////////////////////////////////////////
@@ -392,7 +379,7 @@ void MemWriter_c::Write ( const uint8_t * pData, size_t tSize )
 
 bool FloatEqual ( float fA, float fB )
 {
-    return std::fabs ( fA - fB )<=std::numeric_limits<float>::epsilon();
+	return std::fabs ( fA - fB )<=std::numeric_limits<float>::epsilon();
 }
 
 } // namespace util

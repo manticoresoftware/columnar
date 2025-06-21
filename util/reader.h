@@ -166,7 +166,7 @@ public:
 					MappedBuffer_i() = default;
 	virtual			~MappedBuffer_i() { Close(); }
 
-	virtual bool	Open ( const std::string & sFile, std::string & sError ) = 0;
+	virtual bool	Open ( const std::string & sFile, bool bWrite, std::string & sError ) = 0;
 	virtual void	Close () {};
 	static MappedBuffer_i * Create();
 	
@@ -183,10 +183,11 @@ public:
 					MappedBuffer_T () = default;
 					~MappedBuffer_T() { Reset(); }
 
-	bool			Open ( const std::string & sFile, std::string & sError ) { return m_pBuf->Open ( sFile, sError ); }
+	bool			Open ( const std::string & sFile, bool bWrite, std::string & sError ) { return m_pBuf->Open ( sFile, bWrite, sError ); }
 	void			Reset() { m_pBuf->Close(); }
 
 	const char *	GetFileName() const	{ return m_pBuf->GetFileName(); }
+	T *				data() const		{ return (T *)m_pBuf->GetPtr(); }
 	T *				begin() const		{ return (T *)m_pBuf->GetPtr(); }
 	T *				end() const			{ return (T *)m_pBuf->GetPtr() + size(); }
 	size_t			size() const		{ return m_pBuf->GetLengthBytes() / sizeof(T); }
