@@ -232,9 +232,9 @@ if (INSTALL_KNN)
 	if(WIN32)
 		set(EMBEDDINGS_LIB_NAME "lib_manticore_knn_embeddings.dll")
 	elseif(APPLE)
-		set(EMBEDDINGS_LIB_NAME "libmanticore_knn_embeddings.dylib")
+		set(EMBEDDINGS_LIB_NAME "lib_manticore_knn_embeddings.dylib")
 	else()
-		set(EMBEDDINGS_LIB_NAME "libmanticore_knn_embeddings.so")
+		set(EMBEDDINGS_LIB_NAME "lib_manticore_knn_embeddings.so")
 	endif()
 
 	# Look for embeddings library in various places
