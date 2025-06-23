@@ -168,7 +168,7 @@ jobs:
       CTEST_CMAKE_GENERATOR: "Ninja Multi-Config"
       CTEST_CONFIGURATION_TYPE: Debug
       cache_key: build_windows_x64
-      artifact_list: "build/columnar/Debug/lib_manticore_columnar.dll build/secondary/Debug/lib_manticore_secondary.dll build/_deps/manticore-build/src/Debug/indexer.exe build/_deps/manticore-build/src/Debug/searchd.exe" #
+      artifact_list: "build/columnar/Debug/lib_manticore_columnar.dll build/secondary/Debug/lib_manticore_secondary.dll build/knn/Debug/lib_manticore_knn.dll build/_deps/manticore-build/src/Debug/indexer.exe build/_deps/manticore-build/src/Debug/searchd.exe build/_deps/manticore-build/config/*.c build/_deps/manticore-build/config/*.h" #
       MANTICORE_LOCATOR: ${{ needs.check_branch.outputs.manticore_locator }}
       embeddings_artifact: embeddings_windows_x86_64
 
