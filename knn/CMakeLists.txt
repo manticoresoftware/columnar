@@ -48,11 +48,11 @@ if (PACK AND NOT EMBEDDINGS_LIB)
 endif()
 
 # Add embeddings library as a component to be included in packages
-add_library ( embeddings_lib MODULE IMPORTED )
-set_target_properties ( embeddings_lib PROPERTIES IMPORTED_LOCATION "${EMBEDDINGS_LIB}" INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/embeddings/")
+add_library ( embeddings MODULE IMPORTED )
+set_target_properties ( embeddings PROPERTIES IMPORTED_LOCATION "${EMBEDDINGS_LIB}" INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/embeddings/")
 
 if ( NOT EXTERNAL_LIB ) # install only once, not from external_project build
-	install ( IMPORTED_RUNTIME_ARTIFACTS embeddings_lib RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT embeddings )
+	install ( IMPORTED_RUNTIME_ARTIFACTS embeddings RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT embeddings )
 endif()
 
 message ( STATUS "Found manticoresearch text embeddings library: ${EMBEDDINGS_LIB}" )
