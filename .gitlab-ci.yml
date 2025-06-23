@@ -67,6 +67,7 @@ job_mirror:
       - build/xml
       - build/columnar/lib_manticore_columnar.so
       - build/secondary/lib_manticore_secondary.so
+      - build/knn/lib_manticore_knn.so
       - build/_deps/manticore-build/src/searchd
       - build/_deps/manticore-build/src/indexer
       - build/_deps/manticore-build/src/indextool
@@ -148,6 +149,7 @@ win_build:
       - build/xml
       - build/columnar/$CTEST_CONFIGURATION_TYPE/lib_manticore_columnar.dll
       - build/secondary/$CTEST_CONFIGURATION_TYPE/lib_manticore_secondary.dll
+      - build/knn/$CTEST_CONFIGURATION_TYPE/lib_manticore_knn.dll
       - build/_deps/manticore-build/src/$CTEST_CONFIGURATION_TYPE/indexer.exe
       - build/_deps/manticore-build/src/$CTEST_CONFIGURATION_TYPE/searchd.exe
 # Commented out usually need, but not on our dev where everything is installed into system

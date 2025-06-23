@@ -49,7 +49,7 @@ on:
       artifact_list:
         required: false
         type: string
-        default: "build/columnar/lib_manticore_columnar_avx2.so build/columnar/lib_manticore_columnar.so build/secondary/lib_manticore_secondary_avx2.so build/secondary/lib_manticore_secondary.so build/_deps/manticore-build/src/searchd build/_deps/manticore-build/src/indexer build/_deps/manticore-build/src/indextool build/_deps/manticore-build/config/*.c build/_deps/manticore-build/config/*.h"
+        default: "build/columnar/lib_manticore_columnar_avx2.so build/columnar/lib_manticore_columnar.so build/secondary/lib_manticore_secondary_avx2.so build/secondary/lib_manticore_secondary.so build/knn/lib_manticore_knn.so build/knn/lib_manticore_knn_avx2.so build/_deps/manticore-build/src/searchd build/_deps/manticore-build/src/indexer build/_deps/manticore-build/src/indextool build/_deps/manticore-build/config/*.c build/_deps/manticore-build/config/*.h"
       HOMEBREW_PREFIX:
         required: false
         type: string
