@@ -11,6 +11,6 @@ set ( CPACK_DEBIAN_PACKAGE_PRIORITY optional )
 set ( CPACK_DEBIAN_PACKAGE_CONTROL_STRICT_PERMISSION ON )
 set ( CPACK_DEBIAN_PACKAGE_SUGGESTS "manticore (>= 3.6.1)" )
 
-if (NOT disable_shlideps)
+if (NOT disable_shlibdeps)
 	set ( CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON )
 endif ()

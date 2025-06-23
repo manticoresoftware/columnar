@@ -292,7 +292,7 @@ if (INSTALL_KNN)
 	endif ()
 
 	# Add component dependency - KNN depends on embeddings
-	set ( CPACK_COMPONENT_KNN_DEPENDS embeddings_lib )
+	set ( CPACK_COMPONENT_KNN_DEPENDS embeddings )
 endif ()
 
 include ( CPack )

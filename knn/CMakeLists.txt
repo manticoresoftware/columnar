@@ -35,7 +35,7 @@ endif()
 # find embeddings library
 set(EMBEDDINGS_LIB_NAME manticore_knn_embeddings)
 set ( CMAKE_FIND_LIBRARY_SUFFIXES .so .dylib .dll )
-FIND_LIBRARY ( EMBEDDINGS_LIB NAMES lib_${EMBEDDINGS_LIB_NAME} HINTS
+FIND_LIBRARY ( EMBEDDINGS_LIB NAMES _${EMBEDDINGS_LIB_NAME} ${EMBEDDINGS_LIB_NAME} lib_${EMBEDDINGS_LIB_NAME} HINTS
 		"${CMAKE_SOURCE_DIR}/embeddings/target/debug"
 		"${CMAKE_SOURCE_DIR}/embeddings/target/release"
 		"${CMAKE_CURRENT_BINARY_DIR}/embeddings/release"
@@ -48,11 +48,11 @@ if (PACK AND NOT EMBEDDINGS_LIB)
 endif()
 
 # Add embeddings library as a component to be included in packages
-add_library ( embeddings_lib MODULE IMPORTED )
-set_target_properties ( embeddings_lib PROPERTIES IMPORTED_LOCATION "${EMBEDDINGS_LIB}" INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/embeddings/")
+add_library ( embeddings MODULE IMPORTED )
+set_target_properties ( embeddings PROPERTIES IMPORTED_LOCATION "${EMBEDDINGS_LIB}" INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/embeddings/")
 
 if ( NOT EXTERNAL_LIB ) # install only once, not from external_project build
-	install ( IMPORTED_RUNTIME_ARTIFACTS embeddings_lib RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT embeddings )
+	install ( IMPORTED_RUNTIME_ARTIFACTS embeddings RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT embeddings )
 endif()
 
 message ( STATUS "Found manticoresearch text embeddings library: ${EMBEDDINGS_LIB}" )
