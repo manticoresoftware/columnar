@@ -33,9 +33,9 @@ if ( BUILD_EMBEDDINGS_LOCALLY )
 endif()
 
 # find embeddings library
-set(EMBEDDINGS_LIB_NAME _manticore_knn_embeddings)
+set(EMBEDDINGS_LIB_NAME manticore_knn_embeddings)
 set ( CMAKE_FIND_LIBRARY_SUFFIXES .so .dylib .dll )
-FIND_LIBRARY ( EMBEDDINGS_LIB NAMES lib_${EMBEDDINGS_LIB_NAME} HINTS
+FIND_LIBRARY ( EMBEDDINGS_LIB NAMES _${EMBEDDINGS_LIB_NAME} ${EMBEDDINGS_LIB_NAME} HINTS
 		"${CMAKE_SOURCE_DIR}/embeddings/target/debug"
 		"${CMAKE_SOURCE_DIR}/embeddings/target/release"
 		"${CMAKE_CURRENT_BINARY_DIR}/embeddings/release"
