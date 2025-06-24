@@ -87,17 +87,6 @@ protected:
 	virtual float CalcAlpha ( const QuantizationSettings_t & tSettings ) const	{ return ( tSettings.m_fMax-tSettings.m_fMin ) / 255.0; }
 };
 
-class L2Space4BitFloat_c : public L2Space8BitFloat_c
-{
- public:
-			L2Space4BitFloat_c ( size_t uDim );
-
-	size_t	get_data_size() override		{ return (m_uDim+1)>>1; }
-
-protected:
-	float	CalcAlpha ( const QuantizationSettings_t & tSettings ) const override { return ( tSettings.m_fMax-tSettings.m_fMin ) / 15.0; }
-};
-
 class L2Space1BitFloat_c : public L2Space8BitFloat_c
 {
  public:
@@ -148,14 +137,6 @@ class IPSpace8BitFloat_c : public Space_c
 
 private:
 	DistFuncParamIP_t m_tDistFuncParam;
-};
-
-class IPSpace4BitFloat_c : public IPSpace8BitFloat_c
-{
- public:
-			IPSpace4BitFloat_c ( size_t uDim );
-
-	size_t	get_data_size() override		{ return ( (m_uDim+3)>>1 ) + sizeof(float); }
 };
 
 

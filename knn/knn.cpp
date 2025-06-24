@@ -118,7 +118,6 @@ Space_i * HNSWDist_c::CreateSpaceInterface ( bool bBuild ) const
 		{
 		case Quantization_e::BIT1:	return new IPSpaceBinaryFloat_c ( m_iDim, bBuild );
 		case Quantization_e::BIT1SIMPLE: return new IPSpace1BitFloat_c(m_iDim);
-		case Quantization_e::BIT4:	return new IPSpace4BitFloat_c(m_iDim);
 		case Quantization_e::BIT8:	return new IPSpace8BitFloat_c(m_iDim);
 		default:					return new IPSpace32BitFloat_c(m_iDim);
 		}
@@ -128,7 +127,6 @@ Space_i * HNSWDist_c::CreateSpaceInterface ( bool bBuild ) const
 		{
 		case Quantization_e::BIT1:	return new L2SpaceBinaryFloat_c ( m_iDim, bBuild );
 		case Quantization_e::BIT1SIMPLE: return new L2Space1BitFloat_c(m_iDim);
-		case Quantization_e::BIT4:	return new L2Space4BitFloat_c(m_iDim);
 		case Quantization_e::BIT8:	return new L2Space8BitFloat_c(m_iDim);
 		default:					return new L2Space32BitFloat_c(m_iDim);
 		}
