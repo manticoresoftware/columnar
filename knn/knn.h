@@ -41,7 +41,7 @@ enum class Quantization_e
 	NONE,
 	BIT1,
 	BIT1SIMPLE,
-	BIT4,
+	BIT4,	// no longer supported
 	BIT8
 };
 

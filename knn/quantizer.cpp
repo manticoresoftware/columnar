@@ -965,7 +965,6 @@ ScalarQuantizer_i * CreateQuantizer ( Quantization_e eQuantization, const Quanti
 	{
 	case Quantization_e::BIT1:	return new ScalarQuantizerBinary_T<false> ( tQuantSettings, eSimilarity );
 	case Quantization_e::BIT1SIMPLE: return new ScalarQuantizer1Bit_c(tQuantSettings);
-	case Quantization_e::BIT4:	return new ScalarQuantizer4Bit_c(tQuantSettings);
 	case Quantization_e::BIT8:	return new ScalarQuantizer8Bit_c(tQuantSettings);
 	default:					return nullptr;
 	}
@@ -979,7 +978,6 @@ ScalarQuantizer_i * CreateQuantizer ( Quantization_e eQuantization, HNSWSimilari
 	{
 	case Quantization_e::BIT1:	return new ScalarQuantizerBinary_T<true> ( eSimilarity, sTmpFilename );
 	case Quantization_e::BIT1SIMPLE: return new ScalarQuantizer1Bit_c;
-	case Quantization_e::BIT4:	return new ScalarQuantizer4Bit_c;
 	case Quantization_e::BIT8:	return new ScalarQuantizer8Bit_c;
 	default:					return nullptr;
 	}
