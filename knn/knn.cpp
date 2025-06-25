@@ -426,8 +426,9 @@ private:
 
 HNSWBuilder_c::HNSWBuilder_c ( const Schema_t & tSchema, int64_t iNumElements, const std::string & sTmpFilename )
 {
+	int iFile = 0;
 	for ( const auto & i : tSchema )
-		m_dIndexes.push_back ( std::make_unique<HNSWIndexBuilder_c> ( i, iNumElements, CreateQuantizer ( i.m_eQuantization, i.m_eHNSWSimilarity, sTmpFilename ) ) );
+		m_dIndexes.push_back ( std::make_unique<HNSWIndexBuilder_c> ( i, iNumElements, CreateQuantizer ( i.m_eQuantization, i.m_eHNSWSimilarity, FormatStr ( "%s.%d", sTmpFilename.c_str(), iFile++ ) ) ) );
 }
 
 

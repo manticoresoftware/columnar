@@ -815,6 +815,7 @@ class ScalarQuantizerBinary_T : public ScalarQuantizer_i
 public:
 			ScalarQuantizerBinary_T ( HNSWSimilarity_e eSimilarity, const std::string & sTmpFilename );
 			ScalarQuantizerBinary_T ( const QuantizationSettings_t & tSettings, HNSWSimilarity_e eSimilarity );
+			~ScalarQuantizerBinary_T() { Reset(); }
 
 	void	Train ( const Span_T<float> & dPoint ) override;
 	bool	FinalizeTraining ( std::string & sError ) override;
@@ -839,6 +840,8 @@ private:
 	uint32_t	m_uRowId = 0;
 	size_t		m_uQuantized4BitEntrySize = 0;
 	int64_t		m_iWritten = 0;
+
+	void		Reset();
 };
 
 template <bool BUILD>
@@ -897,8 +900,17 @@ void ScalarQuantizerBinary_T<BUILD>::Encode ( const Span_T<float> & dPoint, std:
 template <bool BUILD>
 void ScalarQuantizerBinary_T<BUILD>::FinalizeEncoding()
 {
-	m_tBuffer4Bit.Reset();
-	::unlink ( m_sTmpFilename.c_str() );
+	Reset();
+}
+
+template <bool BUILD>
+void ScalarQuantizerBinary_T<BUILD>::Reset()
+{
+	if constexpr ( BUILD )
+	{
+		m_tBuffer4Bit.Reset();
+		::unlink ( m_sTmpFilename.c_str() );
+	}
 }
 
 template <bool BUILD>
