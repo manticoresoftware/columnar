@@ -26,7 +26,7 @@
 namespace knn
 {
 
-static const int LIB_VERSION = 7;
+static const int LIB_VERSION = 8;
 static const uint32_t STORAGE_VERSION = 3;
 
 enum class HNSWSimilarity_e
@@ -99,8 +99,8 @@ class Builder_i
 public:
 	virtual			~Builder_i() = default;
 
-	virtual void	Train ( int iAttr, const util::Span_T<float> & dData ) = 0;
-	virtual bool	SetAttr ( int iAttr, const util::Span_T<float> & dData ) = 0;
+	virtual void	Train ( int iAttr, uint32_t uRowID, const util::Span_T<float> & dData ) = 0;
+	virtual bool	SetAttr ( int iAttr, uint32_t uRowID, const util::Span_T<float> & dData ) = 0;
 	virtual bool	Save ( const std::string & sFilename, size_t tBufferSize, std::string & sError ) = 0;
 	virtual const std::string & GetError() const = 0;
 };
