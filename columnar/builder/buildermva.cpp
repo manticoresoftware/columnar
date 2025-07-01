@@ -373,12 +373,15 @@ void Packer_MVA_T<T,HEADER_T>::WritePacked_DeltaPFOR ( bool bWriteLengths )
 		else
 			uNumValues = m_iConstLength*iBlockValues;
 
-		// write bodies	
-		Span_T<T> dValuesToWrite ( &m_dCollectedValues[uTotalValues], uNumValues );
-		if ( m_bValuesSortedAsc )
-			PrepareValues ( dValuesToWrite, dLengths );
+		if ( uNumValues )
+		{
+			// write bodies	
+			Span_T<T> dValuesToWrite ( &m_dCollectedValues[uTotalValues], uNumValues );
+			if ( m_bValuesSortedAsc )
+				PrepareValues ( dValuesToWrite, dLengths );
 
-		WriteValues_PFOR ( dValuesToWrite, m_dUncompressed, m_dCompressed, tMemWriter, m_pCodec.get(), false );
+			WriteValues_PFOR ( dValuesToWrite, m_dUncompressed, m_dCompressed, tMemWriter, m_pCodec.get(), false );
+		}
 
 		m_dSubblockSizes[iBlock] = uint32_t ( tMemWriter.GetPos()-tSubblockStart );
 
