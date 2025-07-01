@@ -14,6 +14,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// This file is a part of the common headers (API).
+// If you make any significant changes to this file, you MUST bump the LIB_VERSION.
+
 #pragma once
 
 #include "knn.h"
@@ -64,7 +67,7 @@ public:
 
 	virtual void	Train ( const util::Span_T<float> & dPoint ) = 0;
 	virtual bool	FinalizeTraining ( std::string & sError ) = 0;
-	virtual void	Encode ( const util::Span_T<float> & dPoint, std::vector<uint8_t> & dQuantized ) = 0;
+	virtual void	Encode ( uint32_t uRowID, const util::Span_T<float> & dPoint, std::vector<uint8_t> & dQuantized ) = 0;
 	virtual void	FinalizeEncoding() = 0;
 	virtual const QuantizationSettings_t & GetSettings() = 0;
 
@@ -72,6 +75,6 @@ public:
 };
 
 ScalarQuantizer_i * CreateQuantizer ( Quantization_e eQuantization, const QuantizationSettings_t & tQuantSettings, HNSWSimilarity_e eSimilarity );
-ScalarQuantizer_i * CreateQuantizer ( Quantization_e eQuantization, HNSWSimilarity_e eSimilarity, const std::string & sTmpFilename );
+ScalarQuantizer_i * CreateQuantizer ( Quantization_e eQuantization, HNSWSimilarity_e eSimilarity, int64_t iNumElements, const std::string & sTmpFilename );
 
 } // namespace knn

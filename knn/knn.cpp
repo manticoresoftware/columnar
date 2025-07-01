@@ -208,7 +208,7 @@ void HNSWIndex_c::Search ( std::vector<DocDist_t> & dResults, const Span_T<float
 	const void * pData = dData.begin();
 	if ( m_pQuantizer )
 	{
-		m_pQuantizer->Encode ( dData, dQuantized );
+		m_pQuantizer->Encode ( 0, dData, dQuantized );
 		pData = dQuantized.data();
 	}
 
@@ -390,7 +390,7 @@ bool HNSWIndexBuilder_c::AddDoc ( uint32_t uRowID, const util::Span_T<float> & d
 			m_pSpace->SetQuantizationSettings ( *m_pQuantizer );
 		}
 
-		m_pQuantizer->Encode ( dToAdd, m_dQuantized );
+		m_pQuantizer->Encode ( uRowID, dToAdd, m_dQuantized );
 		m_pAlg->addPoint ( (void*)m_dQuantized.data(), (size_t)uRowID );
 	}
 	else
@@ -430,7 +430,7 @@ HNSWBuilder_c::HNSWBuilder_c ( const Schema_t & tSchema, int64_t iNumElements, c
 {
 	int iFile = 0;
 	for ( const auto & i : tSchema )
-		m_dIndexes.push_back ( std::make_unique<HNSWIndexBuilder_c> ( i, iNumElements, CreateQuantizer ( i.m_eQuantization, i.m_eHNSWSimilarity, FormatStr ( "%s.%d", sTmpFilename.c_str(), iFile++ ) ) ) );
+		m_dIndexes.push_back ( std::make_unique<HNSWIndexBuilder_c> ( i, iNumElements, CreateQuantizer ( i.m_eQuantization, i.m_eHNSWSimilarity, iNumElements, FormatStr ( "%s.%d", sTmpFilename.c_str(), iFile++ ) ) ) );
 }
 
 
