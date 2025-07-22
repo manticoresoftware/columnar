@@ -504,7 +504,8 @@ void StoredBlock_MvaPFOR_T<T>::ReadSubblock ( int iSubblockId, int iSubblockValu
 		uTotalLength += i;
 
 	m_dValues.resize(uTotalLength);
-	DecodeValues_PFOR ( m_dValues, tReader, *m_pCodec, m_dTmp, uint32_t ( uSize-uSize1-iDelta ) );
+	if ( uTotalLength )
+		DecodeValues_PFOR ( m_dValues, tReader, *m_pCodec, m_dTmp, uint32_t ( uSize-uSize1-iDelta ) );
 
 	PrecalcSizeOffset ( m_dLengths, m_dValues, m_dValuePtrs );
 
