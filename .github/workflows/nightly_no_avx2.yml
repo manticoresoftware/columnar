@@ -1,0 +1,226 @@
+name: Nightly no AVX2 tests
+run-name: 🌙 Nightly no AVX2 tests ${{ github.sha }}
+
+on:
+  schedule:
+    - cron: '00 20 * * *'
+  push:
+    branches:
+      - '**'
+    paths:
+      - '.github/workflows/nightly_no_avx2.yml'
+      - '.github/workflows/build_template.yml'
+      - '.github/workflows/test_template.yml'
+
+
+# cancels the previous workflow run when a new one appears in the same branch (e.g. master or a PR's branch)
+concurrency:
+  group: nightly_no_avx2_${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  commit_info:
+    name: Commit info
+    runs-on: ubuntu-22.04
+    steps:
+      - run: |
+          echo "# Automated Tests of commit ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          [[ "${{ github.event.schedule }}" == "00 20 * * *" ]] && echo "* **Nightly test, testing master's head with the daemon's master head**" >> $GITHUB_STEP_SUMMARY
+          echo "* Commit URL: [${{ github.sha }}](/${{ github.repository }}/commit/${{ github.sha }})" >> $GITHUB_STEP_SUMMARY
+          echo "* Initiated by: [@${{ github.actor }}](https://github.com/${{ github.actor }})" >> $GITHUB_STEP_SUMMARY
+          echo "* Ref: ${{ github.ref_type }} \"${{ github.ref_name }}\"" >> $GITHUB_STEP_SUMMARY
+          echo "* Attempt: ${{ github.run_attempt }}" >> $GITHUB_STEP_SUMMARY
+
+  check_branch:
+    name: Check branch existence
+    runs-on: ubuntu-22.04
+    outputs:
+      manticore_locator: ${{ steps.set_locator.outputs.manticore_locator }}
+    steps:
+      - name: Check if branch exists in manticoresoftware/manticoresearch
+        id: check_branch
+        if: github.ref_name != 'master'
+        run: |
+          # Extract the actual branch name for pull requests
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+            echo "Pull request detected, using head ref: $BRANCH_NAME"
+          else
+            BRANCH_NAME="${{ github.ref_name }}"
+            echo "Direct push detected, using ref name: $BRANCH_NAME"
+          fi
+
+          echo "Checking if branch '$BRANCH_NAME' exists in manticoresoftware/manticoresearch..."
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://api.github.com/repos/manticoresoftware/manticoresearch/branches/$BRANCH_NAME)
+          echo "GitHub API response status: $HTTP_STATUS"
+
+          if [ "$HTTP_STATUS" -eq "200" ]; then
+            echo "✅ Branch '$BRANCH_NAME' EXISTS in manticoresoftware/manticoresearch"
+            echo "branch_exists=true" >> $GITHUB_OUTPUT
+            echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Branch '$BRANCH_NAME' does NOT exist in manticoresoftware/manticoresearch (HTTP $HTTP_STATUS)"
+            echo "branch_exists=false" >> $GITHUB_OUTPUT
+            echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set Manticore Locator
+        id: set_locator
+        run: |
+          if [[ "${{ github.event.schedule }}" == "00 20 * * *" ]]; then
+            echo "manticore_locator=GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG master" >> $GITHUB_OUTPUT
+            echo "Set manticore_locator: GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG master"
+          elif [[ "${{ github.ref_name }}" != "master" && "${{ steps.check_branch.outputs.branch_exists }}" == "true" ]]; then
+            echo "manticore_locator=GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG ${{ steps.check_branch.outputs.branch_name }}" >> $GITHUB_OUTPUT
+            echo "Set manticore_locator: GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG ${{ steps.check_branch.outputs.branch_name }}"
+          else
+            echo "manticore_locator=" >> $GITHUB_OUTPUT
+            echo "Set manticore_locator: (empty)"
+          fi
+
+  embedding_linux_pack:
+    needs: commit_info
+    uses: ./.github/workflows/embedding_build_template.yml
+    strategy:
+      fail-fast: false
+      matrix:
+        distr: [linux]
+        arch: [x86_64]
+    name: ${{ matrix.distr }} ${{ matrix.arch }} embedding packing
+    with:
+      distr: ${{ matrix.distr }}
+      arch: ${{ matrix.arch }}
+
+  build_linux_release:
+    name: Linux release build
+    needs: [embedding_linux_pack, check_branch]
+    uses: ./.github/workflows/build_template.yml
+    with:
+      MANTICORE_LOCATOR: ${{ needs.check_branch.outputs.manticore_locator }}
+      embeddings_artifact: embeddings_linux_x86_64
+
+  test_linux_release:
+    name: Linux release mode tests
+    needs: [build_linux_release, check_branch]
+    uses: ./.github/workflows/test_template.yml
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [1_54,55_108,109_162,163_216,217_270,271_324,325_378,379_and_on]
+        include:
+          - name: 1_54
+            start: 1
+            end: 54
+          - name: 55_108
+            start: 55
+            end: 108
+          - name: 109_162
+            start: 109
+            end: 162
+          - name: 163_216
+            start: 163
+            end: 216
+          - name: 217_270
+            start: 217
+            end: 270
+          - name: 271_324
+            start: 271
+            end: 324
+          - name: 325_378
+            start: 325
+            end: 378
+          - name: 379_and_on
+            start: 379
+            end: 999999
+    with:
+      CTEST_CONFIGURATION_TYPE: "RelWithDebInfo"
+      CTEST_START: ${{ matrix.start }}
+      CTEST_END: ${{ matrix.end }}
+      MANTICORE_LOCATOR: ${{ needs.check_branch.outputs.manticore_locator }}
+      artifact_name: no_avx2_release_test_${{ matrix.name }}
+      xml_command: "cd build; cp -r Testing/2*/Test.xml .; xsltproc -o junit_tests_${{ matrix.name }}.xml ../misc/junit/ctest2junit.xsl Test.xml"
+      timeout: 10
+      REMOVE_AVX2: true
+
+  release_tests_report:
+    name: release mode tests summary and report
+    needs: test_linux_release
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download test report artifact 1_54
+        uses: manticoresoftware/download_artifact_with_retries@v4
+        continue-on-error: true
+        with:
+          name: no_avx2_release_test_1_54
+          path: .
+      - name: Download test report artifact 55_108
+        uses: manticoresoftware/download_artifact_with_retries@v4
+        continue-on-error: true
+        with:
+          name: no_avx2_release_test_55_108
+          path: .
+      - name: Download test report artifact 109_162
+        uses: manticoresoftware/download_artifact_with_retries@v4
+        continue-on-error: true
+        with:
+          name: no_avx2_release_test_109_162
+          path: .
+      - name: Download test report artifact 163_216
+        uses: manticoresoftware/download_artifact_with_retries@v4
+        continue-on-error: true
+        with:
+          name: no_avx2_release_test_163_216
+          path: .
+      - name: Download test report artifact 217_270
+        uses: manticoresoftware/download_artifact_with_retries@v4
+        continue-on-error: true
+        with:
+          name: no_avx2_release_test_217_270
+          path: .
+      - name: Download test report artifact 271_324
+        uses: manticoresoftware/download_artifact_with_retries@v4
+        continue-on-error: true
+        with:
+          name: no_avx2_release_test_271_324
+          path: .
+      - name: Download test report artifact 325_378
+        uses: manticoresoftware/download_artifact_with_retries@v4
+        continue-on-error: true
+        with:
+          name: no_avx2_release_test_325_378
+          path: .
+      - name: Download test report artifact 379_and_on
+        uses: manticoresoftware/download_artifact_with_retries@v4
+        continue-on-error: true
+        with:
+          name: no_avx2_release_test_379_and_on
+          path: .
+      - name: Publish test results
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        continue-on-error: true
+        with:
+          check_name: Linux release test results
+          files: build/junit*.xml
+          compare_to_earlier_commit: false
+      - name: Per-test results
+        run: |
+          for file in build/status*; do echo -n "$file: "; cat "$file"; done
+          grep -o "success" build/status* | wc -l | awk '{if ($1==8) exit 0; else {print "Found only "$1" successful runs out of 8"; exit 1}}'
+        shell: bash
+      - name: Delete unneded per-shard artifacts
+        if: always()
+        uses: geekyeggo/delete-artifact@v5
+        with:
+          name: no_avx2_release_test_*
+          failOnError: false
+      - name: Upload combined artifacts
+        if: always()
+        continue-on-error: true
+        uses: manticoresoftware/upload_artifact_with_retries@v4
+        with:
+          name: no_avx2_release_test_resuls
+          path: build
