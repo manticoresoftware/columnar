@@ -118,7 +118,7 @@ jobs:
         run: find .
 
       - name: List of modules
-        run: ls /usr/share/manticore/modules/
+        run: find / -name "*.so" 2>/dev/null || echo "No *.so files found"
 
       - name: Remove AVX2 files
         if: ${{ inputs.REMOVE_AVX2 == true }}
