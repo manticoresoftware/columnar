@@ -147,6 +147,11 @@ jobs:
       - name: 🚀 Build
         run: ${{ inputs.cmake_command }}
 
+      - name: List of build artifacts
+        if: success()
+        run: |
+          find build/
+
       - name: Upload build artifacts
         if: success()
         uses: manticoresoftware/upload_artifact_with_retries@v4
