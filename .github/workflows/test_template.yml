@@ -29,7 +29,7 @@ on:
         required: false
         type: string
         default: ""
-      USE_AVX2_LIBS:
+      REMOVE_AVX2:
         required: true
         type: boolean
         default: false
@@ -119,6 +119,10 @@ jobs:
 
       - name: List of modules
         run: find / -name "*.so" 2>/dev/null || echo "No *.so files found"
+
+      - name: Remove AVX2 files
+        if: ${{ inputs.REMOVE_AVX2 == true }}
+        run: rm -f build/columnar/*_avx2.so
 
       - name: 🚀 Test
         id: test
