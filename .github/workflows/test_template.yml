@@ -29,8 +29,8 @@ on:
         required: false
         type: string
         default: ""
-      REMOVE_AVX2:
-        required: false
+      USE_AVX2_LIBS:
+        required: true
         type: boolean
         default: false
 
@@ -119,14 +119,6 @@ jobs:
 
       - name: List of modules
         run: find / -name "*.so" 2>/dev/null || echo "No *.so files found"
-
-      - name: Remove AVX2 files
-        if: ${{ inputs.REMOVE_AVX2 == true }}
-        run: rm -f /usr/share/manticore/modules/*_avx2.so
-
-      - name: List of modules after AVX2 removing
-        if: ${{ inputs.REMOVE_AVX2 == true }}
-        run: ls /usr/share/manticore/modules/*_avx2.so
 
       - name: 🚀 Test
         id: test
