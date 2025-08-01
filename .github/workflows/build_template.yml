@@ -149,12 +149,9 @@ jobs:
 
       - name: Move AVX2-optimized libraries
         if: success()
-        run: |
-          moved=false
-          [ -d build/avx2/share/manticore/modules ] && shopt -s nullglob && mv build/avx2/share/manticore/modules/*_avx2.* build/columnar/ 2>/dev/null && moved=true
-          [ -d build/avx2/share/modules ] && shopt -s nullglob && mv build/avx2/share/modules/*_avx2.* build/columnar/ 2>/dev/null && moved=true
-          [ "$moved" = false ] && echo "No files moved: directories or files not found."
-        shell: bash --noprofile --norc -e -o pipefail {0}
+        run: |          
+          [ -d build/avx2/share/manticore/modules ] && mv build/avx2/share/manticore/modules/*_avx2.* build/columnar/
+          [ -d build/avx2/share/modules ] && mv build/avx2/share/modules/*_avx2.* build/columnar/
 
       - name: Upload build artifacts
         if: success()
