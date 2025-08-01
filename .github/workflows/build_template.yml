@@ -150,13 +150,10 @@ jobs:
       - name: Move AVX2-optimized libraries
         if: success()
         run: |
-          mkdir -p build/columnar
           if [ -d build/avx2/share/manticore/modules ]; then
-            shopt -s nullglob
             mv build/avx2/share/manticore/modules/*_avx2.* build/columnar/ 2>/dev/null
           fi
           if [ -d build/avx2/share/modules ]; then
-            shopt -s nullglob
             mv build/avx2/share/modules/*_avx2.* build/columnar/ 2>/dev/null
           fi
         shell: bash --noprofile --norc -e -o pipefail {0}
