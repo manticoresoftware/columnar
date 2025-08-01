@@ -150,8 +150,12 @@ jobs:
       - name: Move AVX2-optimized libraries
         if: success()
         run: |
-          mv build/avx2/share/manticore/modules/lib_manticore_columnar_avx2.so build/columnar/lib_manticore_columnar_avx2.so
-          mv build/avx2/share/manticore/modules/lib_manticore_secondary_avx2.so build/secondary/lib_manticore_secondary_avx2.so
+          mv build/avx2/share/manticore/modules/*_avx2.* build/columnar/
+
+      - name: List build files
+        if: success()
+        run: |
+          find build/
 
       - name: Upload build artifacts
         if: success()
