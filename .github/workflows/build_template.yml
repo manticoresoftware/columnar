@@ -147,15 +147,15 @@ jobs:
       - name: 🚀 Build
         run: ${{ inputs.cmake_command }}
 
-      - name: Move AVX2-optimized libraries
-        if: success()
-        run: |
-          mv build/avx2/share/manticore/modules/*_avx2.* build/columnar/
-
       - name: List build files
         if: success()
         run: |
           find build/
+
+      - name: Move AVX2-optimized libraries
+        if: success()
+        run: |
+          mv build/avx2/share/manticore/modules/*_avx2.* build/columnar/
 
       - name: Upload build artifacts
         if: success()
