@@ -213,6 +213,7 @@ jobs:
       artifact_name: debug_test_${{ matrix.name }}
       xml_command: "cd build; cp -r Testing/2*/Test.xml .; xsltproc -o junit_tests_${{ matrix.name }}.xml ../misc/junit/ctest2junit.xsl Test.xml"
       timeout: 10
+      USE_AVX2: true
 
   debug_tests_report:
     name: Debug mode tests summary and report
@@ -338,6 +339,7 @@ jobs:
       artifact_name: release_test_${{ matrix.name }}
       xml_command: "cd build; cp -r Testing/2*/Test.xml .; xsltproc -o junit_tests_${{ matrix.name }}.xml ../misc/junit/ctest2junit.xsl Test.xml"
       timeout: 10
+      USE_AVX2: true
 
   release_tests_report:
     name: release mode tests summary and report
@@ -451,6 +453,7 @@ jobs:
       CTEST_END: ${{ matrix.end }}
       MANTICORE_LOCATOR: ${{ needs.check_branch.outputs.manticore_locator }}
       artifact_name: windows_test_${{ matrix.name }}
+      USE_AVX2: true
 
   windows_tests_report:
     name: Windows tests summary and report

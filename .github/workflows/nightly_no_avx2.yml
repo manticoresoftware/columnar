@@ -140,7 +140,7 @@ jobs:
       artifact_name: no_avx2_release_test_${{ matrix.name }}
       xml_command: "cd build; cp -r Testing/2*/Test.xml .; xsltproc -o junit_tests_${{ matrix.name }}.xml ../misc/junit/ctest2junit.xsl Test.xml"
       timeout: 10
-      REMOVE_AVX2: true
+      USE_AVX2: false
 
   release_tests_report:
     name: release mode tests summary and report

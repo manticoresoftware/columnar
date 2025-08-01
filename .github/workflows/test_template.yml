@@ -29,10 +29,10 @@ on:
         required: false
         type: string
         default: ""
-      REMOVE_AVX2:
+      USE_AVX2:
         required: false
         type: boolean
-        default: false
+        default: true
 
 jobs:
   test:
@@ -120,9 +120,14 @@ jobs:
       - name: List of modules
         run: find / -name "*.so" 2>/dev/null || echo "No *.so files found"
 
-      - name: Remove AVX2 files
-        if: ${{ inputs.REMOVE_AVX2 == true }}
-        run: rm -f build/columnar/*_avx2.so
+      - name: Replace standard libs to AVX2
+        if: ${{ inputs.USE_AVX2 == true }}
+        run: |
+          if [ -d /__w/columnar/columnar/build/columnar ]; then
+            echo "Move linux based libs"
+            mv /__w/columnar/columnar/build/columnar/lib_manticore_columnar_avx2.so /__w/columnar/columnar/build/columnar/lib_manticore_columnar.so
+            mv /__w/columnar/columnar/build/secondary/lib_manticore_secondary_avx2.so /__w/columnar/columnar/build/secondary/lib_manticore_secondary.so
+          fi
 
       - name: 🚀 Test
         id: test
