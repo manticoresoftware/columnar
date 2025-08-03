@@ -18,6 +18,10 @@ on:
         required: false
         type: string
         default: ""
+      USE_AVX2:
+        required: false
+        type: boolean
+        default: true
 
 jobs:
   test_windows:
@@ -140,6 +144,17 @@ jobs:
           mkdir embeddings\target\release
           mv .\embeddings-lib\build\* embeddings\target\release\
           rm -r ./embeddings-lib
+
+      - name: Replace standard libs to AVX2
+        if: ${{ inputs.USE_AVX2 == true }}
+        run: |
+          if (Test-Path -Path "D:\a\columnar\columnar\build\columnar\Debug\") {
+            Write-Host "Moving Windows-based libs"
+            Move-Item -Path "D:\a\columnar\columnar\build\columnar\Debug\lib_manticore_columnar_avx2.dll" -Destination "D:\a\columnar\columnar\build\columnar\Debug\lib_manticore_columnar.dll" -Force
+            Move-Item -Path "D:\a\columnar\columnar\build\secondary\Debug\lib_manticore_secondary_avx2.dll" -Destination "D:\a\columnar\columnar\build\secondary\Debug\lib_manticore_secondary.dll" -Force
+          } else {
+            Write-Host "Directory D:\a\columnar\columnar\build\columnar\Debug\ does not exist"
+          }
 
       - name: 🚀 Test
         id: test
