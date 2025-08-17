@@ -63,8 +63,24 @@ jobs:
           else
             echo "⏭️  Skipping OpenAI tests - OPENAI_API_KEY not configured"
           fi
+
+          if [ -n "${{ secrets.VOYAGE_API_KEY }}" ]; then
+            echo "✅ Running Voyager integration tests..."
+            cargo test --lib voyager_test::tests --verbose
+          else
+            echo "⏭️  Skipping Voyager tests - VOYAGE_API_KEY not configured"
+          fi
+
+          if [ -n "${{ secrets.JINA_API_KEY }}" ]; then
+            echo "✅ Running Jina integration tests..."
+            cargo test --lib jina_test::tests --verbose
+          else
+            echo "⏭️  Skipping Jina tests - JINA_API_KEY not configured"
+          fi
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
+          JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
           RUST_BACKTRACE: 1
 
       - name: Quality check summary
@@ -74,6 +90,8 @@ jobs:
           echo "- Format: Checked and compliant"
           echo "- Tests: All unit tests passed"
           echo "- OpenAI: $([ -n "${{ secrets.OPENAI_API_KEY }}" ] && echo "Integration tested" || echo "Skipped (no API key)")"
+          echo "- Voyage: $([ -n "${{ secrets.VOYAGE_API_KEY }}" ] && echo "Integration tested" || echo "Skipped (no API key)")"
+          echo "- Jina: $([ -n "${{ secrets.JINA_API_KEY }}" ] && echo "Integration tested" || echo "Skipped (no API key)")"
 
   build:
     needs: quality-check  # Only run build after quality check passes

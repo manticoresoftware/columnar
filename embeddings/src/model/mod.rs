@@ -1,9 +1,17 @@
+mod jina;
 mod local;
 mod openai;
 pub mod text_model_wrapper;
+mod voyage;
 
 #[cfg(test)]
 mod openai_test;
+
+#[cfg(test)]
+mod voyage_test;
+
+#[cfg(test)]
+mod jina_test;
 
 #[cfg(test)]
 mod local_test;
@@ -31,6 +39,8 @@ pub struct ModelOptions {
 #[repr(C)]
 pub enum Model {
     OpenAI(Box<openai::OpenAIModel>),
+    Voyage(Box<voyage::VoyageModel>),
+    Jina(Box<jina::JinaModel>),
     Local(Box<local::LocalModel>),
 }
 
@@ -38,6 +48,8 @@ impl TextModel for Model {
     fn predict(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
         match self {
             Model::OpenAI(m) => m.predict(texts),
+            Model::Voyage(m) => m.predict(texts),
+            Model::Jina(m) => m.predict(texts),
             Model::Local(m) => m.predict(texts),
         }
     }
@@ -45,6 +57,8 @@ impl TextModel for Model {
     fn get_hidden_size(&self) -> usize {
         match self {
             Model::OpenAI(m) => m.get_hidden_size(),
+            Model::Voyage(m) => m.get_hidden_size(),
+            Model::Jina(m) => m.get_hidden_size(),
             Model::Local(m) => m.get_hidden_size(),
         }
     }
@@ -52,6 +66,8 @@ impl TextModel for Model {
     fn get_max_input_len(&self) -> usize {
         match self {
             Model::OpenAI(m) => m.get_max_input_len(),
+            Model::Voyage(m) => m.get_max_input_len(),
+            Model::Jina(m) => m.get_max_input_len(),
             Model::Local(m) => m.get_max_input_len(),
         }
     }
@@ -64,6 +80,15 @@ pub fn create_model(options: ModelOptions) -> Result<Model, Box<dyn Error>> {
             openai::OpenAIModel::new(model_id, options.api_key.unwrap_or_default().as_str())?;
 
         Ok(Model::OpenAI(Box::new(model)))
+    } else if model_id.starts_with("voyage/") {
+        let model =
+            voyage::VoyageModel::new(model_id, options.api_key.unwrap_or_default().as_str())?;
+
+        Ok(Model::Voyage(Box::new(model)))
+    } else if model_id.starts_with("jina/") {
+        let model = jina::JinaModel::new(model_id, options.api_key.unwrap_or_default().as_str())?;
+
+        Ok(Model::Jina(Box::new(model)))
     } else {
         let model = local::LocalModel::new(
             model_id,
