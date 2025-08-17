@@ -407,7 +407,7 @@ void BinaryQuantizer_c::Pack ( const Span_T<float> & dVector, Span_T<uint8_t> & 
 		int iOff = 0;
 		for ( int j = 7; j >= 0; j-- )
 		{
-			if ( dVector[i + j] > 0.0f )
+			if ( i + j < dVector.size() && dVector[i + j] > 0.0f )
 				uByte |= ( 1 << iOff );
 
 			iOff++;
