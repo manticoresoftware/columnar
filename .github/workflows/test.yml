@@ -168,7 +168,7 @@ jobs:
       CTEST_CMAKE_GENERATOR: "Ninja Multi-Config"
       CTEST_CONFIGURATION_TYPE: Debug
       cache_key: build_windows_x64
-      artifact_list: "build/columnar/Debug/lib_manticore_columnar.dll build/secondary/Debug/lib_manticore_secondary.dll build/_deps/manticore-build/src/Debug/indexer.exe build/_deps/manticore-build/src/Debug/searchd.exe" #
+      artifact_list: "build/columnar/Debug/lib_manticore_columnar.dll build/secondary/Debug/lib_manticore_secondary.dll build/columnar/Debug/lib_manticore_columnar_avx2.dll build/secondary/Debug/lib_manticore_secondary_avx2.dll build/_deps/manticore-build/src/Debug/indexer.exe build/_deps/manticore-build/src/Debug/searchd.exe" #
       MANTICORE_LOCATOR: ${{ needs.check_branch.outputs.manticore_locator }}
       embeddings_artifact: embeddings_windows_x86_64
 
@@ -213,6 +213,7 @@ jobs:
       artifact_name: debug_test_${{ matrix.name }}
       xml_command: "cd build; cp -r Testing/2*/Test.xml .; xsltproc -o junit_tests_${{ matrix.name }}.xml ../misc/junit/ctest2junit.xsl Test.xml"
       timeout: 10
+      USE_AVX2: true
 
   debug_tests_report:
     name: Debug mode tests summary and report
@@ -338,6 +339,7 @@ jobs:
       artifact_name: release_test_${{ matrix.name }}
       xml_command: "cd build; cp -r Testing/2*/Test.xml .; xsltproc -o junit_tests_${{ matrix.name }}.xml ../misc/junit/ctest2junit.xsl Test.xml"
       timeout: 10
+      USE_AVX2: true
 
   release_tests_report:
     name: release mode tests summary and report
@@ -451,6 +453,7 @@ jobs:
       CTEST_END: ${{ matrix.end }}
       MANTICORE_LOCATOR: ${{ needs.check_branch.outputs.manticore_locator }}
       artifact_name: windows_test_${{ matrix.name }}
+      USE_AVX2: true
 
   windows_tests_report:
     name: Windows tests summary and report
