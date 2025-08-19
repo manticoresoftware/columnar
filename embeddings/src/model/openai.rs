@@ -72,7 +72,8 @@ impl TextModel for OpenAIModel {
 
         // Check if there's an error in the response - proper szError pattern handling
         if let Some(error) = response_body.get("error") {
-            let error_code = error.get("code")
+            let error_code = error
+                .get("code")
                 .and_then(|c| c.as_str())
                 .unwrap_or("unknown_error");
 

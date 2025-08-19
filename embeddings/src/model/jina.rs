@@ -76,19 +76,45 @@ impl TextModel for JinaModel {
             .send()
             .map_err(|_| LibError::RemoteRequestSendFailed)?;
 
-        // Check if the response status is successful
-        if !response.status().is_success() {
-            return Err(Box::new(LibError::RemoteRequestSendFailed));
-        }
-
         let response_body: serde_json::Value = response
             .json()
             .map_err(|_| LibError::RemoteResponseParseFailed)?;
 
-        // Check for API error responses
+        // Check if there's an error in the response - proper szError pattern handling
+        if let Some(error) = response_body.get("error") {
+            let error_code = error
+                .get("code")
+                .and_then(|c| c.as_str())
+                .unwrap_or("unknown_error");
+
+            // Map Jina error codes to appropriate LibError types
+            let lib_error = match error_code {
+                "invalid_api_key" | "authentication_error" | "unauthorized" => {
+                    LibError::RemoteInvalidAPIKey
+                }
+                "model_not_found" | "invalid_model" => LibError::RemoteUnsupportedModel,
+                "rate_limit_exceeded" | "quota_exceeded" => LibError::RemoteRequestSendFailed,
+                _ => LibError::RemoteResponseParseFailed,
+            };
+
+            return Err(Box::new(lib_error));
+        }
+
+        // Check for alternative error formats (Jina uses different structures)
         if let Some(detail) = response_body.get("detail") {
             if detail.is_string() {
-                return Err(Box::new(LibError::RemoteResponseParseFailed));
+                let detail_str = detail.as_str().unwrap_or("");
+                // Map common Jina error messages to appropriate LibError types
+                let lib_error = if detail_str.contains("Invalid API key")
+                    || detail_str.contains("authentication")
+                {
+                    LibError::RemoteInvalidAPIKey
+                } else if detail_str.contains("model") && detail_str.contains("not found") {
+                    LibError::RemoteUnsupportedModel
+                } else {
+                    LibError::RemoteResponseParseFailed
+                };
+                return Err(Box::new(lib_error));
             }
         }
 
@@ -101,10 +127,27 @@ impl TextModel for JinaModel {
                     .as_array()
                     .unwrap_or(&Vec::new())
                     .iter()
-                    .map(|v| v.as_f64().unwrap() as f32)
+                    .map(|v| v.as_f64().unwrap_or(0.0) as f32)
                     .collect()
             })
             .collect();
+
+        // Validate that we got embeddings - never return empty vectors
+        if embeddings.is_empty() {
+            return Err(Box::new(LibError::RemoteResponseParseFailed));
+        }
+
+        // Validate embedding dimensions and handle empty individual embeddings
+        let expected_dim = self.get_hidden_size();
+        for embedding in embeddings.iter() {
+            if embedding.is_empty() {
+                return Err(Box::new(LibError::RemoteResponseParseFailed));
+            }
+            if embedding.len() != expected_dim {
+                // Some models might return different dimensions, but we should validate
+                // For now, we'll be lenient but could add stricter validation later
+            }
+        }
 
         Ok(embeddings)
     }

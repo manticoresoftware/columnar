@@ -168,7 +168,19 @@ impl TextModel for LocalModel {
                     results.push(emb);
                 }
             }
-            all_results.push(get_mean_vector(&results));
+
+            // Validate that we have results before computing mean - this should never happen for local models
+            if results.is_empty() {
+                return Err(Box::new(LibError::ModelLoadFailed));
+            }
+
+            let mean_vector = get_mean_vector(&results);
+            all_results.push(mean_vector);
+        }
+
+        // Final validation - ensure we have embeddings for all input texts
+        if all_results.is_empty() || all_results.len() != texts.len() {
+            return Err(Box::new(LibError::ModelLoadFailed));
         }
 
         Ok(all_results)

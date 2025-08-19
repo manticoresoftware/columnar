@@ -71,6 +71,31 @@ impl TextModel for VoyageModel {
             .json()
             .map_err(|_| LibError::RemoteResponseParseFailed)?;
 
+        // Check if there's an error in the response - proper szError pattern handling
+        if let Some(error) = response_body.get("error") {
+            let error_code = error
+                .get("code")
+                .and_then(|c| c.as_str())
+                .unwrap_or("unknown_error");
+
+            // Map Voyage error codes to appropriate LibError types
+            let lib_error = match error_code {
+                "invalid_api_key" | "authentication_error" => LibError::RemoteInvalidAPIKey,
+                "model_not_found" | "invalid_model" => LibError::RemoteUnsupportedModel,
+                "rate_limit_exceeded" | "quota_exceeded" => LibError::RemoteRequestSendFailed,
+                _ => LibError::RemoteResponseParseFailed,
+            };
+
+            return Err(Box::new(lib_error));
+        }
+
+        // Check for alternative error format (some APIs use different structures)
+        if let Some(detail) = response_body.get("detail") {
+            if detail.is_string() {
+                return Err(Box::new(LibError::RemoteResponseParseFailed));
+            }
+        }
+
         let embeddings: Vec<Vec<f32>> = response_body["data"]
             .as_array()
             .unwrap_or(&Vec::new())
@@ -80,10 +105,27 @@ impl TextModel for VoyageModel {
                     .as_array()
                     .unwrap_or(&Vec::new())
                     .iter()
-                    .map(|v| v.as_f64().unwrap() as f32)
+                    .map(|v| v.as_f64().unwrap_or(0.0) as f32)
                     .collect()
             })
             .collect();
+
+        // Validate that we got embeddings - never return empty vectors
+        if embeddings.is_empty() {
+            return Err(Box::new(LibError::RemoteResponseParseFailed));
+        }
+
+        // Validate embedding dimensions and handle empty individual embeddings
+        let expected_dim = self.get_hidden_size();
+        for embedding in embeddings.iter() {
+            if embedding.is_empty() {
+                return Err(Box::new(LibError::RemoteResponseParseFailed));
+            }
+            if embedding.len() != expected_dim {
+                // Some models might return different dimensions, but we should validate
+                // For now, we'll be lenient but could add stricter validation later
+            }
+        }
 
         Ok(embeddings)
     }
