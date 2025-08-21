@@ -148,7 +148,8 @@ jobs:
         run: ${{ inputs.cmake_command }}
 
       - name: Move AVX2-optimized libraries
-        if: success()
+        # This approach makes it possible to skip this step during the Pack and Publish phase, since there are no DLLs involved
+        if: success() && !(inputs.DISTR == 'windows' && contains(inputs.artifact_list, '.exe'))
         run: |
           if [ -d build/avx2/share/manticore/modules ]; then
             echo "Move linux based libs"
