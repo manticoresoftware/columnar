@@ -58,6 +58,10 @@ on:
         required: false
         type: string
         default: ""
+      skip_avx2_move:
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   build:
@@ -114,8 +118,8 @@ jobs:
         run: |
           sed -i "s/0\.0\.0/${{ inputs.version }}/g" CMakeLists.txt
           cat CMakeLists.txt
-          
-      - name: Download embeddings lib 
+
+      - name: Download embeddings lib
         uses: manticoresoftware/download_artifact_with_retries@v3
         continue-on-error: true
         with:
@@ -148,7 +152,7 @@ jobs:
         run: ${{ inputs.cmake_command }}
 
       - name: Move AVX2-optimized libraries
-        if: success()
+        if: success() && inputs.skip_avx2_move != true
         run: |
           if [ -d build/avx2/share/manticore/modules ]; then
             echo "Move linux based libs"
