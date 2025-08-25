@@ -1,3 +1,5 @@
 target/**
 .cache
+cache/**
+relative/**
 

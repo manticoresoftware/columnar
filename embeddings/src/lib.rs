@@ -1,9 +1,20 @@
+mod error;
+mod ffi;
 mod model;
 mod utils;
-mod ffi;
-mod error;
 
-pub use model::TextModel;
-pub use ffi::{EmbedLib, GetLibFuncs};
+#[cfg(test)]
+mod utils_test;
+
+#[cfg(test)]
+mod error_test;
+
+#[cfg(test)]
+mod integration_test;
+
+#[cfg(test)]
+mod error_handling_test;
+
 pub use error::LibError;
-
+pub use ffi::{EmbedLib, GetLibFuncs};
+pub use model::TextModel;

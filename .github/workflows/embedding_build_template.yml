@@ -15,7 +15,86 @@ on:
         default: ""
 
 jobs:
+  # Quality check job - runs tests and clippy before build
+  quality-check:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+          override: true
+
+      - name: Cache cargo registry
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ./embeddings/target
+          key: quality-check-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            quality-check-${{ runner.os }}-cargo-
+
+      - name: Run Clippy (strict mode)
+        run: cargo clippy --lib --manifest-path ./embeddings/Cargo.toml -- -D warnings
+
+      - name: Check code formatting
+        run: cargo fmt --check --manifest-path ./embeddings/Cargo.toml
+
+      - name: Run unit tests
+        run: cargo test --lib --verbose --manifest-path ./embeddings/Cargo.toml
+        env:
+          RUST_BACKTRACE: 1
+
+      - name: Run OpenAI integration tests (if API key available)
+        run: |
+          cd ./embeddings
+          if [ -n "${{ secrets.OPENAI_API_KEY }}" ]; then
+            echo "✅ Running OpenAI integration tests..."
+            cargo test --lib openai_test::tests --verbose
+          else
+            echo "⏭️  Skipping OpenAI tests - OPENAI_API_KEY not configured"
+          fi
+
+          if [ -n "${{ secrets.VOYAGE_API_KEY }}" ]; then
+            echo "✅ Running Voyager integration tests..."
+            cargo test --lib voyager_test::tests --verbose
+          else
+            echo "⏭️  Skipping Voyager tests - VOYAGE_API_KEY not configured"
+          fi
+
+          if [ -n "${{ secrets.JINA_API_KEY }}" ]; then
+            echo "✅ Running Jina integration tests..."
+            cargo test --lib jina_test::tests --verbose
+          else
+            echo "⏭️  Skipping Jina tests - JINA_API_KEY not configured"
+          fi
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
+          JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
+          RUST_BACKTRACE: 1
+
+      - name: Quality check summary
+        run: |
+          echo "✅ Quality Check Summary:"
+          echo "- Clippy: Passed (zero warnings enforced)"
+          echo "- Format: Checked and compliant"
+          echo "- Tests: All unit tests passed"
+          echo "- OpenAI: $([ -n "${{ secrets.OPENAI_API_KEY }}" ] && echo "Integration tested" || echo "Skipped (no API key)")"
+          echo "- Voyage: $([ -n "${{ secrets.VOYAGE_API_KEY }}" ] && echo "Integration tested" || echo "Skipped (no API key)")"
+          echo "- Jina: $([ -n "${{ secrets.JINA_API_KEY }}" ] && echo "Integration tested" || echo "Skipped (no API key)")"
+
   build:
+    needs: quality-check  # Only run build after quality check passes
     runs-on: ${{ 
       (inputs.distr == 'linux' && inputs.arch == 'aarch64' && 'ubuntu-24.04-arm') ||
       (inputs.distr == 'linux' && 'ubuntu-24.04') ||
