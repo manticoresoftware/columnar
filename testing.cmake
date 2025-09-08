@@ -55,8 +55,8 @@ message ( STATUS "MANTICORE_LOCATOR before configure: '${MANTICORE_LOCATOR}'" )
 string ( CONFIGURE "${MANTICORE_LOCATOR}" MANTICORE_LOCATOR ) # that is to expand possible inside variables
 message ( STATUS "MANTICORE_LOCATOR after configure: '${MANTICORE_LOCATOR}'" )
 
-file ( WRITE "${columnar_BINARY_DIR}/manticore-get.cmake" "FetchContent_Declare ( manticore ${MANTICORE_LOCATOR} )\n" )
-message ( STATUS "Written to ${columnar_BINARY_DIR}/manticore-get.cmake: 'FetchContent_Declare ( manticore ${MANTICORE_LOCATOR} )'" )
+file ( WRITE "${columnar_BINARY_DIR}/manticore-get.cmake" "FetchContent_Declare ( manticore ${MANTICORE_LOCATOR} GIT_SUBMODULES \"\" )\n" )
+message ( STATUS "Written to ${columnar_BINARY_DIR}/manticore-get.cmake: 'FetchContent_Declare ( manticore ${MANTICORE_LOCATOR} GIT_SUBMODULES \"\" )'" )
 
 include ( FetchContent )
 include ( "${columnar_BINARY_DIR}/manticore-get.cmake" )
