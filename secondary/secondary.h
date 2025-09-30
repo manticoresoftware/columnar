@@ -38,7 +38,7 @@ namespace common
 namespace SI
 {
 
-static const int LIB_VERSION = 17;
+static const int LIB_VERSION = 18;
 static const uint32_t STORAGE_VERSION = 9;
 
 struct IndexAttrInfo_t
@@ -48,12 +48,26 @@ struct IndexAttrInfo_t
 	bool				m_bEnabled;
 };
 
+struct IndexSettings_t
+{
+	uint64_t	m_uBlockCacheSize = 0;
+};
+
+struct IteratorSettings_t
+{
+	const common::RowidRange_t * m_pBounds = nullptr;
+	uint32_t	m_uMaxValues = 0;
+	int64_t		m_iRsetSize = 0;
+	int			m_iCutoff = 0;
+	bool		m_bUseCache = false;
+};
+
 class Index_i
 {
 public:
 	virtual				~Index_i() = default;
 
-	virtual bool		CreateIterators ( std::vector<common::BlockIterator_i *> & dIterators, const common::Filter_t & tFilter, const common::RowidRange_t * pBounds, uint32_t uMaxValues, int64_t iRsetSize, int iCutoff, std::string & sError ) const = 0;
+	virtual bool		CreateIterators ( std::vector<common::BlockIterator_i *> & dIterators, const common::Filter_t & tFilter, const IteratorSettings_t & tSettings, std::string & sError ) const = 0;
 	virtual bool		CalcCount ( uint32_t & uCount, const common::Filter_t & tFilter, uint32_t uMaxValues, std::string & sError ) const = 0;
 	virtual uint32_t	GetNumIterators ( const common::Filter_t & tFilter ) const = 0;
 	virtual bool		IsEnabled ( const std::string & sName ) const = 0;
@@ -69,7 +83,7 @@ class Builder_i;
 
 extern "C"
 {
-	DLLEXPORT SI::Index_i *		CreateSecondaryIndex ( const char * sFile, std::string & sError );
+	DLLEXPORT SI::Index_i *		CreateSecondaryIndex ( const char * sFile, const SI::IndexSettings_t & tSettings, std::string & sError );
 
 	DLLEXPORT int				GetSecondaryLibVersion();
 	DLLEXPORT const char *		GetSecondaryLibVersionStr();

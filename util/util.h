@@ -133,6 +133,8 @@ public:
 		BASE::m_tLength = tLength;
 	}
 
+	size_t capacity() const { return m_tMaxLength; }
+
 private:
 	std::vector<T>	m_dData;
 	size_t			m_tMaxLength = 0;
