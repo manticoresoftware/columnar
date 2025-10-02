@@ -82,7 +82,7 @@ public:
 
 	bool		Setup ( const std::string & sFile, std::string & sError );
 
-	bool		CreateIterators ( std::vector<BlockIterator_i *> & dIterators, const Filter_t & tFilter, const IteratorSettings_t & tSettings, std::string & sError ) const override;
+	bool		CreateIterators ( std::vector<BlockIterator_i *> & dIterators, const Filter_t & tFilter, const IteratorSettings_t & tSettings, std::string & sWarning, std::string & sError ) const override;
 	bool		CalcCount ( uint32_t & uCount, const common::Filter_t & tFilter, uint32_t uMaxValues, std::string & sError ) const override;
 	uint32_t	GetNumIterators ( const common::Filter_t & tFilter ) const override;
 	bool		IsEnabled ( const std::string & sName ) const override;
@@ -105,7 +105,7 @@ private:
 
 	std::vector<ColumnInfo_t> m_dAttrs;
 	std::unordered_map<std::string, int> m_hAttrs;
-	std::vector<std::unique_ptr<BlockCache_c>> m_dBlockCaches;
+	std::vector<std::unique_ptr<BlockCache_i>> m_dBlockCaches;
 	std::vector<uint64_t> m_dBlockStartOff;			// per attribute vector of offsets to every block of values-rows-meta
 	std::vector<uint64_t> m_dBlocksCount;			// per attribute vector of blocks count
 	std::vector<std::shared_ptr<PGM_i>> m_dIdx;
@@ -115,7 +115,7 @@ private:
 
 	std::string m_sFileName;
 
-	int64_t		GetValsRows ( std::vector<BlockIterator_i *> * pIterators, const Filter_t & tFilter, const IteratorSettings_t & tSettings ) const;
+	int64_t		GetValsRows ( std::vector<BlockIterator_i *> * pIterators, const Filter_t & tFilter, const IteratorSettings_t & tSettings, std::string & sWarning ) const;
 	int64_t		GetRangeRows ( std::vector<BlockIterator_i *> * pIterators, const Filter_t & tFilter, const IteratorSettings_t & tSettings ) const;
 	uint32_t	CalcValsRows ( const Filter_t & tFilter ) const;
 	uint32_t	CalcRangeRows ( const Filter_t & tFilter ) const;
@@ -173,7 +173,7 @@ bool SecondaryIndex_c::Setup ( const std::string & sFile, std::string & sError )
 	if ( m_uMaxBlockCacheSize )
 	{
 		for ( size_t i = 0; i < m_dAttrs.size(); i++ )
-			m_dBlockCaches.push_back ( std::unique_ptr<BlockCache_c> ( CreateBlockCache ( m_dAttrs[i].m_eType, m_dBlocksCount[i], m_uMaxBlockCacheSize ) ) );
+			m_dBlockCaches.push_back ( std::unique_ptr<BlockCache_i> ( CreateBlockCache ( m_dAttrs[i].m_eType, m_dBlocksCount[i], m_uMaxBlockCacheSize ) ) );
 	}
 
 	m_dIdx.resize ( m_dAttrs.size() );
@@ -352,7 +352,18 @@ bool SecondaryIndex_c::PrepareBlocksValues ( const Filter_t & tFilter, std::vect
 }
 
 
-int64_t SecondaryIndex_c::GetValsRows ( std::vector<BlockIterator_i *> * pIterators,  const Filter_t & tFilter, const IteratorSettings_t & tSettings ) const
+static void ProduceCacheWarning ( BlockCache_i * pBlockCache, std::string & sWarning )
+{
+	if ( !pBlockCache )
+		return;
+
+	const float MIN_REUSE_RATIO = 0.2f;
+	if ( pBlockCache->GetMaxSize() && pBlockCache->IsCacheFull() && pBlockCache->GetReuseRatio() >= MIN_REUSE_RATIO )
+		sWarning = "Secondary index block cache is full; increasing the cache size may improve performance";
+}
+
+
+int64_t SecondaryIndex_c::GetValsRows ( std::vector<BlockIterator_i *> * pIterators,  const Filter_t & tFilter, const IteratorSettings_t & tSettings, std::string & sWarning ) const
 {
 	if ( tFilter.m_dValues.empty() )
 		return 0;
@@ -379,6 +390,9 @@ int64_t SecondaryIndex_c::GetValsRows ( std::vector<BlockIterator_i *> * pIterat
 		return 0;
 
 	pBlockReader->CreateBlocksIterator ( dBlocksIt, tFilter, *pIterators );
+	
+	ProduceCacheWarning ( pBlockCache, sWarning );
+
 	return iNumIterators;
 }
 
@@ -597,7 +611,7 @@ static bool FixupFilter ( Filter_t & tFixedFilter, const Filter_t & tFilter, con
 }
 
 
-bool SecondaryIndex_c::CreateIterators ( std::vector<BlockIterator_i *> & dIterators, const Filter_t & tFilter, const IteratorSettings_t & tSettings, std::string & sError ) const
+bool SecondaryIndex_c::CreateIterators ( std::vector<BlockIterator_i *> & dIterators, const Filter_t & tFilter, const IteratorSettings_t & tSettings, std::string & sWarning, std::string & sError ) const
 {
 	const auto * pCol = GetAttr ( tFilter, sError );
 	if ( !pCol )
@@ -610,7 +624,7 @@ bool SecondaryIndex_c::CreateIterators ( std::vector<BlockIterator_i *> & dItera
 	switch ( tFixedFilter.m_eType )
 	{
 	case FilterType_e::VALUES:
-		GetValsRows ( &dIterators, tFixedFilter, tSettings );
+		GetValsRows ( &dIterators, tFixedFilter, tSettings, sWarning );
 		return true;
 
 	case FilterType_e::RANGE:
@@ -669,7 +683,7 @@ bool SecondaryIndex_c::CalcCount ( uint32_t & uCount, const common::Filter_t & t
 
 uint32_t SecondaryIndex_c::GetNumIterators ( const common::Filter_t & tFilter ) const
 {
-	std::string sError;
+	std::string sWarning, sError;
 	const auto * pCol = GetAttr ( tFilter, sError );
 	if ( !pCol )
 		return 0;
@@ -687,7 +701,7 @@ uint32_t SecondaryIndex_c::GetNumIterators ( const common::Filter_t & tFilter ) 
 			if ( tFixedFilter.m_dValues.size()>=BIG_FILTER_THRESH )
 				return tFixedFilter.m_dValues.size();
 
-			return GetValsRows ( nullptr, tFixedFilter, {} );
+			return GetValsRows ( nullptr, tFixedFilter, {}, sWarning );
 		}
 
 	case FilterType_e::RANGE:

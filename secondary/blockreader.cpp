@@ -610,22 +610,28 @@ uint32_t ReaderTraits_c::CalcNumBlockValues ( int iBlock ) const
 /////////////////////////////////////////////////////////////////////
 
 template<typename VALUE>
-class BlockCache_T : public BlockCache_c
+class BlockCache_T : public BlockCache_i
 {
 public:
-			BlockCache_T ( uint32_t uNumBlocks, uint64_t uMaxSize );
-			~BlockCache_T();
+				BlockCache_T ( uint32_t uNumBlocks, uint64_t uMaxSize );
+				~BlockCache_T();
 
-	const BlockValues_T<VALUE> * GetValues ( int iBlock ) const		{ return m_dBlockValues[iBlock].load ( std::memory_order_acquire );	}
-	const BlockData_t * GetData ( int iBlock ) const				{ return m_dBlockData[iBlock].load ( std::memory_order_acquire ); }
-	void	AddData ( int iBlock, const BlockData_t & tData );
-	void	AddValues ( int iBlock, const BlockValues_T<VALUE> & tValues );
+	const BlockValues_T<VALUE> * GetValues ( int iBlock ) const;
+	const BlockData_t * GetData ( int iBlock ) const	{ return m_dBlockData[iBlock].load ( std::memory_order_acquire ); }
+	void		AddData ( int iBlock, const BlockData_t & tData );
+	void		AddValues ( int iBlock, const BlockValues_T<VALUE> & tValues );
+
+	uint64_t	GetMaxSize() const override				{ return m_uMaxSize; }
+	float		GetReuseRatio() const override			{ return float ( m_uReuse.load ( std::memory_order_acquire ) ) / m_dBlockValues.size(); };
+	bool		IsCacheFull() const override			{ return m_uSize.load ( std::memory_order_acquire ) >= m_uMaxSize; }
 
 private:
 	std::vector<std::atomic<BlockValues_T<VALUE>*>> m_dBlockValues;
 	std::vector<std::atomic<BlockData_t*>>			m_dBlockData;
-	std::atomic<uint64_t>	m_uSize;
-	uint64_t				m_uMaxSize = 0;
+	std::atomic<uint64_t>			m_uSize;
+	mutable std::atomic<uint64_t>	m_uReuse;
+	mutable std::atomic<bool>		m_bStopCounting;
+	uint64_t						m_uMaxSize = 0;
 };
 
 template<typename VALUE>
@@ -649,6 +655,20 @@ BlockCache_T<VALUE>::~BlockCache_T()
 
 	for ( auto & i : m_dBlockData )
 		delete i.load ( std::memory_order_relaxed );
+}
+
+template<typename VALUE>
+const BlockValues_T<VALUE> * BlockCache_T<VALUE>::GetValues ( int iBlock ) const
+{
+	auto pRes = m_dBlockValues[iBlock].load ( std::memory_order_acquire );
+	if ( pRes && !m_bStopCounting.load ( std::memory_order_acquire ) )
+	{
+		uint64_t uOldReuse = m_uReuse.fetch_add ( 1, std::memory_order_relaxed );
+		if ( uOldReuse >= std::numeric_limits<int64_t>::max() )
+			m_bStopCounting.store ( true, std::memory_order_release );
+	}
+
+	return pRes;
 }
 
 template<typename VALUE>
@@ -1396,7 +1416,7 @@ BlockReader_i * ReaderFactory_c::CreateRangeReader()
 }
 
 
-BlockCache_c * CreateBlockCache ( common::AttrType_e eType, uint32_t uBlocksCount, uint64_t uMaxSize )
+BlockCache_i * CreateBlockCache ( common::AttrType_e eType, uint32_t uBlocksCount, uint64_t uMaxSize )
 {
 	switch ( eType )
 	{
