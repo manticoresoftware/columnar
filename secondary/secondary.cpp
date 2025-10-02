@@ -78,9 +78,11 @@ static void SetupFullscanLimits ( AttrType_e eType, PGM_i * pPGM, ApproxPos_t & 
 class SecondaryIndex_c : public Index_i
 {
 public:
+				SecondaryIndex_c ( const SI::IndexSettings_t & tSettings ) : m_uMaxBlockCacheSize ( tSettings.m_uBlockCacheSize ) {}
+
 	bool		Setup ( const std::string & sFile, std::string & sError );
 
-	bool		CreateIterators ( std::vector<BlockIterator_i *> & dIterators, const Filter_t & tFilter, const RowidRange_t * pBounds, uint32_t uMaxValues, int64_t iRsetSize, int iCutoff, std::string & sError ) const override;
+	bool		CreateIterators ( std::vector<BlockIterator_i *> & dIterators, const Filter_t & tFilter, const IteratorSettings_t & tSettings, std::string & sWarning, std::string & sError ) const override;
 	bool		CalcCount ( uint32_t & uCount, const common::Filter_t & tFilter, uint32_t uMaxValues, std::string & sError ) const override;
 	uint32_t	GetNumIterators ( const common::Filter_t & tFilter ) const override;
 	bool		IsEnabled ( const std::string & sName ) const override;
@@ -91,6 +93,7 @@ public:
 
 private:
 	Settings_t	m_tSettings;
+	uint64_t	m_uMaxBlockCacheSize = 0;
 	uint32_t	m_uValuesPerBlock = 1;
 	uint32_t	m_uValuesPerBlockShift = 0;
 	uint32_t	m_uRowidsPerBlock = 1024;
@@ -102,6 +105,7 @@ private:
 
 	std::vector<ColumnInfo_t> m_dAttrs;
 	std::unordered_map<std::string, int> m_hAttrs;
+	std::vector<std::unique_ptr<BlockCache_i>> m_dBlockCaches;
 	std::vector<uint64_t> m_dBlockStartOff;			// per attribute vector of offsets to every block of values-rows-meta
 	std::vector<uint64_t> m_dBlocksCount;			// per attribute vector of blocks count
 	std::vector<std::shared_ptr<PGM_i>> m_dIdx;
@@ -111,8 +115,8 @@ private:
 
 	std::string m_sFileName;
 
-	int64_t		GetValsRows ( std::vector<BlockIterator_i *> * pIterators, const Filter_t & tFilter, const RowidRange_t * pBounds, uint32_t uMaxValues, int64_t iRsetSize, int iCutoff ) const;
-	int64_t		GetRangeRows ( std::vector<BlockIterator_i *> * pIterators, const Filter_t & tFilter, const RowidRange_t * pBounds, uint32_t uMaxValues, int64_t iRsetSize, int iCutof ) const;
+	int64_t		GetValsRows ( std::vector<BlockIterator_i *> * pIterators, const Filter_t & tFilter, const IteratorSettings_t & tSettings, std::string & sWarning ) const;
+	int64_t		GetRangeRows ( std::vector<BlockIterator_i *> * pIterators, const Filter_t & tFilter, const IteratorSettings_t & tSettings ) const;
 	uint32_t	CalcValsRows ( const Filter_t & tFilter ) const;
 	uint32_t	CalcRangeRows ( const Filter_t & tFilter ) const;
 	bool		PrepareBlocksValues ( const Filter_t & tFilter, std::vector<BlockIter_t> * pBlocksIt, uint64_t & uBlockBaseOff, int64_t & iNumIterators, uint64_t & uBlocksCount ) const;
@@ -165,6 +169,12 @@ bool SecondaryIndex_c::Setup ( const std::string & sFile, std::string & sError )
 	ReadVectorPacked ( m_dBlockStartOff, m_tReader );
 	ComputeInverseDeltas ( m_dBlockStartOff, true );
 	ReadVectorPacked ( m_dBlocksCount, m_tReader );
+
+	if ( m_uMaxBlockCacheSize )
+	{
+		for ( size_t i = 0; i < m_dAttrs.size(); i++ )
+			m_dBlockCaches.push_back ( std::unique_ptr<BlockCache_i> ( CreateBlockCache ( m_dAttrs[i].m_eType, m_dBlocksCount[i], m_uMaxBlockCacheSize ) ) );
+	}
 
 	m_dIdx.resize ( m_dAttrs.size() );
 	for ( int i=0; i<m_dIdx.size(); i++ )
@@ -342,7 +352,18 @@ bool SecondaryIndex_c::PrepareBlocksValues ( const Filter_t & tFilter, std::vect
 }
 
 
-int64_t SecondaryIndex_c::GetValsRows ( std::vector<BlockIterator_i *> * pIterators,  const Filter_t & tFilter, const RowidRange_t * pBounds, uint32_t uMaxValues, int64_t iRsetSize, int iCutoff ) const
+static void ProduceCacheWarning ( BlockCache_i * pBlockCache, std::string & sWarning )
+{
+	if ( !pBlockCache )
+		return;
+
+	const float MIN_REUSE_RATIO = 0.2f;
+	if ( pBlockCache->GetMaxSize() && pBlockCache->IsCacheFull() && pBlockCache->GetReuseRatio() >= MIN_REUSE_RATIO )
+		sWarning = "Secondary index block cache is full; increasing the cache size may improve performance";
+}
+
+
+int64_t SecondaryIndex_c::GetValsRows ( std::vector<BlockIterator_i *> * pIterators,  const Filter_t & tFilter, const IteratorSettings_t & tSettings, std::string & sWarning ) const
 {
 	if ( tFilter.m_dValues.empty() )
 		return 0;
@@ -359,15 +380,19 @@ int64_t SecondaryIndex_c::GetValsRows ( std::vector<BlockIterator_i *> * pIterat
 	if ( !pIterators )
 		return iNumIterators;
 
-	RsetInfo_t tRsetInfo { iNumIterators, uMaxValues, iRsetSize };
-	const auto & tCol = m_dAttrs[GetColumnId ( tFilter.m_sName )];
+	RsetInfo_t tRsetInfo { iNumIterators, tSettings.m_uMaxValues, tSettings.m_iRsetSize };
+	int iColumnId = GetColumnId ( tFilter.m_sName );
+	auto pBlockCache = tSettings.m_bUseCache && m_dBlockCaches.size() ? m_dBlockCaches[iColumnId].get() : nullptr;
 
-	ReaderFactory_c tReaderFactory = { .m_tCol = tCol, .m_tSettings = m_tSettings, .m_tRsetInfo = tRsetInfo, .m_iFD = m_tReader.GetFD(), .m_uVersion = m_uVersion, .m_uBlockBaseOff = uBlockBaseOff, .m_uBlocksCount = uBlocksCount, .m_uValuesPerBlock = m_uValuesPerBlock, .m_uRowidsPerBlock = m_uRowidsPerBlock, .m_pBounds = pBounds, .m_iCutoff = iCutoff };
+	ReaderFactory_c tReaderFactory = { .m_tCol = m_dAttrs[iColumnId], .m_tSettings = m_tSettings, .m_tRsetInfo = tRsetInfo, .m_iFD = m_tReader.GetFD(), .m_uVersion = m_uVersion, .m_uBlockBaseOff = uBlockBaseOff, .m_uBlocksCount = uBlocksCount, .m_uValuesPerBlock = m_uValuesPerBlock, .m_uRowidsPerBlock = m_uRowidsPerBlock, .m_pBounds = tSettings.m_pBounds, .m_iCutoff = tSettings.m_iCutoff, .m_pBlockCache = pBlockCache };
 	std::unique_ptr<BlockReader_i> pBlockReader { tReaderFactory.CreateBlockReader() };
 	if ( !pBlockReader )
 		return 0;
 
 	pBlockReader->CreateBlocksIterator ( dBlocksIt, tFilter, *pIterators );
+	
+	ProduceCacheWarning ( pBlockCache, sWarning );
+
 	return iNumIterators;
 }
 
@@ -452,7 +477,7 @@ bool SecondaryIndex_c::PrepareBlocksRange ( const Filter_t & tFilter, ApproxPos_
 }
 
 
-int64_t SecondaryIndex_c::GetRangeRows ( std::vector<BlockIterator_i *> * pIterators,  const Filter_t & tFilter, const RowidRange_t * pBounds, uint32_t uMaxValues, int64_t iRsetSize, int iCutoff ) const
+int64_t SecondaryIndex_c::GetRangeRows ( std::vector<BlockIterator_i *> * pIterators,  const Filter_t & tFilter, const IteratorSettings_t & tSettings ) const
 {
 	ApproxPos_t tPos;
 	int64_t iNumIterators = 0;
@@ -465,10 +490,10 @@ int64_t SecondaryIndex_c::GetRangeRows ( std::vector<BlockIterator_i *> * pItera
 		return iNumIterators;
 
 	BlockIter_t tPosIt ( tPos, 0, uBlocksCount, m_uValuesPerBlockShift );
-	RsetInfo_t tRsetInfo { iNumIterators, uMaxValues, iRsetSize };
+	RsetInfo_t tRsetInfo { iNumIterators, tSettings.m_uMaxValues, tSettings.m_iRsetSize };
 	const auto & tCol = m_dAttrs[GetColumnId ( tFilter.m_sName )];
 
-	ReaderFactory_c tReaderFactory = { .m_tCol = tCol, .m_tSettings = m_tSettings, .m_tRsetInfo = tRsetInfo, .m_iFD = m_tReader.GetFD(), .m_uVersion = m_uVersion, .m_uBlockBaseOff = uBlockBaseOff, .m_uBlocksCount = uBlocksCount, .m_uValuesPerBlock = m_uValuesPerBlock, .m_uRowidsPerBlock = m_uRowidsPerBlock, .m_pBounds = pBounds, .m_iCutoff = iCutoff };
+	ReaderFactory_c tReaderFactory = { .m_tCol = tCol, .m_tSettings = m_tSettings, .m_tRsetInfo = tRsetInfo, .m_iFD = m_tReader.GetFD(), .m_uVersion = m_uVersion, .m_uBlockBaseOff = uBlockBaseOff, .m_uBlocksCount = uBlocksCount, .m_uValuesPerBlock = m_uValuesPerBlock, .m_uRowidsPerBlock = m_uRowidsPerBlock, .m_pBounds = tSettings.m_pBounds, .m_iCutoff = tSettings.m_iCutoff };
 	std::unique_ptr<BlockReader_i> pReader { tReaderFactory.CreateRangeReader() };
 	if ( !pReader )
 		return 0;
@@ -586,7 +611,7 @@ static bool FixupFilter ( Filter_t & tFixedFilter, const Filter_t & tFilter, con
 }
 
 
-bool SecondaryIndex_c::CreateIterators ( std::vector<BlockIterator_i *> & dIterators, const Filter_t & tFilter, const RowidRange_t * pBounds, uint32_t uMaxValues, int64_t iRsetSize, int iCutoff, std::string & sError ) const
+bool SecondaryIndex_c::CreateIterators ( std::vector<BlockIterator_i *> & dIterators, const Filter_t & tFilter, const IteratorSettings_t & tSettings, std::string & sWarning, std::string & sError ) const
 {
 	const auto * pCol = GetAttr ( tFilter, sError );
 	if ( !pCol )
@@ -599,13 +624,13 @@ bool SecondaryIndex_c::CreateIterators ( std::vector<BlockIterator_i *> & dItera
 	switch ( tFixedFilter.m_eType )
 	{
 	case FilterType_e::VALUES:
-		GetValsRows ( &dIterators, tFixedFilter, pBounds, uMaxValues, iRsetSize, iCutoff );
+		GetValsRows ( &dIterators, tFixedFilter, tSettings, sWarning );
 		return true;
 
 	case FilterType_e::RANGE:
 	case FilterType_e::FLOATRANGE:
 	case FilterType_e::NOTNULL:
-		GetRangeRows ( &dIterators, tFixedFilter, pBounds, uMaxValues, iRsetSize, iCutoff );
+		GetRangeRows ( &dIterators, tFixedFilter, tSettings );
 		return true;
 
 	default:
@@ -658,7 +683,7 @@ bool SecondaryIndex_c::CalcCount ( uint32_t & uCount, const common::Filter_t & t
 
 uint32_t SecondaryIndex_c::GetNumIterators ( const common::Filter_t & tFilter ) const
 {
-	std::string sError;
+	std::string sWarning, sError;
 	const auto * pCol = GetAttr ( tFilter, sError );
 	if ( !pCol )
 		return 0;
@@ -676,13 +701,13 @@ uint32_t SecondaryIndex_c::GetNumIterators ( const common::Filter_t & tFilter ) 
 			if ( tFixedFilter.m_dValues.size()>=BIG_FILTER_THRESH )
 				return tFixedFilter.m_dValues.size();
 
-			return GetValsRows ( nullptr, tFixedFilter, nullptr, 0, 0, INT_MAX );
+			return GetValsRows ( nullptr, tFixedFilter, {}, sWarning );
 		}
 
 	case FilterType_e::RANGE:
 	case FilterType_e::FLOATRANGE:
 	case FilterType_e::NOTNULL:
-		return GetRangeRows ( nullptr, tFixedFilter, nullptr, 0, 0, INT_MAX );
+		return GetRangeRows ( nullptr, tFixedFilter, {} );
 
 	default:
 		return 0;
@@ -691,11 +716,11 @@ uint32_t SecondaryIndex_c::GetNumIterators ( const common::Filter_t & tFilter ) 
 
 }
 
-SI::Index_i * CreateSecondaryIndex ( const char * sFile, std::string & sError )
+SI::Index_i * CreateSecondaryIndex ( const char * szFile, const SI::IndexSettings_t & tSettings, std::string & sError )
 {
-	std::unique_ptr<SI::SecondaryIndex_c> pIdx ( new SI::SecondaryIndex_c );
+	std::unique_ptr<SI::SecondaryIndex_c> pIdx ( new SI::SecondaryIndex_c(tSettings) );
 
-	if ( !pIdx->Setup ( sFile, sError ) )
+	if ( !pIdx->Setup ( szFile, sError ) )
 		return nullptr;
 
 	return pIdx.release();

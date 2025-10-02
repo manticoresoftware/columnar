@@ -58,6 +58,18 @@ public:
 	virtual uint32_t	CalcValueCount ( const BlockIter_t & tIt, const common::Filter_t & tVal ) = 0;
 };
 
+
+class BlockCache_i
+{
+public:
+	virtual				~BlockCache_i() = default;
+
+	virtual uint64_t	GetMaxSize() const = 0;
+	virtual bool		IsCacheFull() const = 0;
+	virtual float		GetReuseRatio() const = 0;
+};
+
+
 struct RsetInfo_t
 {
 	int64_t		m_iNumIterators = 0;
@@ -115,9 +127,13 @@ public:
 	uint32_t				m_uRowidsPerBlock = 1;
 	const common::RowidRange_t * m_pBounds = nullptr;
 	int						m_iCutoff = 0;
+	BlockCache_i *			m_pBlockCache = nullptr;
 
 	BlockReader_i *			CreateBlockReader();
 	BlockReader_i *			CreateRangeReader();
 };
+
+
+BlockCache_i * CreateBlockCache ( common::AttrType_e eType, uint32_t uBlocksCount, uint64_t uMaxSize );
 
 } // namespace SI
