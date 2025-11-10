@@ -115,7 +115,7 @@ jobs:
           cp bundle/Expat-1.95.8-x64/Libs/libexpat* build/_deps/manticore-build/src/Debug/
           cp bundle/libiconv-1.9.1-x64/lib/iconv* build/_deps/manticore-build/src/Debug/
       - name: Setup Flex and Bison
-        run: Install-ChocoPackage winflexbison
+        run: Install-ChocoPackage winflexbison3
       - name: Run mysql
         run: |
           C:\PROGRA~1\MySQL\"MySQL Server 8.0"\bin\mysqld.exe --initialize-insecure
