@@ -492,6 +492,9 @@ float BinaryQuantizer_c::QuantizeVecL2 ( const Span_T<float> & dVector, const st
 		m_dVecMinusCentroid[i] = dVector[i] - dCentroid[i];
 
 	float fNorm = VecCalcNorm(m_dVecMinusCentroid);
+	if ( fNorm==0.0f )
+		return 0.0f;
+	
 	PadToDim(m_dVecMinusCentroid);
 	Pack ( { m_dVecMinusCentroid.data(), dVector.size() }, dResult );
 	m_dVecMinusCentroid.resize ( dVector.size() );
@@ -516,6 +519,9 @@ Binary1BitFactorsIP_t BinaryQuantizer_c::QuantizeVecIP ( const Span_T<float> & d
 	}
 
 	float fVecMinusCentroidNorm = VecCalcNorm(m_dVecMinusCentroid);
+	if ( fVecMinusCentroidNorm==0.0f )
+		return { 0.0f, 0.0f, fVecDotCentroid, 0.0f };
+	
 	PadToDim(m_dVecMinusCentroid);
 	Pack ( { m_dVecMinusCentroid.data(), dVector.size() }, dResult );
 
@@ -529,6 +535,23 @@ Binary1BitFactorsIP_t BinaryQuantizer_c::QuantizeVecIP ( const Span_T<float> & d
 
 void BinaryQuantizer_c::Quantize1Bit ( const Span_T<float> & dVector, const std::vector<float> & dCentroid, std::vector<uint8_t> & dResult )
 {
+	if ( dVector.size()==0 || dCentroid.size()==0 )
+	{
+		size_t uHeaderSize = m_eSimilarity==HNSWSimilarity_e::L2 ? sizeof(Binary1BitFactorsL2_t) : sizeof(Binary1BitFactorsIP_t);
+		dResult.resize ( uHeaderSize );
+		if ( m_eSimilarity==HNSWSimilarity_e::L2 )
+		{
+			auto & tFactors = *(Binary1BitFactorsL2_t*)(dResult.data());
+			tFactors = { 0.0f, 0.0f, 0.0f };
+		}
+		else
+		{
+			auto & tFactors = *(Binary1BitFactorsIP_t*)(dResult.data());
+			tFactors = { 0.0f, 0.0f, 0.0f, 0.0f };
+		}
+		return;
+	}
+
 	size_t uDataSize = ( ( dVector.size()+7 ) >> 3 );
 	size_t uHeaderSize = m_eSimilarity==HNSWSimilarity_e::L2 ? sizeof(Binary1BitFactorsL2_t) : sizeof(Binary1BitFactorsIP_t);
 	dResult.resize ( uHeaderSize + uDataSize );
@@ -705,6 +728,13 @@ void BinaryQuantizer_c::Transpose ( const Span_T<uint8_t> & dQuantized, size_t u
 
 void BinaryQuantizer_c::Quantize4Bit ( const Span_T<float> & dVector, const std::vector<float> & dCentroid, std::vector<uint8_t> & dResult )
 {
+	if ( dVector.size()==0 || dCentroid.size()==0 )
+	{
+		dResult.resize ( sizeof(Binary4BitFactors_t) );
+		*(Binary4BitFactors_t*)dResult.data() = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+		return;
+	}
+
 	assert ( dVector.size()==dCentroid.size() );
 
 	m_dVecMinusCentroid.resize ( dVector.size() );
@@ -810,6 +840,9 @@ template <bool BUILD>
 void ScalarQuantizerBinary_T<BUILD>::Train ( const Span_T<float> & dPoint )
 {
 	assert ( !m_bFinalized );
+	if ( dPoint.size()==0 )
+		return;
+
 	if ( !m_uTrainedVecs )
 	{
 		m_uDim = dPoint.size();
@@ -817,6 +850,9 @@ void ScalarQuantizerBinary_T<BUILD>::Train ( const Span_T<float> & dPoint )
 		for ( auto & i : m_dCentroid64 )
 			i = 0.0;
 	}
+	
+	if ( dPoint.size() != m_uDim )
+		return;
 		
 	for ( size_t i = 0; i < dPoint.size(); i++ )
 		m_dCentroid64[i] += dPoint[i];
