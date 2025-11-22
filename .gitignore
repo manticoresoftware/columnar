@@ -1,5 +1,7 @@
 /build/
 /.idea/
+build
+cache
 
 # local non-traced url for external tools
 /local_manticore_src.txt
