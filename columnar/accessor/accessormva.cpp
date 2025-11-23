@@ -254,13 +254,15 @@ void StoredBlock_MvaConst_T<T>::ReadHeader ( FileReader_c & tReader )
 
 //////////////////////////////////////////////////////////////////////////
 
-template <typename T>
+template <typename T, bool COMPRESSED>
 class StoredBlock_MvaConstLen_T : public StoredBlock_Mva_c
 {
 public:
 						StoredBlock_MvaConstLen_T ( const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion );
 
 	FORCE_INLINE void	ReadHeader ( FileReader_c & tReader, int iNumSubblocks );
+
+	template <bool BUFFERED>
 	FORCE_INLINE void	ReadSubblock ( int iSubblockId, int iSubblockValues, FileReader_c & tReader );
 
 	template <bool PACK>
@@ -280,13 +282,13 @@ private:
 	FORCE_INLINE void			PrecalcSizeOffset( int iNumSubblockValues );
 };
 
-template <typename T>
-StoredBlock_MvaConstLen_T<T>::StoredBlock_MvaConstLen_T ( const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion )
+template <typename T, bool COMPRESSED>
+StoredBlock_MvaConstLen_T<T,COMPRESSED>::StoredBlock_MvaConstLen_T ( const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion )
 	: StoredBlock_Mva_c ( sCodec32, sCodec64, uVersion )
 {}
 
-template <typename T>
-void StoredBlock_MvaConstLen_T<T>::ReadHeader ( FileReader_c & tReader, int iNumSubblocks )
+template <typename T, bool COMPRESSED>
+void StoredBlock_MvaConstLen_T<T,COMPRESSED>::ReadHeader ( FileReader_c & tReader, int iNumSubblocks )
 {
 	if ( m_uVersion>=12 )
 		m_bValuesSortedAsc = !!tReader.Read_uint8();
@@ -301,8 +303,9 @@ void StoredBlock_MvaConstLen_T<T>::ReadHeader ( FileReader_c & tReader, int iNum
 	m_iSubblockId = -1;
 }
 
-template <typename T>
-void StoredBlock_MvaConstLen_T<T>::ReadSubblock ( int iSubblockId, int iNumSubblockValues, FileReader_c & tReader )
+template <typename T, bool COMPRESSED>
+template <bool BUFFERED>
+void StoredBlock_MvaConstLen_T<T,COMPRESSED>::ReadSubblock ( int iSubblockId, int iNumSubblockValues, FileReader_c & tReader )
 {
 	if ( m_iSubblockId==iSubblockId )
 		return;
@@ -317,11 +320,25 @@ void StoredBlock_MvaConstLen_T<T>::ReadSubblock ( int iSubblockId, int iNumSubbl
 		uSize -= uOffset;
 	}
 
-	tReader.Seek ( m_tValuesOffset+uOffset );
-
 	int iValuesInSubblock = m_iLength*iNumSubblockValues;
 	m_dValues.resize(iValuesInSubblock);
-	DecodeValues_PFOR ( m_dValues, tReader, *m_pCodec, m_dTmp, uSize );
+
+	int64_t iDataOffset = m_tValuesOffset+uOffset;
+	if constexpr ( BUFFERED )
+		tReader.Seek ( iDataOffset );
+
+	if constexpr ( COMPRESSED )
+		DecodeValues_PFOR ( m_dValues, tReader, *m_pCodec, m_dTmp, uSize );
+	else
+	{
+		assert ( uSize % 4 == 0 );
+
+		m_dValues.resize ( uSize>>2 );
+		if constexpr ( BUFFERED )
+			tReader.Read ( (uint8_t*)m_dValues.data(), (int)m_dValues.size()*sizeof(m_dValues[0]) );
+		else
+			PreadWrapper ( tReader.GetFD(), (uint8_t*)m_dValues.data(), (int)m_dValues.size()*sizeof(m_dValues[0]), iDataOffset );
+	}	
 
 	PrecalcSizeOffset(iNumSubblockValues);
 
@@ -329,8 +346,8 @@ void StoredBlock_MvaConstLen_T<T>::ReadSubblock ( int iSubblockId, int iNumSubbl
 		ApplyInverseDeltas ( m_dValues, m_dValuePtrs );
 }
 
-template <typename T>
-void StoredBlock_MvaConstLen_T<T>::PrecalcSizeOffset( int iNumSubblockValues )
+template <typename T, bool COMPRESSED>
+void StoredBlock_MvaConstLen_T<T,COMPRESSED>::PrecalcSizeOffset( int iNumSubblockValues )
 {
 	m_dValuePtrs.resize(iNumSubblockValues);
 	uint32_t uOffset = 0;
@@ -350,6 +367,8 @@ public:
 								StoredBlock_MvaTable_T ( const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion, int iSubblockSize );
 
 	FORCE_INLINE void			ReadHeader ( FileReader_c & tReader );
+
+	template <bool BUFFERED>
 	FORCE_INLINE void			ReadSubblock ( int iSubblockId, int iNumValues, FileReader_c & tReader );
 
 	template <bool PACK>
@@ -416,6 +435,7 @@ void StoredBlock_MvaTable_T<T>::ReadHeader ( FileReader_c & tReader )
 }
 
 template <typename T>
+template <bool BUFFERED>
 void StoredBlock_MvaTable_T<T>::ReadSubblock ( int iSubblockId, int iNumValues, FileReader_c & tReader )
 {
 	if ( m_iSubblockId==iSubblockId )
@@ -440,6 +460,8 @@ public:
 							StoredBlock_MvaPFOR_T ( const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion );
 
 	FORCE_INLINE void		ReadHeader ( FileReader_c & tReader, int iNumSubblocks );
+
+	template <bool BUFFERED>
 	FORCE_INLINE void		ReadSubblock ( int iSubblockId, int iSubblockValues, FileReader_c & tReader );
 
 	template <bool PACK>
@@ -476,6 +498,7 @@ void StoredBlock_MvaPFOR_T<T>::ReadHeader ( FileReader_c & tReader, int iNumSubb
 }
 
 template <typename T>
+template <bool BUFFERED>
 void StoredBlock_MvaPFOR_T<T>::ReadSubblock ( int iSubblockId, int iSubblockValues, FileReader_c & tReader )
 {
 	if ( m_iSubblockId==iSubblockId )
@@ -522,10 +545,11 @@ FORCE_INLINE uint32_t StoredBlock_MvaPFOR_T<T>::GetValue ( uint8_t * & pValue, i
 
 //////////////////////////////////////////////////////////////////////////
 
-template<typename T>
+template<typename T, bool BUFFERED=true>
 class Accessor_MVA_T : public StoredBlockTraits_t
 {
 	using BASE = StoredBlockTraits_t;
+	using MYTYPE = Accessor_MVA_T<T,BUFFERED>;
 
 public:
 									Accessor_MVA_T ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader );
@@ -537,7 +561,8 @@ protected:
 	std::unique_ptr<FileReader_c>	m_pReader;
 
 	StoredBlock_MvaConst_T<T>		m_tBlockConst;
-	StoredBlock_MvaConstLen_T<T>	m_tBlockConstLen;
+	StoredBlock_MvaConstLen_T<T,true>	m_tBlockConstLen;
+	StoredBlock_MvaConstLen_T<T,false>	m_tBlockConstLenNonCompressed;
 	StoredBlock_MvaTable_T<T>		m_tBlockTable;
 	StoredBlock_MvaPFOR_T<T>		m_tBlockPFOR;
 
@@ -556,6 +581,9 @@ protected:
 	template <bool PACK> void		ReadValue_ConstLen()		{ m_tValueLength = m_tBlockConstLen.template GetValue<PACK> ( m_pResult, ReadSubblock(m_tBlockConstLen) ); }
 	int								GetValueLength_ConstLen()	{ return m_tBlockConstLen.GetValueLength(); }
 
+	template <bool PACK> void		ReadValue_ConstLenNC()		{ m_tValueLength = m_tBlockConstLenNonCompressed.template GetValue<PACK> ( m_pResult, ReadSubblock(m_tBlockConstLenNonCompressed) ); }
+	int								GetValueLength_ConstLenNC()	{ return m_tBlockConstLenNonCompressed.GetValueLength(); }
+
 	template <bool PACK> void		ReadValue_Table()			{ m_tValueLength = m_tBlockTable.template GetValue<PACK> ( m_pResult, ReadSubblock(m_tBlockTable) ); }
 	int								GetValueLength_Table()		{ return m_tBlockTable.GetValueLength ( ReadSubblock(m_tBlockTable) ); }
 
@@ -566,21 +594,22 @@ protected:
 	FORCE_INLINE int				ReadSubblock ( SUBBLOCK & tSubblock );
 };
 
-template<typename T>
-Accessor_MVA_T<T>::Accessor_MVA_T ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader )
+template <typename T, bool BUFFERED>
+Accessor_MVA_T<T,BUFFERED>::Accessor_MVA_T ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader )
 	: StoredBlockTraits_t ( tHeader.GetSettings().m_iSubblockSize )
 	, m_tHeader ( tHeader )
 	, m_pReader ( pReader )
 	, m_tBlockConst ( tHeader.GetSettings().m_sCompressionUINT32, tHeader.GetSettings().m_sCompressionUINT64, uVersion )
 	, m_tBlockConstLen ( tHeader.GetSettings().m_sCompressionUINT32, tHeader.GetSettings().m_sCompressionUINT64, uVersion )
+	, m_tBlockConstLenNonCompressed ( tHeader.GetSettings().m_sCompressionUINT32, tHeader.GetSettings().m_sCompressionUINT64, uVersion )
 	, m_tBlockTable ( tHeader.GetSettings().m_sCompressionUINT32, tHeader.GetSettings().m_sCompressionUINT64, uVersion, tHeader.GetSettings().m_iSubblockSize )
 	, m_tBlockPFOR ( tHeader.GetSettings().m_sCompressionUINT32, tHeader.GetSettings().m_sCompressionUINT64, uVersion )
 {
 	assert(pReader);
 }
 
-template<typename T>
-void Accessor_MVA_T<T>::SetCurBlock ( uint32_t uBlockId )
+template <typename T, bool BUFFERED>
+void Accessor_MVA_T<T,BUFFERED>::SetCurBlock ( uint32_t uBlockId )
 {
 	m_pReader->Seek ( m_tHeader.GetBlockOffset(uBlockId) );
 	m_ePacking = (MvaPacking_e)m_pReader->Unpack_uint32();
@@ -594,30 +623,37 @@ void Accessor_MVA_T<T>::SetCurBlock ( uint32_t uBlockId )
 	switch ( m_ePacking )
 	{
 	case MvaPacking_e::CONST:
-		m_fnReadValue		= &Accessor_MVA_T<T>::ReadValue_Const<false>;
-		m_fnReadValuePacked = &Accessor_MVA_T<T>::ReadValue_Const<true>;
-		m_fnGetValueLength	= &Accessor_MVA_T<T>::GetValueLength_Const;
+		m_fnReadValue		= &MYTYPE::ReadValue_Const<false>;
+		m_fnReadValuePacked = &MYTYPE::ReadValue_Const<true>;
+		m_fnGetValueLength	= &MYTYPE::GetValueLength_Const;
 		m_tBlockConst.ReadHeader ( *m_pReader );
 		break;
 
 	case MvaPacking_e::CONSTLEN:
-		m_fnReadValue		= &Accessor_MVA_T<T>::ReadValue_ConstLen<false>;
-		m_fnReadValuePacked = &Accessor_MVA_T<T>::ReadValue_ConstLen<true>;
-		m_fnGetValueLength	= &Accessor_MVA_T<T>::GetValueLength_ConstLen;
+		m_fnReadValue		= &MYTYPE::ReadValue_ConstLen<false>;
+		m_fnReadValuePacked = &MYTYPE::ReadValue_ConstLen<true>;
+		m_fnGetValueLength	= &MYTYPE::GetValueLength_ConstLen;
 		m_tBlockConstLen.ReadHeader ( *m_pReader, m_iNumSubblocks );
 		break;
 
+	case MvaPacking_e::CONSTLEN_NONCOMPRESSED:
+		m_fnReadValue		= &MYTYPE::ReadValue_ConstLenNC<false>;
+		m_fnReadValuePacked = &MYTYPE::ReadValue_ConstLenNC<true>;
+		m_fnGetValueLength	= &MYTYPE::GetValueLength_ConstLenNC;
+		m_tBlockConstLenNonCompressed.ReadHeader ( *m_pReader, m_iNumSubblocks );
+		break;
+
 	case MvaPacking_e::TABLE:
-		m_fnReadValue		= &Accessor_MVA_T<T>::ReadValue_Table<false>;
-		m_fnReadValuePacked = &Accessor_MVA_T<T>::ReadValue_Table<true>;
-		m_fnGetValueLength	= &Accessor_MVA_T<T>::GetValueLength_Table;
+		m_fnReadValue		= &MYTYPE::ReadValue_Table<false>;
+		m_fnReadValuePacked = &MYTYPE::ReadValue_Table<true>;
+		m_fnGetValueLength	= &MYTYPE::GetValueLength_Table;
 		m_tBlockTable.ReadHeader ( *m_pReader );
 		break;
 
 	case MvaPacking_e::DELTA_PFOR:
-		m_fnReadValue		= &Accessor_MVA_T<T>::ReadValue_PFOR<false>;
-		m_fnReadValuePacked = &Accessor_MVA_T<T>::ReadValue_PFOR<true>;
-		m_fnGetValueLength	= &Accessor_MVA_T<T>::GetValueLength_PFOR;
+		m_fnReadValue		= &MYTYPE::ReadValue_PFOR<false>;
+		m_fnReadValuePacked = &MYTYPE::ReadValue_PFOR<true>;
+		m_fnGetValueLength	= &MYTYPE::GetValueLength_PFOR;
 		m_tBlockPFOR.ReadHeader ( *m_pReader, m_iNumSubblocks );
 		break;
 
@@ -627,23 +663,23 @@ void Accessor_MVA_T<T>::SetCurBlock ( uint32_t uBlockId )
 	}
 }
 
-template <typename T>
+template <typename T, bool BUFFERED>
 template <typename SUBBLOCK>
-int Accessor_MVA_T<T>::ReadSubblock ( SUBBLOCK & tSubblock )
+int Accessor_MVA_T<T,BUFFERED>::ReadSubblock ( SUBBLOCK & tSubblock )
 {
 	uint32_t uIdInBlock = m_tRequestedRowID - m_tStartBlockRowId;
 	int iSubblockId = StoredBlockTraits_t::GetSubblockId(uIdInBlock);
-	tSubblock.ReadSubblock ( iSubblockId, StoredBlockTraits_t::GetNumSubblockValues(iSubblockId), *m_pReader );
+	tSubblock.template ReadSubblock<BUFFERED> ( iSubblockId, StoredBlockTraits_t::GetNumSubblockValues(iSubblockId), *m_pReader );
 	return GetValueIdInSubblock(uIdInBlock);
 }
 
 //////////////////////////////////////////////////////////////////////////
 
 
-template <typename T>
-class Iterator_MVA_T : public Iterator_i, public Accessor_MVA_T<T>
+template <typename T, bool BUFFERED=true>
+class Iterator_MVA_T : public Iterator_i, public Accessor_MVA_T<T,BUFFERED>
 {
-	using BASE = Accessor_MVA_T<T>;
+	using BASE = Accessor_MVA_T<T,BUFFERED>;
 	using BASE::Accessor_MVA_T;
 
 public:
@@ -659,8 +695,8 @@ private:
 	FORCE_INLINE void AdvanceTo ( uint32_t tRowID );
 };
 
-template <typename T>
-void Iterator_MVA_T<T>::AdvanceTo ( uint32_t tRowID )
+template <typename T, bool BUFFERED>
+void Iterator_MVA_T<T,BUFFERED>::AdvanceTo ( uint32_t tRowID )
 {
 	assert ( tRowID < BASE::m_tHeader.GetNumDocs() );
 
@@ -674,8 +710,8 @@ void Iterator_MVA_T<T>::AdvanceTo ( uint32_t tRowID )
 	BASE::m_tRequestedRowID = tRowID;
 }
 
-template <typename T>
-int Iterator_MVA_T<T>::Get ( uint32_t tRowID, const uint8_t * & pData )
+template <typename T, bool BUFFERED>
+int Iterator_MVA_T<T,BUFFERED>::Get ( uint32_t tRowID, const uint8_t * & pData )
 {
 	AdvanceTo(tRowID);
 
@@ -688,8 +724,8 @@ int Iterator_MVA_T<T>::Get ( uint32_t tRowID, const uint8_t * & pData )
 	return (int)BASE::m_tValueLength;
 }
 
-template <typename T>
-uint8_t * Iterator_MVA_T<T>::GetPacked ( uint32_t tRowID )
+template <typename T, bool BUFFERED>
+uint8_t * Iterator_MVA_T<T,BUFFERED>::GetPacked ( uint32_t tRowID )
 {
 	AdvanceTo(tRowID);
 
@@ -702,9 +738,8 @@ uint8_t * Iterator_MVA_T<T>::GetPacked ( uint32_t tRowID )
 	return pData;
 }
 
-
-template <typename T>
-int Iterator_MVA_T<T>::GetLength ( uint32_t tRowID )
+template <typename T, bool BUFFERED>
+int Iterator_MVA_T<T,BUFFERED>::GetLength ( uint32_t tRowID )
 {
 	AdvanceTo(tRowID);
 
@@ -955,12 +990,15 @@ private:
 	int			ProcessSubblockTable ( uint32_t * & pRowID, int iSubblockIdInBlock );
 
 	int			ProcessSubblockConstLen_SingleValue ( uint32_t * & pRowID, int iSubblockIdInBlock );
+	int			ProcessSubblockConstLenNC_SingleValue ( uint32_t * & pRowID, int iSubblockIdInBlock );
 	int			ProcessSubblockDeltaPFOR_SingleValue ( uint32_t * & pRowID, int iSubblockIdInBlock );
 
 	int			ProcessSubblockConstLen_Values ( uint32_t * & pRowID, int iSubblockIdInBlock );
+	int			ProcessSubblockConstLenNC_Values ( uint32_t * & pRowID, int iSubblockIdInBlock );
 	int			ProcessSubblockDeltaPFOR_Values ( uint32_t * & pRowID, int iSubblockIdInBlock );
 
 	int			ProcessSubblockConstLen_Range ( uint32_t * & pRowID, int iSubblockIdInBlock );
+	int			ProcessSubblockConstLenNC_Range ( uint32_t * & pRowID, int iSubblockIdInBlock );
 	int			ProcessSubblockDeltaPFOR_Range ( uint32_t * & pRowID, int iSubblockIdInBlock );
 
 	bool		MoveToBlock ( int iNextBlock ) final;
@@ -1007,17 +1045,20 @@ void Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::SetupPackingFuncs()
 		if ( m_tSettings.m_dValues.size()==1 )
 		{
 			dFuncs [ to_underlying ( MvaPacking_e::CONSTLEN ) ]		= &Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::ProcessSubblockConstLen_SingleValue;
+			dFuncs [ to_underlying ( MvaPacking_e::CONSTLEN_NONCOMPRESSED ) ] = &Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::ProcessSubblockConstLenNC_SingleValue;
 			dFuncs [ to_underlying ( MvaPacking_e::DELTA_PFOR ) ]	= &Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::ProcessSubblockDeltaPFOR_SingleValue;
 		}
 		else
 		{
 			dFuncs [ to_underlying ( MvaPacking_e::CONSTLEN ) ]		= &Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::ProcessSubblockConstLen_Values;
+			dFuncs [ to_underlying ( MvaPacking_e::CONSTLEN_NONCOMPRESSED ) ] = &Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::ProcessSubblockConstLenNC_Values;
 			dFuncs [ to_underlying ( MvaPacking_e::DELTA_PFOR ) ]	= &Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::ProcessSubblockDeltaPFOR_Values;
 		}
 		break;
 
 	case FilterType_e::RANGE:
 		dFuncs [ to_underlying ( MvaPacking_e::CONSTLEN ) ]		= &Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::ProcessSubblockConstLen_Range;
+		dFuncs [ to_underlying ( MvaPacking_e::CONSTLEN_NONCOMPRESSED ) ] = &Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::ProcessSubblockConstLenNC_Range;
 		dFuncs [ to_underlying ( MvaPacking_e::DELTA_PFOR ) ]	= &Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::ProcessSubblockDeltaPFOR_Range;
 		break;
 
@@ -1036,49 +1077,70 @@ int Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::ProcessSubblockConst ( u
 template <typename T, typename T_COMP, typename FUNC, bool HAVE_MATCHING_BLOCKS>
 int Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::ProcessSubblockTable ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
-	ACCESSOR::m_tBlockTable.ReadSubblock ( iSubblockIdInBlock, StoredBlockTraits_t::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
+	ACCESSOR::m_tBlockTable.template ReadSubblock<true> ( iSubblockIdInBlock, StoredBlockTraits_t::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
 	return m_tBlockTable.ProcessSubblock ( pRowID, ACCESSOR::m_tBlockTable.GetValueIndexes() );
 }
 
 template <typename T, typename T_COMP, typename FUNC, bool HAVE_MATCHING_BLOCKS>
 int Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::ProcessSubblockConstLen_SingleValue ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
-	ACCESSOR::m_tBlockConstLen.ReadSubblock ( iSubblockIdInBlock, ACCESSOR::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
+	ACCESSOR::m_tBlockConstLen.template ReadSubblock<true> ( iSubblockIdInBlock, ACCESSOR::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
 	return m_tBlockValues.template ProcessSubblock_SingleValue<T,T_COMP,FUNC> ( pRowID, ACCESSOR::m_tBlockConstLen.GetAllValues() );
+}
+
+template <typename T, typename T_COMP, typename FUNC, bool HAVE_MATCHING_BLOCKS>
+int Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::ProcessSubblockConstLenNC_SingleValue ( uint32_t * & pRowID, int iSubblockIdInBlock )
+{
+	ACCESSOR::m_tBlockConstLenNonCompressed.template ReadSubblock<true> ( iSubblockIdInBlock, ACCESSOR::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
+	return m_tBlockValues.template ProcessSubblock_SingleValue<T,T_COMP,FUNC> ( pRowID, ACCESSOR::m_tBlockConstLenNonCompressed.GetAllValues() );
 }
 
 template <typename T, typename T_COMP, typename FUNC, bool HAVE_MATCHING_BLOCKS>
 int Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::ProcessSubblockDeltaPFOR_SingleValue ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
-	ACCESSOR::m_tBlockPFOR.ReadSubblock ( iSubblockIdInBlock, ACCESSOR::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
+	ACCESSOR::m_tBlockPFOR.template ReadSubblock<true> ( iSubblockIdInBlock, ACCESSOR::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
 	return m_tBlockValues.template ProcessSubblock_SingleValue<T,T_COMP,FUNC> ( pRowID, ACCESSOR::m_tBlockPFOR.GetAllValues() );
 }
 
 template <typename T, typename T_COMP, typename FUNC, bool HAVE_MATCHING_BLOCKS>
 int Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::ProcessSubblockConstLen_Values ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
-	ACCESSOR::m_tBlockConstLen.ReadSubblock ( iSubblockIdInBlock, ACCESSOR::GetNumSubblockValues(iSubblockIdInBlock),*ACCESSOR::m_pReader );
+	ACCESSOR::m_tBlockConstLen.template ReadSubblock<true> ( iSubblockIdInBlock, ACCESSOR::GetNumSubblockValues(iSubblockIdInBlock),*ACCESSOR::m_pReader );
 	return m_tBlockValues.template ProcessSubblock_Values<T,T_COMP,FUNC> ( pRowID, ACCESSOR::m_tBlockConstLen.GetAllValues() );
+}
+
+template <typename T, typename T_COMP, typename FUNC, bool HAVE_MATCHING_BLOCKS>
+int Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::ProcessSubblockConstLenNC_Values ( uint32_t * & pRowID, int iSubblockIdInBlock )
+{
+	ACCESSOR::m_tBlockConstLenNonCompressed.template ReadSubblock<true> ( iSubblockIdInBlock, ACCESSOR::GetNumSubblockValues(iSubblockIdInBlock),*ACCESSOR::m_pReader );
+	return m_tBlockValues.template ProcessSubblock_Values<T,T_COMP,FUNC> ( pRowID, ACCESSOR::m_tBlockConstLenNonCompressed.GetAllValues() );
 }
 
 template <typename T, typename T_COMP, typename FUNC, bool HAVE_MATCHING_BLOCKS>
 int Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::ProcessSubblockDeltaPFOR_Values ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
-	ACCESSOR::m_tBlockPFOR.ReadSubblock ( iSubblockIdInBlock, ACCESSOR::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
+	ACCESSOR::m_tBlockPFOR.template ReadSubblock<true> ( iSubblockIdInBlock, ACCESSOR::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
 	return m_tBlockValues.template ProcessSubblock_Values<T,T_COMP,FUNC> ( pRowID, ACCESSOR::m_tBlockPFOR.GetAllValues() );
 }
 
 template <typename T, typename T_COMP, typename FUNC, bool HAVE_MATCHING_BLOCKS>
 int Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::ProcessSubblockConstLen_Range ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
-	ACCESSOR::m_tBlockConstLen.ReadSubblock ( iSubblockIdInBlock, ACCESSOR::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
+	ACCESSOR::m_tBlockConstLen.template ReadSubblock<true> ( iSubblockIdInBlock, ACCESSOR::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
 	return m_tBlockValues.template ProcessSubblock_Range<T,T_COMP,FUNC> ( pRowID, ACCESSOR::m_tBlockConstLen.GetAllValues() );
+}
+
+template <typename T, typename T_COMP, typename FUNC, bool HAVE_MATCHING_BLOCKS>
+int Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::ProcessSubblockConstLenNC_Range ( uint32_t * & pRowID, int iSubblockIdInBlock )
+{
+	ACCESSOR::m_tBlockConstLenNonCompressed.template ReadSubblock<true> ( iSubblockIdInBlock, ACCESSOR::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
+	return m_tBlockValues.template ProcessSubblock_Range<T,T_COMP,FUNC> ( pRowID, ACCESSOR::m_tBlockConstLenNonCompressed.GetAllValues() );
 }
 
 template <typename T, typename T_COMP, typename FUNC, bool HAVE_MATCHING_BLOCKS>
 int Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::ProcessSubblockDeltaPFOR_Range ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
-	ACCESSOR::m_tBlockPFOR.ReadSubblock ( iSubblockIdInBlock, ACCESSOR::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
+	ACCESSOR::m_tBlockPFOR.template ReadSubblock<true>( iSubblockIdInBlock, ACCESSOR::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
 	return m_tBlockValues.template ProcessSubblock_Range<T,T_COMP,FUNC> ( pRowID, ACCESSOR::m_tBlockPFOR.GetAllValues() );
 }
 
@@ -1115,12 +1177,19 @@ bool Analyzer_MVA_T<T,T_COMP,FUNC,HAVE_MATCHING_BLOCKS>::MoveToBlock ( int iNext
 
 //////////////////////////////////////////////////////////////////////////
 
-Iterator_i * CreateIteratorMVA ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader )
+Iterator_i * CreateIteratorMVA ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader, bool bBuffered )
 {
-	if ( tHeader.GetType()==AttrType_e::UINT32SET || tHeader.GetType()==AttrType_e::FLOATVEC )
-		return new Iterator_MVA_T<uint32_t> ( tHeader, uVersion, pReader );
+	switch ( tHeader.GetType() )
+	{
+	case AttrType_e::UINT32SET:	return new Iterator_MVA_T<uint32_t> ( tHeader, uVersion, pReader );
+	case AttrType_e::FLOATVEC:
+		if ( bBuffered )
+			return new Iterator_MVA_T<uint32_t> ( tHeader, uVersion, pReader );
+		else
+			return new Iterator_MVA_T<uint32_t,false> ( tHeader, uVersion, pReader );
 
-	return new Iterator_MVA_T<uint64_t> ( tHeader, uVersion, pReader );
+	default: return new Iterator_MVA_T<uint64_t> ( tHeader, uVersion, pReader );
+	}
 }
 
 template <typename ANY, typename ALL>

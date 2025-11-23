@@ -38,7 +38,7 @@ namespace util
 {
 
 #ifdef _MSC_VER
-static int PreadWrapper ( int iFD, void * pBuf, size_t tCount, int64_t iOff )
+int PreadWrapper ( int iFD, void * pBuf, size_t tCount, int64_t iOff )
 {
 	if ( !tCount )
 		return 0;
@@ -62,12 +62,12 @@ static int PreadWrapper ( int iFD, void * pBuf, size_t tCount, int64_t iOff )
 
 #else
 #if HAVE_PREAD
-static int PreadWrapper ( int iFD, void * pBuf, size_t tCount, off_t tOff )
+int PreadWrapper ( int iFD, void * pBuf, size_t tCount, off_t tOff )
 {
 	return ::pread ( iFD, pBuf, tCount, tOff );
 }
 #else
-static int PreadWrapper ( int iFD, void * pBuf, size_t tCount, off_t tOff )
+int PreadWrapper ( int iFD, void * pBuf, size_t tCount, off_t tOff )
 {
 	if ( lseek ( iFD, tOff, SEEK_SET )==(off_t)-1 )
 		return -1;

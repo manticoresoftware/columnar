@@ -25,7 +25,7 @@ class Analyzer_i;
 class Checker_i;
 class AttributeHeader_i;
 
-Iterator_i *	CreateIteratorMVA ( const AttributeHeader_i & tHeader, uint32_t uVersion, util::FileReader_c * pReader );
+Iterator_i *	CreateIteratorMVA ( const AttributeHeader_i & tHeader, uint32_t uVersion, util::FileReader_c * pReader, bool bBuffered );
 Analyzer_i *	CreateAnalyzerMVA ( const AttributeHeader_i & tHeader, uint32_t uVersion, util::FileReader_c * pReader, const common::Filter_t & tSettings, bool bHaveMatchingBlocks );
 Checker_i *		CreateCheckerMva ( const AttributeHeader_i & tHeader, util::FileReader_c * pReader, Reporter_fn & fnProgress, Reporter_fn & fnError );
 

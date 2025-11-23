@@ -476,7 +476,7 @@ Iterator_i * Columnar_c::CreateIterator ( const std::string & sName, const Itera
 	case AttrType_e::UINT32SET:
 	case AttrType_e::INT64SET:
 	case AttrType_e::FLOATVEC:
-		return CreateIteratorMVA ( *pHeader, m_uVersion, pReader.release() );
+		return CreateIteratorMVA ( *pHeader, m_uVersion, pReader.release(), tHints.m_bBuffered );
 
 	default:
 		sError = "Unsupported columnar iterator type";
