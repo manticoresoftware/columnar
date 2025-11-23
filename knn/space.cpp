@@ -681,15 +681,6 @@ static float L2BinaryFloatDistance ( const void * __restrict pVect1, const void 
 	pV2 += sizeof(Binary1BitFactorsL2_t);
 
 	float fDistanceToCentroid2Sqr = tFactors1Bit.m_fDistanceToCentroid * tFactors1Bit.m_fDistanceToCentroid;
-	
-	// Handle case where vector equals centroid (magnitude is 0)
-	if ( tFactors1Bit.m_fVectorMagnitude==0.0f )
-	{
-		// If both vectors equal centroid, distance is just the difference in their distances to centroid
-		float fDist = fDistanceToCentroid2Sqr + tFactors4Bit.m_fDistanceToCentroidSq;
-		return fDist;
-	}
-	
 	float fCentroidDistToMagnitude2Ratio = tFactors1Bit.m_fDistanceToCentroid / tFactors1Bit.m_fVectorMagnitude;
 	float fIPCoeff = -tBinaryParam.m_fDoubleInvSqrtDim * fCentroidDistToMagnitude2Ratio;
 	float fPopCntCoeff = std::fma ( 2.0f, tFactors1Bit.m_fPopCnt, -float(tBinaryParam.m_uDim) ); // 2*fPopCnt - uDim
