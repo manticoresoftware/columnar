@@ -205,6 +205,9 @@ HNSWIndex_c::HNSWIndex_c ( const std::string & sName, int64_t iNumElements, cons
 
 void HNSWIndex_c::Search ( std::vector<DocDist_t> & dResults, const Span_T<float> & dData, int64_t iResults, int iEf, std::vector<uint8_t> & dQuantized ) const
 {
+	if ( !m_pAlg->cur_element_count )
+		return;
+
 	const void * pData = dData.begin();
 	if ( m_pQuantizer )
 	{
