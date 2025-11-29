@@ -133,6 +133,9 @@ private:
 	}
 };
 
+
+int PreadWrapper ( int iFD, void * pBuf, size_t tCount, int64_t iOff );
+
 void ReadVectorPacked ( std::vector<uint64_t> & dData, FileReader_c & tReader );
 
 template<typename VEC>

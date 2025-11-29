@@ -28,7 +28,7 @@
 namespace columnar
 {
 
-static const int LIB_VERSION = 26;
+static const int LIB_VERSION = 27;
 
 class Iterator_i
 {
@@ -60,6 +60,7 @@ public:
 struct IteratorHints_t
 {
 	bool	m_bNeedStringHashes = false;
+	bool	m_bBuffered = true;
 };
 
 

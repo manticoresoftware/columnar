@@ -50,6 +50,7 @@ struct SchemaAttr_t
 	std::string		m_sName;
 	AttrType_e		m_eType = AttrType_e::NONE;
 	StringHash_fn	m_fnCalcHash = nullptr;
+	bool			m_bKNN = false;
 };
 
 using Schema_t = std::vector<SchemaAttr_t>;

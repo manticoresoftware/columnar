@@ -87,6 +87,7 @@ protected:
 
 	void			AnalyzeCollected ( const int64_t * pData, int iLength );
 	MvaPacking_e	ChoosePacking() const;
+	void			OverridePacking ( MvaPacking_e eSrc, MvaPacking_e eDst );
 	void			WriteToFile ( MvaPacking_e ePacking );
 
 private:
@@ -96,6 +97,8 @@ private:
 	std::vector<T>				m_dUncompressed;
 	std::vector<uint32_t>		m_dCompressed;
 	std::unique_ptr<IntCodec_i>	m_pCodec;
+
+	MvaPacking_e				m_dPackingOverrides[to_underlying(MvaPacking_e::TOTAL)];
 
 	std::vector<uint8_t>		m_dTmpBuffer;
 	std::vector<uint8_t>		m_dTmpBuffer2;
@@ -115,6 +118,7 @@ private:
 
 	void			WritePacked_Const();
 	void			WritePacked_ConstLen();
+	void			WritePacked_ConstLenNonPacked();
 	void			WritePacked_Table();
 	void			WritePacked_DeltaPFOR ( bool bWriteLengths );
 
@@ -127,8 +131,16 @@ Packer_MVA_T<T,HEADER_T>::Packer_MVA_T ( const Settings_t & tSettings, const std
 	: BASE ( tSettings, sName, eAttr )
 	, m_pCodec ( CreateIntCodec ( tSettings.m_sCompressionUINT32, tSettings.m_sCompressionUINT64 ) )
 {
-	assert ( !(tSettings.m_iSubblockSize & 127) );
 	m_dTableIndexes.resize ( tSettings.m_iSubblockSize );
+
+	for ( auto i = to_underlying(MvaPacking_e::CONST); i < to_underlying(MvaPacking_e::TOTAL); i++ )
+		m_dPackingOverrides[i] = MvaPacking_e(i);
+}
+
+template <typename T, typename HEADER_T>
+void Packer_MVA_T<T,HEADER_T>::OverridePacking ( MvaPacking_e eSrc, MvaPacking_e eDst )
+{
+	m_dPackingOverrides[to_underlying(eSrc)] = eDst;
 }
 
 template <typename T, typename HEADER_T>
@@ -188,15 +200,15 @@ template <typename T, typename HEADER_T>
 MvaPacking_e Packer_MVA_T<T,HEADER_T>::ChoosePacking() const
 {
 	if ( m_iUniques==1 )
-		return MvaPacking_e::CONST;
+		return m_dPackingOverrides[to_underlying(MvaPacking_e::CONST)];
 
 	if ( m_iUniques<256 )
-		return MvaPacking_e::TABLE;
+		return m_dPackingOverrides[to_underlying(MvaPacking_e::TABLE)];
 
 	if ( m_iConstLength!=-1 )
-		return MvaPacking_e::CONSTLEN;
+		return m_dPackingOverrides[to_underlying(MvaPacking_e::CONSTLEN)];
 
-	return MvaPacking_e::DELTA_PFOR;
+	return m_dPackingOverrides[to_underlying(MvaPacking_e::DELTA_PFOR)];
 }
 
 template <typename T, typename HEADER_T>
@@ -234,6 +246,10 @@ void Packer_MVA_T<T,HEADER_T>::WriteToFile ( MvaPacking_e ePacking )
 		WritePacked_ConstLen();
 		break;
 
+	case MvaPacking_e::CONSTLEN_NONCOMPRESSED:
+		WritePacked_ConstLenNonPacked();
+		break;
+
 	case MvaPacking_e::TABLE:
 		WritePacked_Table();
 		break;
@@ -268,6 +284,48 @@ void Packer_MVA_T<T,HEADER_T>::WritePacked_ConstLen()
 	assert ( m_iConstLength>=0 );
 	BASE::m_tWriter.Pack_uint32 ( (uint32_t)m_iConstLength );
 	WritePacked_DeltaPFOR(false);
+}
+
+template <typename T, typename HEADER_T>
+void Packer_MVA_T<T,HEADER_T>::WritePacked_ConstLenNonPacked()
+{
+	assert ( m_iConstLength>=0 );
+	BASE::m_tWriter.Pack_uint32 ( (uint32_t)m_iConstLength );
+
+	int iSubblockSize = BASE::m_tHeader.GetSettings().m_iSubblockSize;
+	int iBlocks = ( (int)m_dCollectedLengths.size() + iSubblockSize - 1 ) / iSubblockSize;
+
+	m_dSubblockSizes.resize(iBlocks);
+
+	m_dTmpBuffer.resize(0);
+	MemWriter_c tMemWriter ( m_dTmpBuffer );
+
+	int iBlockStart = 0;
+	uint32_t uTotalValues = 0;
+	for ( int iBlock=0; iBlock < (int)m_dSubblockSizes.size(); iBlock++ )
+	{
+		int iBlockValues = GetSubblockSize ( iBlock, iBlocks, (int)m_dCollectedLengths.size(), iSubblockSize );
+		int64_t tSubblockStart = tMemWriter.GetPos();
+
+		Span_T<uint32_t> dLengths ( &m_dCollectedLengths[iBlockStart], iBlockValues );
+
+		uint32_t uNumValues = m_iConstLength*iBlockValues;
+		if ( uNumValues )
+		{
+			Span_T<T> dValuesToWrite ( &m_dCollectedValues[uTotalValues], uNumValues );
+			tMemWriter.Write ( (const uint8_t*)dValuesToWrite.data(), dValuesToWrite.size()*sizeof ( dValuesToWrite[0] ) );
+		}
+
+		m_dSubblockSizes[iBlock] = uint32_t ( tMemWriter.GetPos()-tSubblockStart );
+
+		iBlockStart += iBlockValues;
+		uTotalValues += uNumValues;
+	}
+
+	// fixme! subblock sizes are all the same
+	WriteSubblockSizes();
+
+	BASE::m_tWriter.Write ( m_dTmpBuffer.data(), m_dTmpBuffer.size()*sizeof ( m_dTmpBuffer[0] ) );
 }
 
 template <typename T, typename HEADER_T>
@@ -425,6 +483,21 @@ void Packer_MVA_T<T,HEADER_T>::WriteSubblockSizes()
 
 //////////////////////////////////////////////////////////////////////////
 
+class Packer_KNN_c : public Packer_MVA_T<uint32_t,float>
+{
+public:
+		Packer_KNN_c ( const Settings_t & tSettings, const std::string & sName );
+};
+
+
+Packer_KNN_c::Packer_KNN_c ( const Settings_t & tSettings, const std::string & sName )
+	: Packer_MVA_T ( tSettings, sName, AttrType_e::FLOATVEC )
+{
+	OverridePacking ( MvaPacking_e::CONSTLEN, MvaPacking_e::CONSTLEN_NONCOMPRESSED );
+}
+
+//////////////////////////////////////////////////////////////////////////
+
 Packer_i * CreatePackerMva32 ( const Settings_t & tSettings, const std::string & sName )
 {
 	return new Packer_MVA_T<uint32_t,uint32_t> ( tSettings, sName, AttrType_e::UINT32SET );
@@ -440,6 +513,15 @@ Packer_i * CreatePackerMva64 ( const Settings_t & tSettings, const std::string &
 Packer_i * CreatePackerFloatVec ( const Settings_t & tSettings, const std::string & sName )
 {
 	return new Packer_MVA_T<uint32_t,float> ( tSettings, sName, AttrType_e::FLOATVEC );
+}
+
+
+Packer_i * CreatePackerFloatVecKnn ( const Settings_t & tSettings, const std::string & sName )
+{
+	// override block size, set it to 1
+	Settings_t tNewSettings = tSettings;
+	tNewSettings.m_iSubblockSize = 1;
+	return new Packer_KNN_c ( tNewSettings, sName );
 }
 
 } // namespace columnar

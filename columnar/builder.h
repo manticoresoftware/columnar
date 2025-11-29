@@ -25,12 +25,13 @@
 namespace columnar
 {
 
-static const uint32_t STORAGE_VERSION = 12;
+static const uint32_t STORAGE_VERSION = 13;
 
 inline bool StorageVersionWrong ( uint32_t uVer ) noexcept
 {
 	if ( uVer < 10 )
 		return true;
+
 	return uVer > STORAGE_VERSION;
 }
 

@@ -27,6 +27,7 @@ enum class MvaPacking_e : uint32_t
 	CONSTLEN,
 	TABLE,
 	DELTA_PFOR,
+	CONSTLEN_NONCOMPRESSED,
 
 	TOTAL
 };
@@ -38,5 +39,6 @@ struct Settings_t;
 Packer_i * CreatePackerMva32 ( const Settings_t & tSettings, const std::string & sName );
 Packer_i * CreatePackerMva64 ( const Settings_t & tSettings, const std::string & sName );
 Packer_i * CreatePackerFloatVec ( const Settings_t & tSettings, const std::string & sName );
+Packer_i * CreatePackerFloatVecKnn ( const Settings_t & tSettings, const std::string & sName );
 
 } // namespace columnar
