@@ -157,6 +157,7 @@ mod tests {
         let cache_path = to_c_string("");
         let api_key = to_c_string("");
 
+        let api_url = to_c_string("");
         let result = TextModelWrapper::load_model(
             model_name.as_ptr(),
             model_name.as_bytes().len(),
@@ -164,6 +165,9 @@ mod tests {
             cache_path.as_bytes().len(),
             api_key.as_ptr(),
             api_key.as_bytes().len(),
+            api_url.as_ptr(),
+            api_url.as_bytes().len(),
+            0, // Use default timeout
             false,
         );
 
@@ -186,8 +190,9 @@ mod tests {
     fn test_load_model_openai_invalid_api_key() {
         let model_name = to_c_string("openai/text-embedding-ada-002");
         let cache_path = to_c_string("");
-        let api_key = to_c_string("invalid-key");
+        let api_key = to_c_string(""); // Empty key will fail basic validation
 
+        let api_url = to_c_string("");
         let result = TextModelWrapper::load_model(
             model_name.as_ptr(),
             model_name.as_bytes().len(),
@@ -195,10 +200,13 @@ mod tests {
             cache_path.as_bytes().len(),
             api_key.as_ptr(),
             api_key.as_bytes().len(),
+            api_url.as_ptr(),
+            api_url.as_bytes().len(),
+            0, // Use default timeout
             false,
         );
 
-        // Should fail with invalid API key
+        // Should fail with empty API key (basic validation)
         assert!(result.model.is_null());
         assert!(!result.error.is_null());
 
@@ -219,6 +227,7 @@ mod tests {
         let cache_path = to_c_string("");
         let api_key = to_c_string("");
 
+        let api_url = to_c_string("");
         let result = TextModelWrapper::load_model(
             model_name.as_ptr(),
             model_name.as_bytes().len(),
@@ -226,6 +235,9 @@ mod tests {
             cache_path.as_bytes().len(),
             api_key.as_ptr(),
             api_key.as_bytes().len(),
+            api_url.as_ptr(),
+            api_url.as_bytes().len(),
+            0, // Use default timeout
             false,
         );
 
@@ -456,6 +468,8 @@ mod tests {
             model_id: "test-model".to_string(),
             cache_path: Some("/tmp/cache".to_string()),
             api_key: Some("sk-test123".to_string()),
+            api_url: None,
+            api_timeout: None,
             use_gpu: Some(true),
         };
 
@@ -463,6 +477,8 @@ mod tests {
             model_id: "openai/text-embedding-ada-002".to_string(),
             cache_path: None,
             api_key: Some("sk-test456".to_string()),
+            api_url: None,
+            api_timeout: None,
             use_gpu: None,
         };
 
