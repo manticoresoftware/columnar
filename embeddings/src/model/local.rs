@@ -111,14 +111,22 @@ impl LocalModel {
         let model_info = build_model_info(cache_path, model_id, revision, use_pth)?;
         let (model, mut tokenizer, max_input_len, hidden_size) =
             build_model_and_tokenizer(model_info, device)?;
-        let tokenizer = tokenizer
+        // Configure tokenizer: with_padding() and with_truncation() modify the tokenizer in place
+        // and return &mut Self. We use the tokenizer directly after configuration (previously there
+        // was an unnecessary "let tokenizer = tokenizer" assignment that was removed). The tokenizer
+        // is already mutable and correctly configured, so we can use it directly in the struct below.
+        tokenizer
             .with_padding(None)
             .with_truncation(None)
             .map_err(|_| LibError::ModelTokenizerConfigurationFailed)?;
 
         Ok(Self {
             model,
-            tokenizer: tokenizer.clone().into(),
+            // Use tokenizer directly (not tokenizer.clone().into()). The previous code used
+            // .clone().into() which caused a segfault because it created an incorrect type conversion.
+            // Since with_padding() and with_truncation() modify the tokenizer in place, we can use
+            // the configured tokenizer directly here.
+            tokenizer,
             max_input_len,
             hidden_size,
         })
@@ -192,6 +200,11 @@ impl TextModel for LocalModel {
 
     fn get_max_input_len(&self) -> usize {
         self.max_input_len
+    }
+
+    fn validate_api_key(&self) -> Result<(), Box<dyn std::error::Error>> {
+        // Local models don't use API keys, so validation is always successful
+        Ok(())
     }
 }
 
