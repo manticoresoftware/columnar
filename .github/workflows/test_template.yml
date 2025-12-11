@@ -17,6 +17,10 @@ on:
       artifact_name:
         required: true
         type: string
+      build_artifact_name:
+        required: false
+        type: string
+        default: ""
       timeout:
         required: false
         type: number
@@ -81,10 +85,19 @@ jobs:
       - name: Tests container entrypoint
         run: bash /entry_point.sh &
 
+      - name: Set build artifact name
+        id: build_artifact
+        run: |
+          if [ -n "${{ inputs.build_artifact_name }}" ]; then
+            echo "name=${{ inputs.build_artifact_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "name=build_${{ inputs.CTEST_CONFIGURATION_TYPE }}_x86_64" >> $GITHUB_OUTPUT
+          fi
+
       - name: Download build artifacts
         uses: manticoresoftware/download_artifact_with_retries@v4
         with:
-          name: build_jammy_${{ inputs.CTEST_CONFIGURATION_TYPE }}_x86_64
+          name: ${{ steps.build_artifact.outputs.name }}
           path: .
 
       - name: Download embeddings lib 

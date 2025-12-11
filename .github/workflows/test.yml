@@ -228,6 +228,7 @@ jobs:
       CTEST_END: ${{ matrix.end }}
       MANTICORE_LOCATOR: ${{ needs.check_branch.outputs.manticore_locator }}
       artifact_name: debug_test_${{ matrix.name }}
+      build_artifact_name: build_linux_debug_Debug_x86_64
       xml_command: "cd build; cp -r Testing/2*/Test.xml .; xsltproc -o junit_tests_${{ matrix.name }}.xml ../misc/junit/ctest2junit.xsl Test.xml"
       timeout: 10
       USE_AVX2: true
@@ -354,6 +355,7 @@ jobs:
       CTEST_END: ${{ matrix.end }}
       MANTICORE_LOCATOR: ${{ needs.check_branch.outputs.manticore_locator }}
       artifact_name: release_test_${{ matrix.name }}
+      build_artifact_name: build_linux_release_RelWithDebInfo_x86_64
       xml_command: "cd build; cp -r Testing/2*/Test.xml .; xsltproc -o junit_tests_${{ matrix.name }}.xml ../misc/junit/ctest2junit.xsl Test.xml"
       timeout: 10
       USE_AVX2: true
