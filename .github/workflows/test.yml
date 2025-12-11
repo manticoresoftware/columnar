@@ -161,19 +161,19 @@ jobs:
     needs: [embedding_linux_pack, check_branch]
     uses: ./.github/workflows/build_template.yml
     with:
-      DISTR: linux
       MANTICORE_LOCATOR: ${{ needs.check_branch.outputs.manticore_locator }}
       embeddings_artifact: embeddings_linux_x86_64
+      artifact_name: build_linux_release_RelWithDebInfo_x86_64
 
   build_linux_debug:
     name: Linux debug build
     needs: [embedding_linux_pack, check_branch]
     uses: ./.github/workflows/build_template.yml
     with:
-      DISTR: linux
       CTEST_CONFIGURATION_TYPE: "Debug"
       MANTICORE_LOCATOR: ${{ needs.check_branch.outputs.manticore_locator }}
       embeddings_artifact: embeddings_linux_x86_64
+      artifact_name: build_linux_debug_Debug_x86_64
 
   build_windows:
     name: Windows x64 build
@@ -557,6 +557,7 @@ jobs:
       cache_key: pack_jammy_x86_64
       artifact_list: "build/manticore*deb"
       embeddings_artifact: embeddings_linux_x86_64
+      artifact_name: build_jammy_RelWithDebInfo_x86_64
 
   test_kit_docker_build:
     name: Test Kit docker image
