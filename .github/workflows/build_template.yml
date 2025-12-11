@@ -62,6 +62,10 @@ on:
         required: false
         type: boolean
         default: false
+      artifact_name:
+        required: false
+        type: string
+        default: ""
 
 jobs:
   build:
@@ -169,9 +173,18 @@ jobs:
             ls build/secondary/Debug/
           fi
 
+      - name: Set artifact name
+        id: artifact_name
+        run: |
+          if [ -n "${{ inputs.artifact_name }}" ]; then
+            echo "name=${{ inputs.artifact_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "name=build_${{ inputs.DISTR }}_${{ inputs.CTEST_CONFIGURATION_TYPE }}_${{ inputs.arch }}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Upload build artifacts
         if: success()
         uses: manticoresoftware/upload_artifact_with_retries@v4
         with:
-          name: build_${{ inputs.DISTR }}_${{ inputs.CTEST_CONFIGURATION_TYPE }}_${{ inputs.arch }}
+          name: ${{ steps.artifact_name.outputs.name }}
           path: ${{ inputs.artifact_list }}
