@@ -1,0 +1,64 @@
+name: CLT tests 
+on:
+  workflow_call:
+    inputs:
+      docker_image:
+        required: true
+        type: string
+        description: "Docker image to use for tests"
+      artifact_name:
+        required: false
+        type: string
+        description: "Name of the docker image artifact"
+      repository:
+        required: false
+        type: string
+        description: "Repository to checkout"
+      ref:
+        required: false
+        type: string
+        description: "Ref to checkout"
+      continue_on_error:
+        required: false
+        type: boolean
+        description: "Continue on error"
+        default: false
+    secrets:
+      OPENAI_API_KEY:
+        required: true
+        description: "OpenAI API key for CLT tests"
+      VOYAGE_API_KEY:
+        required: true
+        description: "Voyage API key for CLT tests"
+      JINA_API_KEY:
+        required: true
+        description: "Jina API key for CLT tests"
+
+jobs:
+  clt:
+    name: CLT
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    continue-on-error: ${{ inputs.continue_on_error }}
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
+      JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
+    strategy:
+      fail-fast: false
+      matrix:
+        test-suite:
+          - name: MCL
+            test_prefix: test/clt-tests/mcl/
+              
+    steps:
+      - uses: manticoresoftware/clt@0.7.3
+        with:
+          artifact: ${{ inputs.artifact_name }}
+          image: ${{ inputs.docker_image }}
+          repository: ${{ inputs.repository }}
+          ref: ${{ inputs.ref }}
+          test_prefix: ${{ matrix.test-suite.test_prefix }}
+          comment_mode: failures
+          run_args: "-e OPENAI_API_KEY -e VOYAGE_API_KEY -e JINA_API_KEY"
+          ui_host: "https://clt.manticoresearch.com"
