@@ -91,7 +91,7 @@ jobs:
           if [ -n "${{ inputs.build_artifact_name }}" ]; then
             echo "name=${{ inputs.build_artifact_name }}" >> $GITHUB_OUTPUT
           else
-            echo "name=build_${{ inputs.CTEST_CONFIGURATION_TYPE }}_x86_64" >> $GITHUB_OUTPUT
+            echo "name=build_jammy_${{ inputs.CTEST_CONFIGURATION_TYPE }}_x86_64" >> $GITHUB_OUTPUT
           fi
 
       - name: Download build artifacts
