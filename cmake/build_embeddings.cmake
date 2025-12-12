@@ -42,6 +42,14 @@ function(build_embeddings_lib)
 		endif ()
 	endif ()
 
+	# Pass git commit and timestamp to build.rs via environment variables
+	# These variables are set by cmake/rev.cmake which is included in the main CMakeLists.txt
+	# The build.rs script uses these to generate a version string in the format:
+	# "VERSION commit@timestamp" (e.g., "1.1.0 38f499e@25112313")
+	# This matches the format used by other Manticore libraries for consistent version display
+	set(ENV{GIT_COMMIT_ID} "${GIT_COMMIT_ID}")
+	set(ENV{GIT_TIMESTAMP_ID} "${GIT_TIMESTAMP_ID}")
+
 	execute_process (
 			COMMAND cargo build --manifest-path ${CMAKE_SOURCE_DIR}/embeddings/Cargo.toml --lib --release --target-dir ${CMAKE_CURRENT_BINARY_DIR}/embeddings
 			RESULT_VARIABLE CMD_RESULT
@@ -51,7 +59,17 @@ function(build_embeddings_lib)
 		message ( FATAL_ERROR "Failed to build: ${CMD_RESULT}" )
 	endif ()
 
-	file(RENAME "${CMAKE_CURRENT_BINARY_DIR}/embeddings/release/${EMBEDDINGS_LIB_FILE_SRC}" "${CMAKE_CURRENT_BINARY_DIR}/embeddings/release/${EMBEDDINGS_LIB_FILE_DST}" )
+	set(EMBEDDINGS_LIB_SRC_PATH "${CMAKE_CURRENT_BINARY_DIR}/embeddings/release/${EMBEDDINGS_LIB_FILE_SRC}")
+	set(EMBEDDINGS_LIB_DST_PATH "${CMAKE_CURRENT_BINARY_DIR}/embeddings/release/${EMBEDDINGS_LIB_FILE_DST}")
+	
+	# Check that the library file exists before attempting to rename it.
+	# This provides a clearer error message if EMBEDDINGS_LIB_NAME was not set correctly
+	# or if the cargo build produced a different filename than expected.
+	if (NOT EXISTS "${EMBEDDINGS_LIB_SRC_PATH}")
+		message ( FATAL_ERROR "Expected library file not found: ${EMBEDDINGS_LIB_SRC_PATH}" )
+	endif ()
+	
+	file(RENAME "${EMBEDDINGS_LIB_SRC_PATH}" "${EMBEDDINGS_LIB_DST_PATH}")
 	if ( EXISTS "${CMAKE_CURRENT_BINARY_DIR}/embeddings/release/${EMBEDDINGS_LIB_NAME}.pdb" )
 		file(RENAME "${CMAKE_CURRENT_BINARY_DIR}/embeddings/release/${EMBEDDINGS_LIB_NAME}.pdb" "${CMAKE_CURRENT_BINARY_DIR}/embeddings/release/lib_${EMBEDDINGS_LIB_NAME}.pdb")
 	endif()

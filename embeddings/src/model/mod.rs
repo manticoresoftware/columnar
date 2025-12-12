@@ -26,6 +26,9 @@ pub trait TextModel {
     fn predict(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, Box<dyn Error>>;
     fn get_hidden_size(&self) -> usize;
     fn get_max_input_len(&self) -> usize;
+    /// Validates the API key by making a minimal test request to the API.
+    /// For remote models, this makes an actual HTTP request. For local models, this is a no-op.
+    fn validate_api_key(&self) -> Result<(), Box<dyn Error>>;
 }
 
 #[repr(C)]
@@ -33,6 +36,8 @@ pub struct ModelOptions {
     pub model_id: String,
     pub cache_path: Option<String>,
     pub api_key: Option<String>,
+    pub api_url: Option<String>,
+    pub api_timeout: Option<u64>, // Timeout in seconds (None means use default: 10 seconds)
     pub use_gpu: Option<bool>,
 }
 
@@ -71,22 +76,44 @@ impl TextModel for Model {
             Model::Local(m) => m.get_max_input_len(),
         }
     }
+
+    fn validate_api_key(&self) -> Result<(), Box<dyn Error>> {
+        match self {
+            Model::OpenAI(m) => m.validate_api_key(),
+            Model::Voyage(m) => m.validate_api_key(),
+            Model::Jina(m) => m.validate_api_key(),
+            Model::Local(m) => m.validate_api_key(),
+        }
+    }
 }
 
 pub fn create_model(options: ModelOptions) -> Result<Model, Box<dyn Error>> {
     let model_id = options.model_id.as_str();
     if model_id.starts_with("openai/") {
-        let model =
-            openai::OpenAIModel::new(model_id, options.api_key.unwrap_or_default().as_str())?;
+        let model = openai::OpenAIModel::new(
+            model_id,
+            options.api_key.unwrap_or_default().as_str(),
+            options.api_url.as_deref(),
+            options.api_timeout,
+        )?;
 
         Ok(Model::OpenAI(Box::new(model)))
     } else if model_id.starts_with("voyage/") {
-        let model =
-            voyage::VoyageModel::new(model_id, options.api_key.unwrap_or_default().as_str())?;
+        let model = voyage::VoyageModel::new(
+            model_id,
+            options.api_key.unwrap_or_default().as_str(),
+            options.api_url.as_deref(),
+            options.api_timeout,
+        )?;
 
         Ok(Model::Voyage(Box::new(model)))
     } else if model_id.starts_with("jina/") {
-        let model = jina::JinaModel::new(model_id, options.api_key.unwrap_or_default().as_str())?;
+        let model = jina::JinaModel::new(
+            model_id,
+            options.api_key.unwrap_or_default().as_str(),
+            options.api_url.as_deref(),
+            options.api_timeout,
+        )?;
 
         Ok(Model::Jina(Box::new(model)))
     } else {

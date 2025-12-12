@@ -26,6 +26,8 @@ mod tests {
             model_id: "openai/text-embedding-ada-002".to_string(),
             cache_path: None,
             api_key: Some("sk-test1234567890abcdef".to_string()),
+            api_url: None,
+            api_timeout: None,
             use_gpu: Some(false),
         };
 
@@ -44,6 +46,7 @@ mod tests {
         let cache_path = to_c_string("");
         let api_key = to_c_string("sk-test1234567890abcdef");
 
+        let api_url = to_c_string("");
         let result = TextModelWrapper::load_model(
             model_name.as_ptr(),
             model_name.as_bytes().len(),
@@ -51,6 +54,9 @@ mod tests {
             cache_path.as_bytes().len(),
             api_key.as_ptr(),
             api_key.as_bytes().len(),
+            api_url.as_ptr(),
+            api_url.as_bytes().len(),
+            0, // Use default timeout
             false,
         );
 
@@ -82,6 +88,8 @@ mod tests {
             model_id: "invalid/model".to_string(),
             cache_path: None,
             api_key: None,
+            api_url: None,
+            api_timeout: None,
             use_gpu: Some(false),
         };
 
@@ -93,6 +101,7 @@ mod tests {
         let cache_path = to_c_string("");
         let api_key = to_c_string("");
 
+        let api_url = to_c_string("");
         let ffi_result = TextModelWrapper::load_model(
             model_name.as_ptr(),
             model_name.as_bytes().len(),
@@ -100,6 +109,9 @@ mod tests {
             cache_path.as_bytes().len(),
             api_key.as_ptr(),
             api_key.as_bytes().len(),
+            api_url.as_ptr(),
+            api_url.as_bytes().len(),
+            0, // Use default timeout
             false,
         );
 
@@ -116,8 +128,9 @@ mod tests {
 
         let model_name = to_c_string("openai/text-embedding-ada-002");
         let cache_path = to_c_string("");
-        let api_key = to_c_string("invalid-key"); // Will fail, but that's OK for memory test
+        let api_key = to_c_string(""); // Empty key will fail basic validation
 
+        let api_url = to_c_string("");
         let result = TextModelWrapper::load_model(
             model_name.as_ptr(),
             model_name.as_bytes().len(),
@@ -125,10 +138,13 @@ mod tests {
             cache_path.as_bytes().len(),
             api_key.as_ptr(),
             api_key.as_bytes().len(),
+            api_url.as_ptr(),
+            api_url.as_bytes().len(),
+            0, // Use default timeout
             false,
         );
 
-        // Should have error due to invalid API key
+        // Should have error due to empty API key (basic validation)
         assert!(result.model.is_null());
         assert!(!result.error.is_null());
 
@@ -152,6 +168,7 @@ mod tests {
         let cache_path = to_c_string("");
         let api_key = to_c_string("sk-test1234567890abcdef"); // Valid format but fake key
 
+        let api_url = to_c_string("");
         let model_result = TextModelWrapper::load_model(
             model_name.as_ptr(),
             model_name.as_bytes().len(),
@@ -159,6 +176,9 @@ mod tests {
             cache_path.as_bytes().len(),
             api_key.as_ptr(),
             api_key.as_bytes().len(),
+            api_url.as_ptr(),
+            api_url.as_bytes().len(),
+            0, // Use default timeout
             false,
         );
 
@@ -245,6 +265,8 @@ mod tests {
                 model_id: model_id.to_string(),
                 cache_path: cache_path.map(|s| s.to_string()),
                 api_key: api_key.map(|s| s.to_string()),
+                api_url: None,
+                api_timeout: None,
                 use_gpu: Some(use_gpu),
             };
 
@@ -291,6 +313,8 @@ mod tests {
                         model_id: model_name,
                         cache_path: None,
                         api_key: Some(api_key),
+                        api_url: None,
+                        api_timeout: None,
                         use_gpu: Some(false),
                     };
 
@@ -351,12 +375,14 @@ mod tests {
     #[test]
     fn test_error_message_quality() {
         // Test that error messages are informative and helpful
+        // Note: Basic validation only checks non-empty and no whitespace.
+        // "invalid-key" will pass basic validation but fail real API validation later.
         let error_scenarios = vec![
-            ("", "", ""),                                         // All empty
-            ("invalid/model", "", ""),                            // Invalid model
-            ("openai/text-embedding-ada-002", "", ""),            // Missing API key
-            ("openai/text-embedding-ada-002", "", "invalid-key"), // Invalid API key format
-            ("openai/invalid-model", "", "sk-test123"),           // Invalid OpenAI model
+            ("", "", ""),                                   // All empty - fails basic validation
+            ("invalid/model", "", ""), // Invalid model - fails model validation
+            ("openai/text-embedding-ada-002", "", ""), // Missing API key - fails basic validation
+            ("openai/text-embedding-ada-002", "", " key "), // API key with whitespace - fails basic validation
+            ("openai/invalid-model", "", "sk-test123"), // Invalid OpenAI model - fails model validation
         ];
 
         for (model_id, cache_path, api_key) in error_scenarios {
@@ -364,6 +390,7 @@ mod tests {
             let cache_path_c = to_c_string(cache_path);
             let api_key_c = to_c_string(api_key);
 
+            let api_url_c = to_c_string("");
             let result = TextModelWrapper::load_model(
                 model_name.as_ptr(),
                 model_name.as_bytes().len(),
@@ -371,6 +398,9 @@ mod tests {
                 cache_path_c.as_bytes().len(),
                 api_key_c.as_ptr(),
                 api_key_c.as_bytes().len(),
+                api_url_c.as_ptr(),
+                api_url_c.as_bytes().len(),
+                0, // Use default timeout
                 false,
             );
 
