@@ -202,7 +202,7 @@ MvaPacking_e Packer_MVA_T<T,HEADER_T>::ChoosePacking() const
 	if ( m_iUniques==1 )
 		return m_dPackingOverrides[to_underlying(MvaPacking_e::CONST)];
 
-	if ( m_iUniques<256 )
+	if ( m_iUniques<256 && m_dPackingOverrides[to_underlying(MvaPacking_e::TABLE)]!=MvaPacking_e::TOTAL )
 		return m_dPackingOverrides[to_underlying(MvaPacking_e::TABLE)];
 
 	if ( m_iConstLength!=-1 )
@@ -494,6 +494,7 @@ Packer_KNN_c::Packer_KNN_c ( const Settings_t & tSettings, const std::string & s
 	: Packer_MVA_T ( tSettings, sName, AttrType_e::FLOATVEC )
 {
 	OverridePacking ( MvaPacking_e::CONSTLEN, MvaPacking_e::CONSTLEN_NONCOMPRESSED );
+	OverridePacking ( MvaPacking_e::TABLE, MvaPacking_e::TOTAL );	// disable table compression since it assumes that block sizes are multiples of 128
 }
 
 //////////////////////////////////////////////////////////////////////////
