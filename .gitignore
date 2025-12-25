@@ -1,6 +1,7 @@
 /build/
 /.idea/
 build
+build2
 cache
 
 # local non-traced url for external tools
