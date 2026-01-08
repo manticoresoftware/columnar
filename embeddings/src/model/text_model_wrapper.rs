@@ -112,19 +112,29 @@ impl TextModelWrapper {
     ) -> FloatVecResult {
         let string_slice = unsafe { std::slice::from_raw_parts(texts, count) };
 
-        let strings: Vec<&str> = string_slice
+        // Convert bytes to strings, handling invalid UTF-8 gracefully
+        // Use from_utf8_lossy to replace invalid sequences with replacement characters
+        let strings: Vec<String> = string_slice
             .iter()
-            .map(|item| unsafe {
-                std::str::from_utf8_unchecked(std::slice::from_raw_parts(
-                    item.ptr as *const u8,
-                    item.len,
-                ))
+            .map(|item| {
+                let bytes = unsafe {
+                    std::slice::from_raw_parts(
+                        item.ptr as *const u8,
+                        item.len,
+                    )
+                };
+                // Use from_utf8_lossy to handle invalid UTF-8 gracefully
+                // This replaces invalid sequences with the replacement character (U+FFFD)
+                String::from_utf8_lossy(bytes).into_owned()
             })
             .collect();
+        
+        // Convert Vec<String> to Vec<&str> for the predict function
+        let string_refs: Vec<&str> = strings.iter().map(|s| s.as_str()).collect();
 
         let mut float_vec_list: Vec<FloatVec> = Vec::new();
         let model = self.as_model();
-        let embeddings_list = model.predict(&strings);
+        let embeddings_list = model.predict(&string_refs);
         let c_error = match embeddings_list {
             Ok(embeddings_list) => {
                 for embeddings in embeddings_list.iter() {
