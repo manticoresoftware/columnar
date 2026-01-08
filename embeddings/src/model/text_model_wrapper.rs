@@ -117,18 +117,13 @@ impl TextModelWrapper {
         let strings: Vec<String> = string_slice
             .iter()
             .map(|item| {
-                let bytes = unsafe {
-                    std::slice::from_raw_parts(
-                        item.ptr as *const u8,
-                        item.len,
-                    )
-                };
+                let bytes = unsafe { std::slice::from_raw_parts(item.ptr as *const u8, item.len) };
                 // Use from_utf8_lossy to handle invalid UTF-8 gracefully
                 // This replaces invalid sequences with the replacement character (U+FFFD)
                 String::from_utf8_lossy(bytes).into_owned()
             })
             .collect();
-        
+
         // Convert Vec<String> to Vec<&str> for the predict function
         let string_refs: Vec<&str> = strings.iter().map(|s| s.as_str()).collect();
 
