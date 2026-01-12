@@ -25,7 +25,7 @@ namespace knn
 
 struct QuantizationSettings_t;
 
-class Space_i : public hnswlib::SpaceInterface<float>
+class Space_i : public ::hnswlib::SpaceInterface<float>
 {
 public:
 	virtual void SetQuantizationSettings ( ScalarQuantizer_i & tQuantizer ) {}
@@ -33,7 +33,7 @@ public:
 
 class Space_c : public Space_i
 {
-	using Dist_fn = hnswlib::DISTFUNC<float>;
+	using Dist_fn = ::hnswlib::DISTFUNC<float>;
 
 public:
 			Space_c ( size_t uDim ) : m_uDim ( uDim ) {}
@@ -50,7 +50,7 @@ protected:
 
 class L2Space32BitFloat_c : public Space_i
 {
-	using Dist_fn = hnswlib::DISTFUNC<float>;
+	using Dist_fn = ::hnswlib::DISTFUNC<float>;
 
 public:
 			L2Space32BitFloat_c ( size_t uDim ) : m_tL2S(uDim) {}
@@ -60,7 +60,7 @@ public:
 	void *	get_dist_func_param() override	{ return m_tL2S.get_dist_func_param(); }
 
 private:
-	hnswlib::L2Space m_tL2S;
+	::hnswlib::L2Space m_tL2S;
 };
 
 
@@ -102,7 +102,7 @@ protected:
 
 class IPSpace32BitFloat_c : public Space_i
 {
-	using Dist_fn = hnswlib::DISTFUNC<float>;
+	using Dist_fn = ::hnswlib::DISTFUNC<float>;
 
 public:
 			IPSpace32BitFloat_c ( size_t uDim ) : m_tIPS(uDim) {}
@@ -112,7 +112,7 @@ public:
 	void *	get_dist_func_param() override	{ return m_tIPS.get_dist_func_param(); }
 
 private:
-	hnswlib::InnerProductSpace m_tIPS;
+	::hnswlib::InnerProductSpace m_tIPS;
 };
 
 

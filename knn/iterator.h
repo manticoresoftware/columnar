@@ -29,9 +29,10 @@ class KNNIndex_i
 {
 public:
 	virtual			~KNNIndex_i() = default;
-	virtual void	Search ( std::vector<DocDist_t> & dResults, const util::Span_T<float> & dData, int64_t iResults, int iEf, std::vector<uint8_t> & dQuantized ) const = 0;
+	// pFilter is for internal use (hnswlib), fnFilter is the license-safe public API
+	virtual void	Search ( std::vector<DocDist_t> & dResults, const util::Span_T<float> & dData, int64_t iResults, int iEf, std::vector<uint8_t> & dQuantized, ::hnswlib::BaseFilterFunctor * pFilter = nullptr, knn::FilterCallback_fn fnFilter = nullptr ) const = 0;
 };
 
-Iterator_i * CreateIterator ( KNNIndex_i & tIndex, const util::Span_T<float> & dData, int64_t iResults, int iEf );
+Iterator_i * CreateIterator ( KNNIndex_i & tIndex, const util::Span_T<float> & dData, int64_t iResults, int iEf, ::hnswlib::BaseFilterFunctor * pFilter = nullptr, knn::FilterCallback_fn fnFilter = nullptr );
 
 } // namespace knn

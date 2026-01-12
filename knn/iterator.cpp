@@ -16,6 +16,7 @@
 
 #include "iterator.h"
 #include "knn.h"
+#include "hnswlib.h"
 
 #include <algorithm>
 
@@ -27,7 +28,7 @@ using namespace util;
 class RowidIteratorKNN_c : public Iterator_i
 {
 public:
-			RowidIteratorKNN_c ( KNNIndex_i & tIndex, const Span_T<float> & dData, int64_t iResults, int iEf );
+			RowidIteratorKNN_c ( KNNIndex_i & tIndex, const Span_T<float> & dData, int64_t iResults, int iEf, ::hnswlib::BaseFilterFunctor * pFilter, knn::FilterCallback_fn fnFilter = nullptr );
 
 	bool	HintRowID ( uint32_t tRowID ) override;
 	bool	GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBlock ) override;
@@ -48,9 +49,9 @@ private:
 };
 
 
-RowidIteratorKNN_c::RowidIteratorKNN_c ( KNNIndex_i & tIndex, const Span_T<float> & dData, int64_t iResults, int iEf )
+RowidIteratorKNN_c::RowidIteratorKNN_c ( KNNIndex_i & tIndex, const Span_T<float> & dData, int64_t iResults, int iEf, ::hnswlib::BaseFilterFunctor * pFilter, knn::FilterCallback_fn fnFilter )
 {
-	tIndex.Search ( m_dCollected, dData, iResults, iEf, m_dQuantized );
+	tIndex.Search ( m_dCollected, dData, iResults, iEf, m_dQuantized, pFilter, fnFilter );
 	std::sort ( m_dCollected.begin(), m_dCollected.end(), []( const auto & a, const auto & b ) { return a.m_tRowID<b.m_tRowID; } );
 	m_dRowIDs.resize(DOCS_PER_CHUNK);
 }
@@ -99,9 +100,9 @@ bool RowidIteratorKNN_c::GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBlock )
 
 /////////////////////////////////////////////////////////////////////
 
-Iterator_i * CreateIterator ( KNNIndex_i & tIndex, const util::Span_T<float> & dData, int64_t iResults, int iEf )
+Iterator_i * CreateIterator ( KNNIndex_i & tIndex, const util::Span_T<float> & dData, int64_t iResults, int iEf, ::hnswlib::BaseFilterFunctor * pFilter, knn::FilterCallback_fn fnFilter )
 {
-	return new RowidIteratorKNN_c ( tIndex, dData, iResults, iEf );
+	return new RowidIteratorKNN_c ( tIndex, dData, iResults, iEf, pFilter, fnFilter );
 }
 
 } // namespace knn
