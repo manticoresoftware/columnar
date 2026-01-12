@@ -20,9 +20,11 @@
 #include "quantizer.h"
 #include "space.h"
 #include "util/reader.h"
+#include "hnswlib.h"
 
 #include <unordered_map>
 #include <algorithm>
+#include <functional>
 
 namespace knn
 {
@@ -147,7 +149,7 @@ public:
 	float	CalcDist ( const util::Span_T<float> & dPoint1, const util::Span_T<float> & dPoint2 ) const override;
 
 private:
-	hnswlib::DISTFUNC<float>	m_fnDistFunc;
+	::hnswlib::DISTFUNC<float>	m_fnDistFunc;
 	void *						m_pDistFuncParam = nullptr;
 };
 
@@ -169,6 +171,23 @@ float Distance_c::CalcDist ( const util::Span_T<float> & dPoint1, const util::Sp
 
 /////////////////////////////////////////////////////////////////////
 
+// Wrapper to convert license-safe function pointer to hnswlib::BaseFilterFunctor
+class FilterCallbackWrapper_c : public ::hnswlib::BaseFilterFunctor
+{
+public:
+	FilterCallbackWrapper_c ( FilterCallback_fn fnCallback ) : m_fnCallback ( std::move(fnCallback) ) {}
+	bool operator()( ::hnswlib::labeltype id ) override
+	{
+		if ( !m_fnCallback )
+			return true;
+		return m_fnCallback ( (uint32_t)id );
+	}
+private:
+	FilterCallback_fn m_fnCallback;
+};
+
+/////////////////////////////////////////////////////////////////////
+
 class HNSWIndex_i : public KNNIndex_i
 {
 public:
@@ -184,11 +203,11 @@ public:
 
 	bool	Load ( FileReader_c & tReader, std::string & sError ) override	{ return m_pAlg->loadIndex ( tReader, m_pSpace.get(), sError ); 	}
 	const std::string &	GetName() const override	{ return m_sName; }
-	void	Search ( std::vector<DocDist_t> & dResults, const Span_T<float> & dData, int64_t iResults, int iEf, std::vector<uint8_t> & dQuantized ) const override;
+	void	Search ( std::vector<DocDist_t> & dResults, const util::Span_T<float> & dData, int64_t iResults, int iEf, std::vector<uint8_t> & dQuantized, ::hnswlib::BaseFilterFunctor * pFilter, knn::FilterCallback_fn fnFilter ) const override;
 
 private:
 	std::string											m_sName;
-	std::unique_ptr<hnswlib::HierarchicalNSW<float>>	m_pAlg;
+	std::unique_ptr<::hnswlib::HierarchicalNSW<float>>	m_pAlg;
 	std::unique_ptr<ScalarQuantizer_i>					m_pQuantizer;
 };
 
@@ -199,11 +218,11 @@ HNSWIndex_c::HNSWIndex_c ( const std::string & sName, int64_t iNumElements, cons
 	, m_pQuantizer ( pQuantizer )
 {
 	m_pSpace->SetQuantizationSettings(*pQuantizer);
-	m_pAlg = std::make_unique<hnswlib::HierarchicalNSW<float>>( m_pSpace.get(), iNumElements, tSettings.m_iHNSWM, tSettings.m_iHNSWEFConstruction );
+	m_pAlg = std::make_unique<::hnswlib::HierarchicalNSW<float>>( m_pSpace.get(), iNumElements, tSettings.m_iHNSWM, tSettings.m_iHNSWEFConstruction );
 }
 
 
-void HNSWIndex_c::Search ( std::vector<DocDist_t> & dResults, const Span_T<float> & dData, int64_t iResults, int iEf, std::vector<uint8_t> & dQuantized ) const
+void HNSWIndex_c::Search ( std::vector<DocDist_t> & dResults, const Span_T<float> & dData, int64_t iResults, int iEf, std::vector<uint8_t> & dQuantized, ::hnswlib::BaseFilterFunctor * pFilter, knn::FilterCallback_fn fnFilter ) const
 {
 	if ( !m_pAlg->cur_element_count )
 		return;
@@ -215,8 +234,14 @@ void HNSWIndex_c::Search ( std::vector<DocDist_t> & dResults, const Span_T<float
 		pData = dQuantized.data();
 	}
 
+	// Use function pointer callback if provided, otherwise use direct pFilter
+	FilterCallbackWrapper_c tWrapper ( fnFilter );
+	::hnswlib::BaseFilterFunctor * pActualFilter = pFilter;
+	if ( !pFilter && fnFilter )
+		pActualFilter = &tWrapper;
+
 	size_t iSearchEf = iEf;
-	auto tPQ = m_pAlg->searchKnn ( pData, iResults, nullptr, &iSearchEf );
+	auto tPQ = m_pAlg->searchKnn ( pData, iResults, pActualFilter, &iSearchEf );
 	dResults.resize(0);
 	dResults.reserve ( tPQ.size() );
 	while ( !tPQ.empty() )
@@ -232,7 +257,7 @@ class KNN_c : public KNN_i
 {
 public:
 	bool			Load ( const std::string & sFilename, std::string & sError ) override;
-	Iterator_i *	CreateIterator ( const std::string & sName, const Span_T<float> & dData, int iResults, int iEf, std::string & sError ) override;
+	Iterator_i *	CreateIterator ( const std::string & sName, const Span_T<float> & dData, int iResults, int iEf, std::string & sError, ::hnswlib::BaseFilterFunctor * pFilter = nullptr, knn::FilterCallback_fn fnFilter = nullptr ) override;
 
 private:
 	std::vector<std::unique_ptr<HNSWIndex_i>>		m_dIndexes;
@@ -286,7 +311,7 @@ bool KNN_c::Load ( const std::string & sFilename, std::string & sError )
 }
 
 
-Iterator_i * KNN_c::CreateIterator ( const std::string & sName, const Span_T<float> & dData, int iResults, int iEf , std::string & sError )
+Iterator_i * KNN_c::CreateIterator ( const std::string & sName, const Span_T<float> & dData, int iResults, int iEf , std::string & sError, ::hnswlib::BaseFilterFunctor * pFilter, knn::FilterCallback_fn fnFilter )
 {
 	HNSWIndex_i * pIndex = GetIndex(sName);
 	if ( !pIndex )
@@ -295,7 +320,7 @@ Iterator_i * KNN_c::CreateIterator ( const std::string & sName, const Span_T<flo
 		return nullptr;
 	}
 
-	return knn::CreateIterator ( *pIndex, dData, iResults, iEf );
+	return knn::CreateIterator ( *pIndex, dData, iResults, iEf, pFilter, fnFilter );
 }
 
 
@@ -344,7 +369,7 @@ private:
 	SpanResizeable_T<float>		m_dNormalized;
 	std::vector<uint8_t>		m_dQuantized;
 	std::unique_ptr<ScalarQuantizer_i>					m_pQuantizer;
-	std::unique_ptr<hnswlib::HierarchicalNSW<float>>	m_pAlg;
+	std::unique_ptr<::hnswlib::HierarchicalNSW<float>>	m_pAlg;
 };
 
 
@@ -353,7 +378,7 @@ HNSWIndexBuilder_c::HNSWIndexBuilder_c ( const AttrWithSettings_t & tAttr, int64
 	, m_tAttr ( tAttr )
 	, m_pQuantizer ( pQuantizer )
 {
-	m_pAlg = std::make_unique<hnswlib::HierarchicalNSW<float>>( m_pSpace.get(), iNumElements, m_tAttr.m_iHNSWM, m_tAttr.m_iHNSWEFConstruction );
+	m_pAlg = std::make_unique<::hnswlib::HierarchicalNSW<float>>( m_pSpace.get(), iNumElements, m_tAttr.m_iHNSWM, m_tAttr.m_iHNSWEFConstruction );
 	m_dNormalized.resize ( tAttr.m_iDims );
 }
 
