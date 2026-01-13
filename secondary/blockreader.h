@@ -67,6 +67,7 @@ public:
 	virtual uint64_t	GetMaxSize() const = 0;
 	virtual bool		IsCacheFull() const = 0;
 	virtual float		GetReuseRatio() const = 0;
+	virtual void		ClearAll() = 0;
 };
 
 

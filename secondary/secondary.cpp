@@ -90,6 +90,7 @@ public:
 	bool		SaveMeta ( std::string & sError ) override;
 	void		ColumnUpdated ( const char * sName ) override;
 	void		GetAttrInfo ( std::vector<IndexAttrInfo_t> & dAttrs ) const override;
+	void		ClearCache() override;
 
 private:
 	Settings_t	m_tSettings;
@@ -318,6 +319,15 @@ void SecondaryIndex_c::GetAttrInfo ( std::vector<IndexAttrInfo_t> & dAttrs ) con
 		dAttrs.push_back ( { i.m_sName, i.m_eType, i.m_bEnabled } );
 }
 
+void SecondaryIndex_c::ClearCache()
+{
+	if ( m_dBlockCaches.empty() )
+		return;
+
+	for ( auto & pCache : m_dBlockCaches )
+		if ( pCache )
+			pCache->ClearAll();
+}
 
 bool SecondaryIndex_c::PrepareBlocksValues ( const Filter_t & tFilter, std::vector<BlockIter_t> * pBlocksIt, uint64_t & uBlockBaseOff, int64_t & iNumIterators, uint64_t & uBlocksCount ) const
 {
