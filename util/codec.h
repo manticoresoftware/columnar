@@ -18,6 +18,10 @@
 
 #include "util_private.h"
 
+#include <memory>
+#include <string>
+#include <utility>
+
 namespace util
 {
 
@@ -44,6 +48,25 @@ void BitPack ( const std::vector<uint32_t> & dValues, std::vector<uint32_t> & dP
 void BitUnpack ( const std::vector<uint32_t> & dPacked, std::vector<uint32_t> & dValues, int iBits );
 void BitUnpack ( const util::Span_T<uint32_t> & dPacked, util::Span_T<uint32_t> & dValues, int iBits );
 
-IntCodec_i * CreateIntCodec ( const std::string & sCodec32, const std::string & sCodec64 );
+using CodecKey_t = std::pair<std::string, std::string>;
+
+struct CodecPoolDeleter_t
+{
+	CodecPoolDeleter_t() = default;
+	CodecPoolDeleter_t ( std::string sCodec32, std::string sCodec64 )
+		: m_pKey ( std::make_shared<CodecKey_t>( std::move(sCodec32), std::move(sCodec64) ) )
+	{}
+
+	void operator() ( IntCodec_i * pCodec ) const;
+
+private:
+	std::shared_ptr<CodecKey_t> m_pKey;
+};
+
+using IntCodecPooledPtr_t = std::unique_ptr<IntCodec_i, CodecPoolDeleter_t>;
+
+IntCodecPooledPtr_t CreateIntCodec ( const std::string & sCodec32, const std::string & sCodec64 );
+std::shared_ptr<IntCodec_i> CreateIntCodecShared ( const std::string & sCodec32, const std::string & sCodec64 );
+void ClearIntCodecPool();
 
 } // namespace util

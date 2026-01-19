@@ -96,7 +96,7 @@ private:
 	std::vector<uint32_t>		m_dUncompressed32;
 	std::vector<T>				m_dUncompressed;
 	std::vector<uint32_t>		m_dCompressed;
-	std::unique_ptr<IntCodec_i>	m_pCodec;
+	IntCodecPooledPtr_t			m_pCodec;
 
 	MvaPacking_e				m_dPackingOverrides[to_underlying(MvaPacking_e::TOTAL)];
 

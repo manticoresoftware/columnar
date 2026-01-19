@@ -115,7 +115,7 @@ private:
 	std::vector<uint8_t>	m_dTmpBuffer;
 	std::vector<T>			m_dCollected;
 
-	std::unique_ptr<IntCodec_i>	m_pCodec;
+	IntCodecPooledPtr_t			m_pCodec;
 	std::vector<uint32_t>	m_dCompressed;
 	std::vector<T>			m_dUncompressed;
 	std::vector<uint32_t>	m_dUncompressed32;

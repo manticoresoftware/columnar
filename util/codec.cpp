@@ -16,6 +16,10 @@
 
 #include "codec.h"
 
+#include <mutex>
+#include <unordered_map>
+#include <utility>
+
 #if _WIN32
 	#pragma warning ( push )
 	#pragma warning ( disable : 4267 )
@@ -287,13 +291,90 @@ void BitUnpack ( const util::Span_T<uint32_t> & dPacked, util::Span_T<uint32_t> 
 	BitUnpack ( &dPacked[0], &dValues[0], (int)dValues.size(), iBits );
 }
 
-
-IntCodec_i * CreateIntCodec ( const std::string & sCodec32, const std::string & sCodec64 )
+struct CodecKeyHash_t
 {
-	if ( sCodec32=="libstreamvbyte" )
-		return new IntCodec_T<Int32SVBCodec_c, Int64FastPFORCodec_c> ( sCodec32, sCodec64 );
-		
-	return new IntCodec_T<Int32FastPFORCodec_c, Int64FastPFORCodec_c> ( sCodec32, sCodec64 );
+	size_t operator() ( const CodecKey_t & tKey ) const noexcept
+	{
+		return std::hash<std::string>{}(tKey.first) ^ ( std::hash<std::string>{}(tKey.second) << 1 );
+	}
+};
+
+class IntCodecPool_c
+{
+public:
+	std::unique_ptr<IntCodec_i> Acquire ( const std::string & sCodec32, const std::string & sCodec64 )
+	{
+		std::lock_guard<std::mutex> tLock(m_tMutex);
+		auto & dList = m_dPool[{sCodec32, sCodec64}];
+		if ( dList.empty() )
+			return nullptr;
+
+		std::unique_ptr<IntCodec_i> pCodec = std::move(dList.back());
+		dList.pop_back();
+		return pCodec;
+	}
+
+	void Release ( const std::string & sCodec32, const std::string & sCodec64, std::unique_ptr<IntCodec_i> pCodec )
+	{
+		std::lock_guard<std::mutex> tLock(m_tMutex);
+		m_dPool[{sCodec32, sCodec64}].push_back(std::move(pCodec));
+	}
+
+	void Clear()
+	{
+		std::lock_guard<std::mutex> tLock(m_tMutex);
+		m_dPool.clear();
+	}
+
+private:
+	std::mutex m_tMutex;
+	std::unordered_map<CodecKey_t, std::vector<std::unique_ptr<IntCodec_i>>, CodecKeyHash_t> m_dPool;
+};
+
+IntCodecPool_c & GetIntCodecPool()
+{
+	static IntCodecPool_c tPool;
+	return tPool;
+}
+
+void CodecPoolDeleter_t::operator() ( IntCodec_i * pCodec ) const
+{
+	if ( !pCodec )
+		return;
+
+	if ( !m_pKey )
+	{
+		delete pCodec;
+		return;
+	}
+
+	GetIntCodecPool().Release ( m_pKey->first, m_pKey->second, std::unique_ptr<IntCodec_i>(pCodec) );
+}
+
+IntCodecPooledPtr_t CreateIntCodec ( const std::string & sCodec32, const std::string & sCodec64 )
+{
+	std::unique_ptr<IntCodec_i> pCodec = GetIntCodecPool().Acquire ( sCodec32, sCodec64 );
+	if ( !pCodec )
+	{
+		if ( sCodec32=="libstreamvbyte" )
+			pCodec = std::make_unique<IntCodec_T<Int32SVBCodec_c, Int64FastPFORCodec_c>> ( sCodec32, sCodec64 );
+		else
+			pCodec = std::make_unique<IntCodec_T<Int32FastPFORCodec_c, Int64FastPFORCodec_c>> ( sCodec32, sCodec64 );
+	}
+
+	return IntCodecPooledPtr_t ( pCodec.release(), CodecPoolDeleter_t ( sCodec32, sCodec64 ) );
+}
+
+std::shared_ptr<IntCodec_i> CreateIntCodecShared ( const std::string & sCodec32, const std::string & sCodec64 )
+{
+	auto pCodec = CreateIntCodec ( sCodec32, sCodec64 );
+	auto tDeleter = pCodec.get_deleter();
+	return std::shared_ptr<IntCodec_i> ( pCodec.release(), tDeleter );
+}
+
+void ClearIntCodecPool()
+{
+	GetIntCodecPool().Clear();
 }
 
 } // namespace util

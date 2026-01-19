@@ -1006,7 +1006,6 @@ FindValueResult_t BlockReader_T<uint64_t, int64_t>::FindValue ( uint64_t uRefVal
 {
 	assert(m_pBlockValues);
 	const auto & dValues = m_pBlockValues->m_dValues;
-
 	const auto tFirst = dValues.begin();
 	const auto tLast = dValues.end();
 	auto tFound = std::lower_bound ( tFirst, tLast, uRefVal, Int64ValueCmp_t() );
@@ -1378,7 +1377,7 @@ RangeReader_T<STORE_VALUE,DST_VALUE>::RangeReader_T ( const ReaderFactory_c & tC
 
 BlockReader_i * ReaderFactory_c::CreateBlockReader()
 {
-	auto pCodec { std::shared_ptr<IntCodec_i> ( CreateIntCodec ( m_tSettings.m_sCompressionUINT32, m_tSettings.m_sCompressionUINT64 ) ) };
+	auto pCodec { CreateIntCodecShared ( m_tSettings.m_sCompressionUINT32, m_tSettings.m_sCompressionUINT64 ) };
 	assert(pCodec);
 
 	switch ( m_tCol.m_eType )
@@ -1406,7 +1405,7 @@ BlockReader_i * ReaderFactory_c::CreateBlockReader()
 
 BlockReader_i * ReaderFactory_c::CreateRangeReader()
 {
-	auto pCodec { std::shared_ptr<IntCodec_i> ( CreateIntCodec ( m_tSettings.m_sCompressionUINT32, m_tSettings.m_sCompressionUINT64 ) ) };
+	auto pCodec { CreateIntCodecShared ( m_tSettings.m_sCompressionUINT32, m_tSettings.m_sCompressionUINT64 ) };
 	assert(pCodec);
 
 	switch ( m_tCol.m_eType )

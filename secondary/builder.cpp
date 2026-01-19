@@ -345,7 +345,7 @@ private:
 	SRC_VALUE				m_tMax = (SRC_VALUE)0;
 	uint32_t				m_uTotalValues = 0;
 
-	std::unique_ptr<IntCodec_i>	m_pCodec { nullptr };
+	IntCodecPooledPtr_t			m_pCodec { nullptr };
 
 	FileWriter_c *			m_pBlocksOff = nullptr;
 	FileWriter_c *			m_pPGMVals = nullptr;
@@ -371,7 +371,7 @@ RowWriter_T<SRC_VALUE, VALUE>::RowWriter_T ( FileWriter_c * pBlocksOff, FileWrit
 	m_dBufTmp.reserve ( VALUES_PER_BLOCK );
 	m_dRowsPacked.reserve ( VALUES_PER_BLOCK * 16 );
 
-	m_pCodec.reset ( CreateIntCodec ( tSettings.m_sCompressionUINT32, tSettings.m_sCompressionUINT64 ) );
+	m_pCodec = CreateIntCodec ( tSettings.m_sCompressionUINT32, tSettings.m_sCompressionUINT64 );
 }
 
 template<typename SRC_VALUE, typename VALUE>

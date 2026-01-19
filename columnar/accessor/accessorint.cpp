@@ -63,7 +63,7 @@ public:
 	FORCE_INLINE int		GetTableSize() const { return (int)m_dTableValues.size(); }
 
 private:
-	std::unique_ptr<IntCodec_i>	m_pCodec;
+	IntCodecPooledPtr_t			m_pCodec;
 	uint32_t				m_uVersion = 0;
 	SpanResizeable_T<T>		m_dTableValues;
 	std::vector<uint32_t>	m_dValueIndexes;
@@ -147,7 +147,7 @@ public:
 	FORCE_INLINE const Span_T<T> & GetAllValues() const { return m_dSubblockValues; }
 
 private:
-	std::unique_ptr<IntCodec_i>	m_pCodec;
+	IntCodecPooledPtr_t			m_pCodec;
 	uint32_t					m_uVersion = 0;
 	SpanResizeable_T<uint32_t>	m_dSubblockCumulativeSizes;
 	SpanResizeable_T<uint32_t>	m_dTmp;
