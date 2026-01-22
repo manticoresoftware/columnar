@@ -136,8 +136,8 @@ LoadedLib_c::~LoadedLib_c()
 
 TextModelWrapper LoadedLib_c::GetModel ( const std::string & sKey ) const
 {
-		const auto & tFound = m_hModels.find(sKey);
-	return tFound == m_hModels.end() ? nullptr : tFound->second;
+	const auto & tFound = m_hModels.find(sKey);
+	return tFound==m_hModels.end() ? nullptr : tFound->second;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -177,14 +177,9 @@ bool EmbeddingsLib_c::Load ( std::string & sError )
 
 ///////////////////////////////////////////////////////////////////////////////
 
-// Build a unique key from model settings for caching purposes.
-// We use reserve() and append operations instead of direct concatenation to avoid
-// multiple memory allocations. This is more efficient when building the key string
-// from multiple components (model name, cache path, API key, API URL, timeout, GPU flag).
 std::string ToKey ( const ModelSettings_t & tSettings )
 {
 	std::string sKey;
-	sKey.reserve ( tSettings.m_sModelName.length() + tSettings.m_sCachePath.length() + tSettings.m_sAPIKey.length() + tSettings.m_sAPIUrl.length() + 32 );
 	sKey += tSettings.m_sModelName;
 	sKey += tSettings.m_sCachePath;
 	sKey += tSettings.m_sAPIKey;
@@ -217,9 +212,7 @@ bool TextToEmbeddings_c::Initialize ( std::shared_ptr<LoadedLib_c> pLib, std::st
 	assert ( !m_pModel && pLib );
 
 	m_pLib = pLib;
-	
 	m_pModel = m_pLib->GetModel ( ToKey(m_tSettings) );
-	
 	if ( m_pModel )
 		return true;
 
@@ -247,6 +240,7 @@ bool TextToEmbeddings_c::Initialize ( std::shared_ptr<LoadedLib_c> pLib, std::st
 		if ( szValidationError )
 		{
 			sError = szValidationError;
+
 			// free_string() is required: validate_api_key() returns a Rust-allocated CString
 			// via CString::into_raw(). After copying the error message, we must free the
 			// Rust-allocated memory to avoid a memory leak. This follows the standard Rust FFI
@@ -257,10 +251,8 @@ bool TextToEmbeddings_c::Initialize ( std::shared_ptr<LoadedLib_c> pLib, std::st
 		}
 	}
 
-	// Only set m_pModel after validation succeeds
 	m_pModel = tResult.m_pModel;
-	std::string sCacheKey = ToKey(m_tSettings);
-	m_pLib->AddModel ( sCacheKey, m_pModel );
+	m_pLib->AddModel ( ToKey(m_tSettings), m_pModel );
 	
 	return true;
 }
