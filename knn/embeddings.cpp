@@ -22,8 +22,6 @@
 
 #include <unordered_map>
 #include <algorithm>
-#include <cstdio>
-#include <cstring>
 
 #ifdef WIN32
 	#define WIN32_LEAN_AND_MEAN
@@ -252,8 +250,7 @@ bool TextToEmbeddings_c::Initialize ( std::shared_ptr<LoadedLib_c> pLib, std::st
 	}
 
 	m_pModel = tResult.m_pModel;
-	m_pLib->AddModel ( ToKey(m_tSettings), m_pModel );
-	
+	m_pLib->AddModel ( ToKey(m_tSettings), m_pModel );	
 	return true;
 }
 
