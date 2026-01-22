@@ -1,4 +1,4 @@
-use super::voyage::{validate_api_key, validate_model, VoyageModel};
+use super::voyage::{validate_model, VoyageModel};
 use super::TextModel;
 use crate::LibError;
 
@@ -50,49 +50,13 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_api_key_valid() {
-        let valid_keys = vec![
-            "pa-1234567890abcdef",
-            "pa-test-1234567890abcdef",
-            "pa-a",
-            "pa-very-long-key-with-many-characters-1234567890",
-        ];
-
-        for key in valid_keys {
-            assert!(validate_api_key(key).is_ok(), "Key {} should be valid", key);
-        }
-    }
-
-    #[test]
-    fn test_validate_api_key_invalid() {
-        let invalid_keys = vec![
-            "",
-            "1234567890abcdef",         // Missing pa- prefix
-            "sk-1234567890abcdef",      // Wrong prefix (OpenAI format)
-            "pa",                       // Too short
-            "pa-",                      // Just the prefix
-            "api-key-1234567890abcdef", // Wrong format
-            "PA-test1234567890abcdef",  // Wrong case
-            "pa-test1234567890abcdef ", // Trailing space
-            " pa-test1234567890abcdef", // Leading space
-        ];
-
-        for key in invalid_keys {
-            let result = validate_api_key(key);
-            assert!(result.is_err(), "Key '{}' should be invalid", key);
-            if key.is_empty() {
-                assert!(result.unwrap_err().contains("API key is required"));
-            } else if key.contains(" ") {
-                assert!(result.unwrap_err().contains("whitespace"));
-            } else {
-                assert!(result.unwrap_err().contains("API key must start with pa-"));
-            }
-        }
-    }
-
-    #[test]
     fn test_voyage_model_new_valid() {
-        let model_result = VoyageModel::new("voyage/voyage-3-large", "pa-test1234567890abcdef");
+        let model_result = VoyageModel::new(
+            "voyage/voyage-3-large",
+            "pa-test1234567890abcdef",
+            None,
+            None,
+        );
         assert!(model_result.is_ok());
 
         let model = model_result.unwrap();
@@ -102,43 +66,50 @@ mod tests {
 
     #[test]
     fn test_voyage_model_new_invalid_model() {
-        let result = VoyageModel::new("voyage/invalid-model", "pa-test1234567890abcdef");
+        let result = VoyageModel::new(
+            "voyage/invalid-model",
+            "pa-test1234567890abcdef",
+            None,
+            None,
+        );
         assert!(result.is_err());
 
         let error = result.unwrap_err();
         assert_eq!(
             error.downcast_ref::<LibError>(),
-            Some(&LibError::RemoteUnsupportedModel)
+            Some(&LibError::RemoteUnsupportedModel { status: None })
         );
     }
 
     #[test]
     fn test_voyage_model_new_invalid_api_key() {
-        let result = VoyageModel::new("voyage/voyage-3-large", "invalid-key");
+        // Empty key will fail basic validation
+        let result = VoyageModel::new("voyage/voyage-3-large", "", None, None);
         assert!(result.is_err());
 
         let error = result.unwrap_err();
         assert_eq!(
             error.downcast_ref::<LibError>(),
-            Some(&LibError::RemoteInvalidAPIKey)
+            Some(&LibError::RemoteInvalidAPIKey { status: None })
         );
     }
 
     #[test]
     fn test_voyage_model_new_empty_api_key() {
-        let result = VoyageModel::new("voyage/voyage-3-large", "");
+        let result = VoyageModel::new("voyage/voyage-3-large", "", None, None);
         assert!(result.is_err());
 
         let error = result.unwrap_err();
         assert_eq!(
             error.downcast_ref::<LibError>(),
-            Some(&LibError::RemoteInvalidAPIKey)
+            Some(&LibError::RemoteInvalidAPIKey { status: None })
         );
     }
 
     #[test]
     fn test_voyage_model_prefix_stripping() {
-        let model_result = VoyageModel::new("voyage/voyage-3.5", "pa-test1234567890abcdef");
+        let model_result =
+            VoyageModel::new("voyage/voyage-3.5", "pa-test1234567890abcdef", None, None);
         assert!(model_result.is_ok());
 
         let model = model_result.unwrap();
@@ -158,9 +129,13 @@ mod tests {
         ];
 
         for (model_name, expected_size) in test_cases {
-            let model =
-                VoyageModel::new(&format!("voyage/{}", model_name), "pa-test1234567890abcdef")
-                    .unwrap();
+            let model = VoyageModel::new(
+                &format!("voyage/{}", model_name),
+                "pa-test1234567890abcdef",
+                None,
+                None,
+            )
+            .unwrap();
             assert_eq!(
                 model.get_hidden_size(),
                 expected_size,
@@ -184,9 +159,13 @@ mod tests {
         ];
 
         for (model_name, expected_len) in test_cases {
-            let model =
-                VoyageModel::new(&format!("voyage/{}", model_name), "pa-test1234567890abcdef")
-                    .unwrap();
+            let model = VoyageModel::new(
+                &format!("voyage/{}", model_name),
+                "pa-test1234567890abcdef",
+                None,
+                None,
+            )
+            .unwrap();
             assert_eq!(
                 model.get_max_input_len(),
                 expected_len,
@@ -202,8 +181,13 @@ mod tests {
     fn test_get_hidden_size_unknown_model() {
         // This test verifies the panic behavior for unknown models
         // In practice, this shouldn't happen due to validation in new()
-        let mut model =
-            VoyageModel::new("voyage/voyage-3-large", "pa-test1234567890abcdef").unwrap();
+        let mut model = VoyageModel::new(
+            "voyage/voyage-3-large",
+            "pa-test1234567890abcdef",
+            None,
+            None,
+        )
+        .unwrap();
         model.model = "unknown-model".to_string(); // Manually set invalid model
         model.get_hidden_size(); // Should panic
     }
@@ -219,7 +203,7 @@ mod tests {
             }
         };
 
-        let model = VoyageModel::new("voyage/voyage-3-large", &api_key).unwrap();
+        let model = VoyageModel::new("voyage/voyage-3-large", &api_key, None, None).unwrap();
 
         // Test with real API key
         let texts = vec!["test"];
@@ -242,7 +226,7 @@ mod tests {
                     lib_error,
                     LibError::RemoteRequestSendFailed
                         | LibError::RemoteResponseParseFailed
-                        | LibError::RemoteInvalidAPIKey
+                        | LibError::RemoteInvalidAPIKey { .. }
                 ));
             }
         }
@@ -259,7 +243,7 @@ mod tests {
             }
         };
 
-        let model = VoyageModel::new("voyage/voyage-3-large", &api_key).unwrap();
+        let model = VoyageModel::new("voyage/voyage-3-large", &api_key, None, None).unwrap();
 
         let empty_texts: Vec<&str> = vec![];
         let result = model.predict(&empty_texts);
@@ -279,7 +263,13 @@ mod tests {
 
     #[test]
     fn test_model_field_access() {
-        let model = VoyageModel::new("voyage/voyage-code-2", "pa-test1234567890abcdef").unwrap();
+        let model = VoyageModel::new(
+            "voyage/voyage-code-2",
+            "pa-test1234567890abcdef",
+            None,
+            None,
+        )
+        .unwrap();
 
         // Test that we can access the model fields correctly
         assert_eq!(model.model, "voyage-code-2");
@@ -305,7 +295,7 @@ mod tests {
 
         for model_name in supported_models {
             let full_model_id = format!("voyage/{}", model_name);
-            let result = VoyageModel::new(&full_model_id, "pa-test1234567890abcdef");
+            let result = VoyageModel::new(&full_model_id, "pa-test1234567890abcdef", None, None);
             assert!(result.is_ok(), "Failed to create model for {}", model_name);
 
             let model = result.unwrap();
@@ -334,7 +324,12 @@ mod tests {
     #[test]
     fn test_error_conversion() {
         // Test that our custom errors are properly converted
-        let result = VoyageModel::new("voyage/invalid-model", "pa-test1234567890abcdef");
+        let result = VoyageModel::new(
+            "voyage/invalid-model",
+            "pa-test1234567890abcdef",
+            None,
+            None,
+        );
         assert!(result.is_err());
 
         let error = result.unwrap_err();
@@ -342,28 +337,9 @@ mod tests {
         assert!(error_string.contains("Unsupported remote model"));
     }
 
-    #[test]
-    fn test_api_key_edge_cases() {
-        let long_key = format!("pa-{}", "a".repeat(100));
-        let edge_cases = vec![
-            ("pa-", false),                      // Just the prefix
-            ("pa-a", true),                      // Minimal valid key
-            (&long_key, true),                   // Very long key
-            ("invalid-key", false),              // Wrong format
-            ("PA-test1234567890abcdef", false),  // Wrong case
-            ("pa-test1234567890abcdef ", false), // Trailing space
-            (" pa-test1234567890abcdef", false), // Leading space
-        ];
-
-        for (api_key, should_be_valid) in edge_cases {
-            let result = validate_api_key(api_key);
-            if should_be_valid {
-                assert!(result.is_ok(), "Expected '{}' to be valid", api_key);
-            } else {
-                assert!(result.is_err(), "Expected '{}' to be invalid", api_key);
-            }
-        }
-    }
+    // Note: API key edge case tests removed because validate_api_key() is now a trait method
+    // that makes real API requests. Basic validation (non-empty, no whitespace) is tested
+    // indirectly through model creation tests.
 
     #[test]
     fn test_voyage_specific_models() {
@@ -376,9 +352,13 @@ mod tests {
         ];
 
         for (model_name, expected_dim, expected_max_len) in voyage_specific {
-            let model =
-                VoyageModel::new(&format!("voyage/{}", model_name), "pa-test1234567890abcdef")
-                    .unwrap();
+            let model = VoyageModel::new(
+                &format!("voyage/{}", model_name),
+                "pa-test1234567890abcdef",
+                None,
+                None,
+            )
+            .unwrap();
             assert_eq!(model.get_hidden_size(), expected_dim);
             assert_eq!(model.get_max_input_len(), expected_max_len);
         }

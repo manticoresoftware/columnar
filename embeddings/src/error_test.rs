@@ -65,11 +65,11 @@ mod tests {
                 "Failed to initialize CUDA device",
             ),
             (
-                LibError::RemoteUnsupportedModel,
+                LibError::RemoteUnsupportedModel { status: None },
                 "Unsupported remote model given",
             ),
             (
-                LibError::RemoteInvalidAPIKey,
+                LibError::RemoteInvalidAPIKey { status: None },
                 "Invalid API key for remote model",
             ),
             (
@@ -106,14 +106,17 @@ mod tests {
 
         let mut error_map = HashMap::new();
         error_map.insert(LibError::ModelLoadFailed, "Model failed to load");
-        error_map.insert(LibError::RemoteInvalidAPIKey, "Invalid API key");
+        error_map.insert(
+            LibError::RemoteInvalidAPIKey { status: None },
+            "Invalid API key",
+        );
 
         assert_eq!(
             error_map.get(&LibError::ModelLoadFailed),
             Some(&"Model failed to load")
         );
         assert_eq!(
-            error_map.get(&LibError::RemoteInvalidAPIKey),
+            error_map.get(&LibError::RemoteInvalidAPIKey { status: None }),
             Some(&"Invalid API key")
         );
         assert_eq!(error_map.get(&LibError::ModelConfigFetchFailed), None);
@@ -149,8 +152,8 @@ mod tests {
             LibError::ModelMaxInputLenGetFailed,
             LibError::ModelLoadFailed,
             LibError::DeviceCudaInitFailed,
-            LibError::RemoteUnsupportedModel,
-            LibError::RemoteInvalidAPIKey,
+            LibError::RemoteUnsupportedModel { status: None },
+            LibError::RemoteInvalidAPIKey { status: None },
             LibError::RemoteRequestSendFailed,
             LibError::RemoteResponseParseFailed,
         ];
@@ -169,7 +172,7 @@ mod tests {
         let error_messages = vec![
             LibError::HuggingFaceApiBuildFailed.to_string(),
             LibError::ModelConfigFetchFailed.to_string(),
-            LibError::RemoteInvalidAPIKey.to_string(),
+            LibError::RemoteInvalidAPIKey { status: None }.to_string(),
         ];
 
         for message in error_messages {
@@ -202,8 +205,8 @@ mod tests {
         ];
 
         let remote_errors = vec![
-            LibError::RemoteUnsupportedModel,
-            LibError::RemoteInvalidAPIKey,
+            LibError::RemoteUnsupportedModel { status: None },
+            LibError::RemoteInvalidAPIKey { status: None },
             LibError::RemoteRequestSendFailed,
             LibError::RemoteResponseParseFailed,
         ];
