@@ -22,11 +22,17 @@
 #include "util/util.h"
 #include "common/schema.h"
 #include "common/blockiterator.h"
+#include <functional>
+
+// Forward declaration for hnswlib (must be in global namespace)
+namespace hnswlib {
+	class BaseFilterFunctor;
+}
 
 namespace knn
 {
 
-static const int LIB_VERSION = 9;
+static const int LIB_VERSION = 10;
 static const uint32_t STORAGE_VERSION = 3;
 
 enum class HNSWSimilarity_e
@@ -85,13 +91,18 @@ public:
 	virtual util::Span_T<const DocDist_t> GetData() const = 0;
 };
 
+// License-safe filter callback interface (no hnswlib dependency)
+// Takes a rowid and returns whether it passes the filter
+using FilterCallback_fn = std::function<bool(uint32_t)>;
+
 class KNN_i
 {
 public:
 	virtual			~KNN_i() = default;
 
 	virtual bool	Load ( const std::string & sFilename, std::string & sError ) = 0;
-	virtual Iterator_i * CreateIterator ( const std::string & sName, const util::Span_T<float> & dData, int iResults, int iEf, std::string & sError ) = 0;
+	// pFilter is for internal use (hnswlib), fnFilter is the license-safe public API
+	virtual Iterator_i * CreateIterator ( const std::string & sName, const util::Span_T<float> & dData, int iResults, int iEf, std::string & sError, ::hnswlib::BaseFilterFunctor * pFilter = nullptr, FilterCallback_fn fnFilter = nullptr ) = 0;
 };
 
 class Builder_i
