@@ -624,6 +624,7 @@ public:
 	uint64_t	GetMaxSize() const override				{ return m_uMaxSize; }
 	float		GetReuseRatio() const override			{ return float ( m_uReuse.load ( std::memory_order_acquire ) ) / m_dBlockValues.size(); };
 	bool		IsCacheFull() const override			{ return m_uSize.load ( std::memory_order_acquire ) >= m_uMaxSize; }
+	void		ClearAll() override;
 
 private:
 	std::vector<std::atomic<BlockValues_T<VALUE>*>> m_dBlockValues;
@@ -655,6 +656,21 @@ BlockCache_T<VALUE>::~BlockCache_T()
 
 	for ( auto & i : m_dBlockData )
 		delete i.load ( std::memory_order_relaxed );
+}
+
+template<typename VALUE>
+void BlockCache_T<VALUE>::ClearAll()
+{
+	if ( m_uSize.load ( std::memory_order_acquire )==0 )
+		return;
+
+	for ( auto & i : m_dBlockValues )
+		delete i.exchange ( nullptr, std::memory_order_relaxed );
+
+	for ( auto & i : m_dBlockData )
+		delete i.exchange ( nullptr, std::memory_order_relaxed );
+
+	m_uSize.store ( 0, std::memory_order_release );
 }
 
 template<typename VALUE>
