@@ -5,12 +5,12 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-candle-core = { git = "https://github.com/huggingface/candle.git", rev = "3b39794c14b1de8ba4c2d10d49354d557a415547" }
+candle-core = "0.9.2"
 tokenizers = "0.15.2"
 hf-hub = { git = "https://github.com/huggingface/hf-hub.git", rev = "ac22200ea0b5af4d8c362f699be0340647b19060", default-features = false,features = ["ureq"] }
 anyhow = "1.0.81"
-candle-nn = { git = "https://github.com/huggingface/candle.git", rev = "3b39794c14b1de8ba4c2d10d49354d557a415547" }
-candle-transformers = { git = "https://github.com/huggingface/candle.git", rev = "3b39794c14b1de8ba4c2d10d49354d557a415547" }
+candle-nn = "0.9.2"
+candle-transformers = "0.9.2"
 serde_json = "1.0.114"
 serde = "1.0.197"
 rand = "0.8.5"
