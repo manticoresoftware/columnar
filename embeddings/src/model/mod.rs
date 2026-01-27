@@ -1,7 +1,6 @@
 mod jina;
 mod local;
 mod openai;
-mod qwen;
 pub mod text_model_wrapper;
 mod voyage;
 
@@ -42,7 +41,6 @@ pub enum Model {
     OpenAI(Box<openai::OpenAIModel>),
     Voyage(Box<voyage::VoyageModel>),
     Jina(Box<jina::JinaModel>),
-    Qwen(Box<qwen::QwenModel>),
     Local(Box<local::LocalModel>),
 }
 
@@ -52,7 +50,6 @@ impl TextModel for Model {
             Model::OpenAI(m) => m.predict(texts),
             Model::Voyage(m) => m.predict(texts),
             Model::Jina(m) => m.predict(texts),
-            Model::Qwen(m) => m.predict(texts),
             Model::Local(m) => m.predict(texts),
         }
     }
@@ -62,7 +59,6 @@ impl TextModel for Model {
             Model::OpenAI(m) => m.get_hidden_size(),
             Model::Voyage(m) => m.get_hidden_size(),
             Model::Jina(m) => m.get_hidden_size(),
-            Model::Qwen(m) => m.get_hidden_size(),
             Model::Local(m) => m.get_hidden_size(),
         }
     }
@@ -72,7 +68,6 @@ impl TextModel for Model {
             Model::OpenAI(m) => m.get_max_input_len(),
             Model::Voyage(m) => m.get_max_input_len(),
             Model::Jina(m) => m.get_max_input_len(),
-            Model::Qwen(m) => m.get_max_input_len(),
             Model::Local(m) => m.get_max_input_len(),
         }
     }
@@ -100,14 +95,7 @@ pub fn create_model(options: ModelOptions) -> Result<Model, Box<dyn Error>> {
                 .cache_path
                 .unwrap_or(String::from(".cache/manticore")),
         );
-        if qwen::is_qwen_model(model_id, &cache_path)? {
-            let model =
-                qwen::QwenModel::new(model_id, cache_path, options.use_gpu.unwrap_or(false))?;
-            Ok(Model::Qwen(Box::new(model)))
-        } else {
-            let model =
-                local::LocalModel::new(model_id, cache_path, options.use_gpu.unwrap_or(false))?;
-            Ok(Model::Local(Box::new(model)))
-        }
+        let model = local::LocalModel::new(model_id, cache_path, options.use_gpu.unwrap_or(false))?;
+        Ok(Model::Local(Box::new(model)))
     }
 }
