@@ -101,14 +101,12 @@ pub fn create_model(options: ModelOptions) -> Result<Model, Box<dyn Error>> {
                 .unwrap_or(String::from(".cache/manticore")),
         );
         if qwen::is_qwen_model(model_id, &cache_path)? {
-            let model = qwen::QwenModel::new(model_id, cache_path, options.use_gpu.unwrap_or(false))?;
+            let model =
+                qwen::QwenModel::new(model_id, cache_path, options.use_gpu.unwrap_or(false))?;
             Ok(Model::Qwen(Box::new(model)))
         } else {
-            let model = local::LocalModel::new(
-                model_id,
-                cache_path,
-                options.use_gpu.unwrap_or(false),
-            )?;
+            let model =
+                local::LocalModel::new(model_id, cache_path, options.use_gpu.unwrap_or(false))?;
             Ok(Model::Local(Box::new(model)))
         }
     }
