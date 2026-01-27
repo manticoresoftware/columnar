@@ -17,10 +17,10 @@ use crate::utils::{
 
 #[derive(Debug)]
 pub struct ModelInfo {
-    config_path: PathBuf,
-    tokenizer_path: PathBuf,
-    weights_path: PathBuf,
-    use_pth: bool,
+    pub config_path: PathBuf,
+    pub tokenizer_path: PathBuf,
+    pub weights_path: PathBuf,
+    pub use_pth: bool,
 }
 
 pub fn build_model_info(
