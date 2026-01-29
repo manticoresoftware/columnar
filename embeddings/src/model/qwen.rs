@@ -138,12 +138,14 @@ fn dtype_from_config(config: &str) -> DType {
     serde_json::from_str::<Value>(config)
         .ok()
         .and_then(|v| {
-            v.get("torch_dtype").and_then(Value::as_str).map(|s| match s {
-                "bfloat16" => DType::BF16,
-                "float16" => DType::F16,
-                "float32" => DType::F32,
-                _ => DType::F16,
-            })
+            v.get("torch_dtype")
+                .and_then(Value::as_str)
+                .map(|s| match s {
+                    "bfloat16" => DType::BF16,
+                    "float16" => DType::F16,
+                    "float32" => DType::F32,
+                    _ => DType::F16,
+                })
         })
         .unwrap_or(DType::F16)
 }
@@ -152,8 +154,7 @@ fn load_tokenizer(path: &Path) -> Result<Tokenizer, Box<dyn Error>> {
     if let Ok(tok) = Tokenizer::from_file(path) {
         return Ok(tok);
     }
-    let contents =
-        std::fs::read_to_string(path).map_err(|_| LibError::ModelTokenizerLoadFailed)?;
+    let contents = std::fs::read_to_string(path).map_err(|_| LibError::ModelTokenizerLoadFailed)?;
     let mut value: Value =
         serde_json::from_str(&contents).map_err(|_| LibError::ModelTokenizerLoadFailed)?;
     if let Some(model) = value.get_mut("model").and_then(Value::as_object_mut) {
@@ -170,8 +171,7 @@ fn load_tokenizer(path: &Path) -> Result<Tokenizer, Box<dyn Error>> {
             }
         }
     }
-    let bytes =
-        serde_json::to_vec(&value).map_err(|_| LibError::ModelTokenizerLoadFailed)?;
+    let bytes = serde_json::to_vec(&value).map_err(|_| LibError::ModelTokenizerLoadFailed)?;
     Tokenizer::from_bytes(&bytes).map_err(|_| LibError::ModelTokenizerLoadFailed.into())
 }
 
@@ -350,13 +350,19 @@ impl Attention {
 
     fn forward(&self, xs: &Tensor, attention_mask: Option<&Tensor>) -> CandleResult<Tensor> {
         let (b_sz, q_len, _) = xs.dims3()?;
-        let query_states = self.q_proj.forward(xs)?
+        let query_states = self
+            .q_proj
+            .forward(xs)?
             .reshape((b_sz, q_len, self.num_heads, self.head_dim))?
             .transpose(1, 2)?;
-        let key_states = self.k_proj.forward(xs)?
+        let key_states = self
+            .k_proj
+            .forward(xs)?
             .reshape((b_sz, q_len, self.num_kv_heads, self.head_dim))?
             .transpose(1, 2)?;
-        let value_states = self.v_proj.forward(xs)?
+        let value_states = self
+            .v_proj
+            .forward(xs)?
             .reshape((b_sz, q_len, self.num_kv_heads, self.head_dim))?
             .transpose(1, 2)?;
 
@@ -443,10 +449,21 @@ impl QwenEmbedModel {
     ) -> Result<Self, Box<dyn Error>> {
         let raw_cfg: QwenConfigRaw =
             serde_json::from_str(config).map_err(|_| LibError::ModelConfigParseFailed)?;
-        let header = (!model_info.use_pth).then(|| read_safetensors_header(&model_info.weights_path)).flatten();
+        let header = (!model_info.use_pth)
+            .then(|| read_safetensors_header(&model_info.weights_path))
+            .flatten();
         let head_dim_override = header.as_ref().and_then(|v| {
-            tensor_dim0(v, &["layers.0.self_attn.q_proj.weight", "model.layers.0.self_attn.q_proj.weight"])
-                .and_then(|out| (out > 0 && out % raw_cfg.num_attention_heads == 0).then(|| out / raw_cfg.num_attention_heads))
+            tensor_dim0(
+                v,
+                &[
+                    "layers.0.self_attn.q_proj.weight",
+                    "model.layers.0.self_attn.q_proj.weight",
+                ],
+            )
+            .and_then(|out| {
+                (out > 0 && out % raw_cfg.num_attention_heads == 0)
+                    .then(|| out / raw_cfg.num_attention_heads)
+            })
         });
         let cfg = raw_cfg.normalize(head_dim_override);
 
@@ -459,7 +476,11 @@ impl QwenEmbedModel {
                     .map_err(|_| LibError::ModelWeightsLoadFailed)?
             }
         };
-        let vb_m = if header.as_ref().map_or(true, has_model_prefix) { vb.pp("model") } else { vb };
+        let vb_m = if header.as_ref().map_or(true, has_model_prefix) {
+            vb.pp("model")
+        } else {
+            vb
+        };
         let embed_tokens =
             candle_nn::embedding(cfg.vocab_size, cfg.hidden_size, vb_m.pp("embed_tokens"))?;
         let rotary_emb = Arc::new(RotaryEmbedding::new(vb_m.dtype(), &cfg, vb_m.device())?);
@@ -534,7 +555,9 @@ fn read_safetensors_header(path: &Path) -> Option<Value> {
 
 fn has_model_prefix(value: &Value) -> bool {
     value.get("model.embed_tokens.weight").is_some()
-        || value.as_object().map_or(false, |o| o.keys().any(|k| k.starts_with("model.")))
+        || value
+            .as_object()
+            .map_or(false, |o| o.keys().any(|k| k.starts_with("model.")))
 }
 
 fn tensor_dim0(value: &Value, keys: &[&str]) -> Option<usize> {
