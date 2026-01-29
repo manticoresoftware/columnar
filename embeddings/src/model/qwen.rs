@@ -476,7 +476,7 @@ impl QwenEmbedModel {
                     .map_err(|_| LibError::ModelWeightsLoadFailed)?
             }
         };
-        let vb_m = if header.as_ref().map_or(true, has_model_prefix) {
+        let vb_m = if header.as_ref().is_none_or(has_model_prefix) {
             vb.pp("model")
         } else {
             vb
@@ -557,7 +557,7 @@ fn has_model_prefix(value: &Value) -> bool {
     value.get("model.embed_tokens.weight").is_some()
         || value
             .as_object()
-            .map_or(false, |o| o.keys().any(|k| k.starts_with("model.")))
+            .is_some_and(|o| o.keys().any(|k| k.starts_with("model.")))
 }
 
 fn tensor_dim0(value: &Value, keys: &[&str]) -> Option<usize> {
