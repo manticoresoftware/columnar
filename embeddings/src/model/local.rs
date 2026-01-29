@@ -156,7 +156,7 @@ impl TextModel for LocalModel {
             for chunk in chunks.iter() {
                 let token_ids = Tensor::new(&chunk[..], device)?.unsqueeze(0)?;
                 let token_type_ids = token_ids.zeros_like()?;
-                let embeddings = self.model.forward(&token_ids, &token_type_ids)?;
+                let embeddings = self.model.forward(&token_ids, &token_type_ids, None)?;
 
                 let (n_sentences, n_tokens, _hidden_size) = embeddings.dims3()?;
                 let embeddings = (embeddings.sum(1)? / (n_tokens as f64))?;

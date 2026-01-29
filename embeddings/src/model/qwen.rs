@@ -6,6 +6,11 @@ use crate::utils::{
 use crate::LibError;
 use candle_core::{DType, Device, Module, Result as CandleResult, Tensor};
 use candle_nn::{Activation, VarBuilder};
+// Reused from candle: qwen3::Config, with_tracing::{linear_no_bias, Linear, RmsNorm}, repeat_kv,
+// candle_nn::rotary_emb::rope, candle_nn::ops::softmax_last_dim. Candle's Qwen3RotaryEmbedding,
+// Qwen3MLP, Qwen3Attention and Model are pub(crate); Model also has no public clear_kv_cache (only
+// ModelForCausalLM does), so we keep our own stateless impl for embedding.
+use candle_transformers::models::qwen3::Config as QwenConfig;
 use candle_transformers::models::with_tracing::{linear_no_bias, Linear, RmsNorm};
 use candle_transformers::utils::repeat_kv;
 use serde::Deserialize;
@@ -24,13 +29,14 @@ pub fn is_qwen_model(model_id: &str, cache_path: &Path) -> Result<bool, Box<dyn 
 }
 
 fn is_qwen_config(config: &str) -> bool {
-    let Ok(value) = serde_json::from_str::<Value>(config) else {
-        return false;
-    };
-    matches!(
-        value.get("model_type").and_then(Value::as_str),
-        Some("qwen2") | Some("qwen3")
-    )
+    serde_json::from_str::<Value>(config)
+        .ok()
+        .and_then(|v| {
+            v.get("model_type")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .is_some_and(|s| matches!(s.as_str(), "qwen2" | "qwen3"))
 }
 
 pub struct QwenModel {
@@ -42,37 +48,30 @@ pub struct QwenModel {
 
 impl QwenModel {
     pub fn new(model_id: &str, cache_path: PathBuf, use_gpu: bool) -> Result<Self, Box<dyn Error>> {
-        let revision = "main";
-        let use_pth = false;
         let device = if use_gpu {
             Device::new_cuda(0).map_err(|_| LibError::DeviceCudaInitFailed)?
         } else {
             Device::Cpu
         };
-
-        let model_info = build_model_info(cache_path, model_id, revision, use_pth)?;
+        let model_info = build_model_info(cache_path, model_id, "main", false)?;
         let config = std::fs::read_to_string(&model_info.config_path)
             .map_err(|_| LibError::ModelConfigReadFailed)?;
-
         if !is_qwen_config(&config) {
             return Err(Box::new(LibError::ModelConfigParseFailed));
         }
-
         let max_input_len =
             get_max_input_length(&config).map_err(|_| LibError::ModelMaxInputLenGetFailed)?;
         let hidden_size =
             get_hidden_size(&config).map_err(|_| LibError::ModelHiddenSizeGetFailed)?;
-
         let mut tokenizer = load_tokenizer(&model_info.tokenizer_path)?;
         let tokenizer = tokenizer
             .with_padding(None)
             .with_truncation(None)
             .map_err(|_| LibError::ModelTokenizerConfigurationFailed)?;
-
-        let mut dtype = dtype_from_config(&config);
-        if matches!(dtype, DType::BF16) && matches!(device, Device::Cpu) {
-            dtype = DType::F16;
-        }
+        let dtype = match (dtype_from_config(&config), &device) {
+            (DType::BF16, Device::Cpu) => DType::F16,
+            (d, _) => d,
+        };
         let model = QwenEmbedModel::new(&config, &model_info, dtype, &device)?;
 
         Ok(Self {
@@ -194,23 +193,8 @@ struct QwenConfigRaw {
     hidden_act: Activation,
 }
 
-#[derive(Debug, Clone)]
-struct QwenConfig {
-    vocab_size: usize,
-    hidden_size: usize,
-    intermediate_size: usize,
-    num_hidden_layers: usize,
-    num_attention_heads: usize,
-    num_key_value_heads: usize,
-    head_dim: usize,
-    max_position_embeddings: usize,
-    sliding_window: usize,
-    rope_theta: f64,
-    rms_norm_eps: f64,
-    hidden_act: Activation,
-}
-
 impl QwenConfigRaw {
+    /// Build candle's Qwen3 Config (same shape as upstream); we fill extra fields with defaults.
     fn normalize(self, head_dim_override: Option<usize>) -> QwenConfig {
         let sliding_window = self.sliding_window.unwrap_or(self.max_position_embeddings);
         let head_dim = head_dim_override
@@ -222,12 +206,16 @@ impl QwenConfigRaw {
             intermediate_size: self.intermediate_size,
             num_hidden_layers: self.num_hidden_layers,
             num_attention_heads: self.num_attention_heads,
-            num_key_value_heads: self.num_key_value_heads,
             head_dim,
+            attention_bias: false,
+            num_key_value_heads: self.num_key_value_heads,
             max_position_embeddings: self.max_position_embeddings,
-            sliding_window,
+            sliding_window: Some(sliding_window),
+            max_window_layers: 0,
+            tie_word_embeddings: false,
             rope_theta: self.rope_theta,
             rms_norm_eps: self.rms_norm_eps,
+            use_sliding_window: false,
             hidden_act: self.hidden_act,
         }
     }
@@ -331,15 +319,11 @@ impl Attention {
         let num_kv_heads = cfg.num_key_value_heads;
         let num_kv_groups = num_heads / num_kv_heads;
         let head_dim = cfg.head_dim;
-        let q_proj = linear_no_bias(hidden_sz, num_heads * head_dim, vb.pp("q_proj"))?;
-        let k_proj = linear_no_bias(hidden_sz, num_kv_heads * head_dim, vb.pp("k_proj"))?;
-        let v_proj = linear_no_bias(hidden_sz, num_kv_heads * head_dim, vb.pp("v_proj"))?;
-        let o_proj = linear_no_bias(num_heads * head_dim, hidden_sz, vb.pp("o_proj"))?;
         Ok(Self {
-            q_proj,
-            k_proj,
-            v_proj,
-            o_proj,
+            q_proj: linear_no_bias(hidden_sz, num_heads * head_dim, vb.pp("q_proj"))?,
+            k_proj: linear_no_bias(hidden_sz, num_kv_heads * head_dim, vb.pp("k_proj"))?,
+            v_proj: linear_no_bias(hidden_sz, num_kv_heads * head_dim, vb.pp("v_proj"))?,
+            o_proj: linear_no_bias(num_heads * head_dim, hidden_sz, vb.pp("o_proj"))?,
             num_heads,
             num_kv_heads,
             num_kv_groups,
@@ -405,20 +389,19 @@ impl DecoderLayer {
         cfg: &QwenConfig,
         vb: VarBuilder,
     ) -> CandleResult<Self> {
-        let self_attn = Attention::new(rotary_emb, cfg, vb.pp("self_attn"))?;
-        let mlp = MLP::new(cfg, vb.pp("mlp"))?;
-        let input_layernorm =
-            RmsNorm::new(cfg.hidden_size, cfg.rms_norm_eps, vb.pp("input_layernorm"))?;
-        let post_attention_layernorm = RmsNorm::new(
-            cfg.hidden_size,
-            cfg.rms_norm_eps,
-            vb.pp("post_attention_layernorm"),
-        )?;
         Ok(Self {
-            self_attn,
-            mlp,
-            input_layernorm,
-            post_attention_layernorm,
+            self_attn: Attention::new(rotary_emb, cfg, vb.pp("self_attn"))?,
+            mlp: MLP::new(cfg, vb.pp("mlp"))?,
+            input_layernorm: RmsNorm::new(
+                cfg.hidden_size,
+                cfg.rms_norm_eps,
+                vb.pp("input_layernorm"),
+            )?,
+            post_attention_layernorm: RmsNorm::new(
+                cfg.hidden_size,
+                cfg.rms_norm_eps,
+                vb.pp("post_attention_layernorm"),
+            )?,
         })
     }
 
@@ -484,18 +467,16 @@ impl QwenEmbedModel {
         let embed_tokens =
             candle_nn::embedding(cfg.vocab_size, cfg.hidden_size, vb_m.pp("embed_tokens"))?;
         let rotary_emb = Arc::new(RotaryEmbedding::new(vb_m.dtype(), &cfg, vb_m.device())?);
-        let mut layers = Vec::with_capacity(cfg.num_hidden_layers);
         let vb_l = vb_m.pp("layers");
-        for layer_idx in 0..cfg.num_hidden_layers {
-            let layer = DecoderLayer::new(rotary_emb.clone(), &cfg, vb_l.pp(layer_idx))?;
-            layers.push(layer)
-        }
+        let layers = (0..cfg.num_hidden_layers)
+            .map(|i| DecoderLayer::new(rotary_emb.clone(), &cfg, vb_l.pp(i)))
+            .collect::<CandleResult<Vec<_>>>()?;
         let norm = RmsNorm::new(cfg.hidden_size, cfg.rms_norm_eps, vb_m.pp("norm"))?;
         Ok(Self {
             embed_tokens,
             layers,
             norm,
-            sliding_window: cfg.sliding_window,
+            sliding_window: cfg.sliding_window.unwrap_or(cfg.max_position_embeddings),
             device: device.clone(),
             dtype,
         })
@@ -561,17 +542,14 @@ fn has_model_prefix(value: &Value) -> bool {
 }
 
 fn tensor_dim0(value: &Value, keys: &[&str]) -> Option<usize> {
-    for key in keys {
-        if let Some(dim0) = value
+    keys.iter().find_map(|key| {
+        value
             .get(*key)
             .and_then(|v| v.get("shape"))
             .and_then(|s| s.get(0))
             .and_then(Value::as_u64)
-        {
-            return Some(dim0 as usize);
-        }
-    }
-    None
+            .map(|d| d as usize)
+    })
 }
 
 #[cfg(test)]
