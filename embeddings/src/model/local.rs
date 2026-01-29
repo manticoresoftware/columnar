@@ -7,9 +7,8 @@ use candle_transformers::models::bert::{BertModel, Config, HiddenAct, DTYPE};
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use std::path::PathBuf;
 use tokenizers::{
-    models::bpe::BPE, normalizers, pre_tokenizers::byte_level::ByteLevel,
-    processors::roberta::RobertaProcessing, DecoderWrapper, ModelWrapper, NormalizerWrapper,
-    PostProcessorWrapper, PreTokenizerWrapper, Tokenizer, TokenizerImpl,
+    DecoderWrapper, ModelWrapper, NormalizerWrapper, PostProcessorWrapper, PreTokenizerWrapper,
+    Tokenizer, TokenizerImpl,
 };
 
 use crate::utils::{
@@ -19,9 +18,7 @@ use crate::utils::{
 #[derive(Debug)]
 pub struct ModelInfo {
     config_path: PathBuf,
-    tokenizer_path: Option<PathBuf>,
-    vocab_path: Option<PathBuf>,
-    merges_path: Option<PathBuf>,
+    tokenizer_path: PathBuf,
     weights_path: PathBuf,
     use_pth: bool,
 }
@@ -42,12 +39,9 @@ pub fn build_model_info(
     let config_path = api
         .get("config.json")
         .map_err(|_| LibError::ModelConfigFetchFailed)?;
-    let tokenizer_path = api.get("tokenizer.json").ok();
-    let vocab_path = api.get("vocab.json").ok();
-    let merges_path = api.get("merges.txt").ok();
-    if tokenizer_path.is_none() && (vocab_path.is_none() || merges_path.is_none()) {
-        return Err(LibError::ModelTokenizerFetchFailed.into());
-    }
+    let tokenizer_path = api
+        .get("tokenizer.json")
+        .map_err(|_| LibError::ModelTokenizerFetchFailed)?;
     let weights_path = if use_pth {
         api.get("pytorch_model.bin")
             .map_err(|_| LibError::ModelWeightsFetchFailed)?
@@ -58,51 +52,9 @@ pub fn build_model_info(
     Ok(ModelInfo {
         config_path,
         tokenizer_path,
-        vocab_path,
-        merges_path,
         weights_path,
         use_pth,
     })
-}
-
-fn load_tokenizer(model: &ModelInfo) -> Result<Tokenizer> {
-    if let Some(path) = &model.tokenizer_path {
-        return Tokenizer::from_file(path).map_err(|_| LibError::ModelTokenizerLoadFailed.into());
-    }
-
-    let vocab_path = model
-        .vocab_path
-        .as_ref()
-        .ok_or(LibError::ModelTokenizerLoadFailed)?;
-    let merges_path = model
-        .merges_path
-        .as_ref()
-        .ok_or(LibError::ModelTokenizerLoadFailed)?;
-
-    let bpe = BPE::from_file(
-        vocab_path
-            .to_str()
-            .ok_or(LibError::ModelTokenizerLoadFailed)?,
-        merges_path
-            .to_str()
-            .ok_or(LibError::ModelTokenizerLoadFailed)?,
-    )
-    .unk_token("<unk>".to_string())
-    .build()
-    .map_err(|_| LibError::ModelTokenizerLoadFailed)?;
-
-    let mut tokenizer = Tokenizer::new(bpe);
-    tokenizer.with_pre_tokenizer(ByteLevel::default());
-
-    let post_processor = RobertaProcessing::new(("</s>".to_string(), 2), ("<s>".to_string(), 0))
-        .trim_offsets(false)
-        .add_prefix_space(true);
-    tokenizer.with_post_processor(post_processor);
-
-    let normalizer = normalizers::Sequence::new(vec![normalizers::Strip::new(true, true).into()]);
-    tokenizer.with_normalizer(normalizer);
-
-    Ok(tokenizer)
 }
 
 fn build_model_and_tokenizer(
@@ -110,14 +62,15 @@ fn build_model_and_tokenizer(
     device: Device,
 ) -> Result<(BertModel, Tokenizer, usize, usize)> {
     let config =
-        std::fs::read_to_string(&model.config_path).map_err(|_| LibError::ModelConfigReadFailed)?;
+        std::fs::read_to_string(model.config_path).map_err(|_| LibError::ModelConfigReadFailed)?;
     let max_input_len =
         get_max_input_length(&config).map_err(|_| LibError::ModelMaxInputLenGetFailed)?;
     let hidden_size = get_hidden_size(&config).map_err(|_| LibError::ModelHiddenSizeGetFailed)?;
 
     let mut config: Config =
         serde_json::from_str(&config).map_err(|_| LibError::ModelConfigParseFailed)?;
-    let tokenizer = load_tokenizer(&model)?;
+    let tokenizer: Tokenizer = Tokenizer::from_file(model.tokenizer_path)
+        .map_err(|_| LibError::ModelTokenizerLoadFailed)?;
 
     let vb = if model.use_pth {
         VarBuilder::from_pth(&model.weights_path, DTYPE, &device)
@@ -203,7 +156,7 @@ impl TextModel for LocalModel {
             for chunk in chunks.iter() {
                 let token_ids = Tensor::new(&chunk[..], device)?.unsqueeze(0)?;
                 let token_type_ids = token_ids.zeros_like()?;
-                let embeddings = self.model.forward(&token_ids, &token_type_ids, None)?;
+                let embeddings = self.model.forward(&token_ids, &token_type_ids)?;
 
                 let (n_sentences, n_tokens, _hidden_size) = embeddings.dims3()?;
                 let embeddings = (embeddings.sum(1)? / (n_tokens as f64))?;

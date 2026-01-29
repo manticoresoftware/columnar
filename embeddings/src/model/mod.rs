@@ -90,12 +90,16 @@ pub fn create_model(options: ModelOptions) -> Result<Model, Box<dyn Error>> {
 
         Ok(Model::Jina(Box::new(model)))
     } else {
-        let cache_path = PathBuf::from(
-            options
-                .cache_path
-                .unwrap_or(String::from(".cache/manticore")),
-        );
-        let model = local::LocalModel::new(model_id, cache_path, options.use_gpu.unwrap_or(false))?;
+        let model = local::LocalModel::new(
+            model_id,
+            PathBuf::from(
+                options
+                    .cache_path
+                    .unwrap_or(String::from(".cache/manticore")),
+            ),
+            options.use_gpu.unwrap_or(false),
+        )?;
+
         Ok(Model::Local(Box::new(model)))
     }
 }

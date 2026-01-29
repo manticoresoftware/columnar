@@ -27,15 +27,13 @@ set_target_properties( knn_lib PROPERTIES PREFIX "" OUTPUT_NAME lib_manticore_kn
 # Try to find manticoresearch text embeddings library
 message(STATUS "Looking for manticoresearch text embeddings library...")
 
-# Used by build_embeddings_lib() to name the produced library
-set(EMBEDDINGS_LIB_NAME manticore_knn_embeddings)
-
 if ( BUILD_EMBEDDINGS_LOCALLY )
 	include (build_embeddings)
 	build_embeddings_lib()
 endif()
 
 # find embeddings library
+set(EMBEDDINGS_LIB_NAME manticore_knn_embeddings)
 set ( CMAKE_FIND_LIBRARY_SUFFIXES .so .dylib .dll )
 FIND_LIBRARY ( EMBEDDINGS_LIB NAMES _${EMBEDDINGS_LIB_NAME} ${EMBEDDINGS_LIB_NAME} lib_${EMBEDDINGS_LIB_NAME} HINTS
 		"${CMAKE_SOURCE_DIR}/embeddings/target/debug"
