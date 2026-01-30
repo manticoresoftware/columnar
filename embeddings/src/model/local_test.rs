@@ -72,7 +72,7 @@ mod tests {
         let revision = "main";
 
         // This will likely fail without network/files, but tests the structure
-        let result = build_model_info(cache_path, model_id, revision, false);
+        let result = build_model_info(cache_path, model_id, revision);
 
         if result.is_err() {
             let error_str = if let Err(error) = result {
