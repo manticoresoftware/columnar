@@ -399,11 +399,16 @@ impl TextModel for LocalModel {
 mod tests {
     use super::*;
     use approx::assert_abs_diff_eq;
+    use std::path::PathBuf;
 
     fn check_embedding_properties(embedding: &[f32], expected_len: usize) {
         assert_eq!(embedding.len(), expected_len);
         let norm: f32 = embedding.iter().map(|&x| x * x).sum::<f32>().sqrt();
         assert_abs_diff_eq!(norm, 1.0, epsilon = 1e-6);
+    }
+
+    fn test_cache_path() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".cache/manticore")
     }
 
     #[test]
@@ -481,7 +486,7 @@ mod tests {
     #[test]
     fn test_all_minilm_l6_v2() {
         let model_id = "sentence-transformers/all-MiniLM-L6-v2";
-        let cache_path = PathBuf::from(".cache/manticore");
+        let cache_path = test_cache_path();
 
         let test_sentences = [
             "This is a test sentence.",
@@ -499,7 +504,7 @@ mod tests {
     #[test]
     fn test_embedding_consistency() {
         let model_id = "sentence-transformers/all-MiniLM-L6-v2";
-        let cache_path = PathBuf::from(".cache/manticore");
+        let cache_path = test_cache_path();
         let local_model = LocalModel::new(model_id, cache_path, false).unwrap();
 
         let sentence = &["This is a test sentence."];
@@ -514,7 +519,7 @@ mod tests {
     #[test]
     fn test_hidden_size() {
         let model_id = "sentence-transformers/all-MiniLM-L6-v2";
-        let cache_path = PathBuf::from(".cache/manticore");
+        let cache_path = test_cache_path();
         let local_model = LocalModel::new(model_id, cache_path, false).unwrap();
         assert_eq!(local_model.get_hidden_size(), 384);
     }
@@ -522,7 +527,7 @@ mod tests {
     #[test]
     fn test_max_input_len() {
         let model_id = "sentence-transformers/all-MiniLM-L6-v2";
-        let cache_path = PathBuf::from(".cache/manticore");
+        let cache_path = test_cache_path();
         let local_model = LocalModel::new(model_id, cache_path, false).unwrap();
         assert_eq!(local_model.get_max_input_len(), 512);
     }
@@ -595,7 +600,7 @@ mod tests {
     fn test_qwen_embedding_properties() {
         // Integration test for Qwen embedding models
         let model_id = "Qwen/Qwen3-Embedding-0.6B";
-        let cache_path = PathBuf::from(".cache/manticore");
+        let cache_path = test_cache_path();
 
         // Create model (will download if not cached)
         let local_model = LocalModel::new(model_id, cache_path.clone(), false)
@@ -622,7 +627,7 @@ mod tests {
         // Most Llama models are not specifically designed for embeddings
         // but the architecture should work with mean pooling
         let model_id = "llama-embedding-test-model"; // Placeholder
-        let cache_path = PathBuf::from(".cache/manticore");
+        let cache_path = test_cache_path();
 
         // Create model (will download if not cached)
         let result = LocalModel::new(model_id, cache_path.clone(), false);
@@ -650,7 +655,7 @@ mod tests {
         // Similar to Llama, Mistral models are typically not designed for embeddings
         // but the causal architecture should support mean pooling
         let model_id = "mistral-embedding-test-model"; // Placeholder
-        let cache_path = PathBuf::from(".cache/manticore");
+        let cache_path = test_cache_path();
 
         let result = LocalModel::new(model_id, cache_path.clone(), false);
 
@@ -671,7 +676,7 @@ mod tests {
     fn test_causal_model_batch_embeddings() {
         // Test batch processing with Qwen model
         let model_id = "Qwen/Qwen3-Embedding-0.6B";
-        let cache_path = PathBuf::from(".cache/manticore");
+        let cache_path = test_cache_path();
 
         let result = LocalModel::new(model_id, cache_path.clone(), false);
 
