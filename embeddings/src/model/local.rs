@@ -344,7 +344,9 @@ impl TextModel for LocalModel {
                         divided.to_dtype(DType::F32)?
                     }
                     LocalModel::Causal(m) => {
-                        let emb = m.model.borrow_mut().forward(&token_ids, 0)?;
+                        let mut model = m.model.borrow_mut();
+                        model.clear_kv_cache();
+                        let emb = model.forward(&token_ids, 0)?;
                         let (_, n_tokens, _) = emb.dims3()?;
                         let summed = emb.sum(1)?.to_dtype(DType::F32)?;
                         let divisor = Tensor::new(n_tokens as f32, &device)?;

@@ -34,3 +34,8 @@ strip = "debuginfo"
 
 [dev-dependencies]
 approx = "0.5.1"
+
+[patch.crates-io]
+candle-core = { git = "https://github.com/manticoresoftware/candle.git", rev = "7c9849d3f5cbd1b986e40644f51fb21d120bc2ee" }
+candle-nn = { git = "https://github.com/manticoresoftware/candle.git", rev = "7c9849d3f5cbd1b986e40644f51fb21d120bc2ee" }
+candle-transformers = { git = "https://github.com/manticoresoftware/candle.git", rev = "7c9849d3f5cbd1b986e40644f51fb21d120bc2ee" }
