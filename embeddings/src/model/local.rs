@@ -173,32 +173,75 @@ pub struct CausalEmbeddingModel {
 
 impl CausalEmbeddingModel {
     pub fn new(model_id: &str, cache_path: PathBuf, use_gpu: bool) -> Result<Self, Box<dyn Error>> {
+        eprintln!("[DEBUG] CausalEmbeddingModel::new - model_id={}", model_id);
+
         let device = if use_gpu {
             Device::new_cuda(0).map_err(|_| LibError::DeviceCudaInitFailed)?
         } else {
             Device::Cpu
         };
+        eprintln!("[DEBUG] Device created: {:?}", device);
 
-        let model_info = build_model_info(cache_path, model_id, "main")?;
+        let model_info = build_model_info(cache_path.clone(), model_id, "main")?;
+        eprintln!(
+            "[DEBUG] Model info built - config={:?}, tokenizer={:?}, weights={:?}",
+            model_info.config_path, model_info.tokenizer_path, model_info.weights_path
+        );
+
         let config = std::fs::read_to_string(&model_info.config_path)
             .map_err(|_| LibError::ModelConfigReadFailed)?;
+        eprintln!("[DEBUG] Config read successfully, {} bytes", config.len());
 
         let max_input_len =
             get_max_input_length(&config).map_err(|_| LibError::ModelMaxInputLenGetFailed)?;
         let hidden_size =
             get_hidden_size(&config).map_err(|_| LibError::ModelHiddenSizeGetFailed)?;
+        eprintln!(
+            "[DEBUG] max_input_len={}, hidden_size={}",
+            max_input_len, hidden_size
+        );
 
         let cfg: QwenConfig =
             serde_json::from_str(&config).map_err(|_| LibError::ModelConfigParseFailed)?;
+        eprintln!("[DEBUG] QwenConfig parsed successfully");
 
         let dtype = dtype_from_config(&config, &device);
+        eprintln!("[DEBUG] dtype determined: {:?}", dtype);
 
+        eprintln!(
+            "[DEBUG] Loading safetensors from {:?}",
+            model_info.weights_path
+        );
+
+        let weights_path = model_info.weights_path;
+        eprintln!("[DEBUG] Creating VarBuilder from safetensors...");
+
+        // Qwen3-Embedding weights are stored without "model." prefix
+        // (e.g., "embed_tokens.weight", "layers.0.*"), while candle's QwenModel
+        // looks up "model.embed_tokens.weight" and "model.layers.0.*".
         let vb = unsafe {
-            VarBuilder::from_mmaped_safetensors(&[model_info.weights_path], dtype, &device)
+            VarBuilder::from_mmaped_safetensors(std::slice::from_ref(&weights_path), dtype, &device)
                 .map_err(|_| LibError::ModelWeightsLoadFailed)?
         };
+        eprintln!("[DEBUG] VarBuilder created successfully!");
 
-        let model = QwenModel::new(&cfg, vb.pp("model")).map_err(|_| LibError::ModelLoadFailed)?;
+        // Important: some HF checkpoints (incl. Qwen3-Embedding, many Llama/Mistral)
+        // store tensors without "model." while candle looks up "model.*".
+        // This remap aligns lookup names to on-disk keys without modifying files.
+        let vb = if vb.contains_tensor("model.embed_tokens.weight") {
+            vb
+        } else if vb.contains_tensor("embed_tokens.weight") {
+            vb.rename_f(|name| name.strip_prefix("model.").unwrap_or(name).to_string())
+        } else {
+            vb
+        };
+
+        eprintln!("[DEBUG] Creating QwenModel...");
+        let model = QwenModel::new(&cfg, vb).map_err(|e| {
+            eprintln!("[DEBUG] QwenModel::new failed with error: {:?}", e);
+            LibError::ModelLoadFailed
+        })?;
+        eprintln!("[DEBUG] QwenModel created successfully!");
 
         let mut tokenizer = load_tokenizer(&model_info.tokenizer_path)?;
         tokenizer.with_padding(None);
@@ -295,17 +338,16 @@ impl TextModel for LocalModel {
                         let token_type_ids = token_ids.zeros_like()?;
                         let emb = m.model.forward(&token_ids, &token_type_ids, None)?;
                         let seq_len = token_ids.dims()[1];
-                        let summed = emb.sum(1)?;
-                        let divisor = Tensor::new(seq_len as f32, &device)?.to_dtype(DType::F32)?;
+                        let summed = emb.sum(1)?.to_dtype(DType::F32)?;
+                        let divisor = Tensor::new(seq_len as f32, &device)?;
                         let divided = summed.broadcast_div(&divisor)?;
                         divided.to_dtype(DType::F32)?
                     }
                     LocalModel::Causal(m) => {
                         let emb = m.model.borrow_mut().forward(&token_ids, 0)?;
                         let (_, n_tokens, _) = emb.dims3()?;
-                        let summed = emb.sum(1)?;
-                        let divisor =
-                            Tensor::new(n_tokens as f32, &device)?.to_dtype(DType::F32)?;
+                        let summed = emb.sum(1)?.to_dtype(DType::F32)?;
+                        let divisor = Tensor::new(n_tokens as f32, &device)?;
                         let divided = summed.broadcast_div(&divisor)?;
                         divided.to_dtype(DType::F32)?
                     }
@@ -550,25 +592,12 @@ mod tests {
     #[test]
     fn test_qwen_embedding_properties() {
         // Integration test for Qwen embedding models
-        // This test requires actual model files to run successfully
-        // Skip if model cannot be loaded (network, format, or other issues)
         let model_id = "Qwen/Qwen3-Embedding-0.6B";
         let cache_path = PathBuf::from(".cache/manticore");
 
         // Create model (will download if not cached)
-        let result = LocalModel::new(model_id, cache_path.clone(), false);
-
-        // Skip if model cannot be loaded for ANY reason
-        // Note: Qwen3-Embedding models may have format differences we're still investigating
-        let local_model = match result {
-            Ok(m) => m,
-            Err(e) => {
-                // Model loading failed - skip test for now
-                // The actual loading issue should be debugged separately
-                println!("Qwen model loading skipped: {}", e);
-                return;
-            }
-        };
+        let local_model = LocalModel::new(model_id, cache_path.clone(), false)
+            .expect("Qwen model should load successfully");
 
         // Test basic properties (Qwen3-Embedding-0.6B has 1024 hidden_size)
         assert_eq!(local_model.get_hidden_size(), 1024);
@@ -576,7 +605,9 @@ mod tests {
 
         // Test embedding generation
         let test_text = &["This is a test sentence for Qwen embedding model."];
-        let embeddings = local_model.predict(test_text).unwrap();
+        let embeddings = local_model
+            .predict(test_text)
+            .expect("Qwen model should generate embeddings");
 
         // Verify embedding properties
         check_embedding_properties(&embeddings[0], local_model.get_hidden_size());

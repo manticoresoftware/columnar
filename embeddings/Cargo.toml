@@ -6,17 +6,17 @@ edition = "2021"
 # Candle: git dep so CI works without a local candle clone.
 # For local dev with ../../candle, add a [patch] section to use path deps.
 [dependencies]
-candle-core = { git = "https://github.com/huggingface/candle.git", rev = "3b39794c" }
-candle-nn = { git = "https://github.com/huggingface/candle.git", rev = "3b39794c" }
-candle-transformers = { git = "https://github.com/huggingface/candle.git", rev = "3b39794c" }
 tokenizers = "0.15.2"
-hf-hub = { git = "https://github.com/huggingface/hf-hub.git", rev = "ac22200ea0b5af4d8c362f699be0340647b19060", default-features = false,features = ["ureq"] }
+hf-hub = { git = "https://github.com/huggingface/hf-hub.git", rev = "5510260d5fd1d93238f8c43272a1a14e6848ec4b", default-features = false,features = ["ureq"] }
 anyhow = "1.0.81"
 serde_json = "1.0.114"
 serde = "1.0.197"
 rand = "0.8.5"
 reqwest = { version = "0.12.8", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 rayon = "1.10.0"
+candle-core = "0.9.2"
+candle-nn = "0.9.2"
+candle-transformers = "0.9.2"
 
 [build-dependencies]
 cbindgen = "0.26.0"
