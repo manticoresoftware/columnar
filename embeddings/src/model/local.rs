@@ -122,14 +122,12 @@ pub struct BertEmbeddingModel {
 }
 
 impl BertEmbeddingModel {
-    pub fn new(model_id: &str, cache_path: PathBuf, use_gpu: bool) -> Result<Self, Box<dyn Error>> {
+    pub fn new(model_info: LocalModelInfo, use_gpu: bool) -> Result<Self, Box<dyn Error>> {
         let device = if use_gpu {
             Device::new_cuda(0).map_err(|_| LibError::DeviceCudaInitFailed)?
         } else {
             Device::Cpu
         };
-
-        let model_info = build_model_info(cache_path, model_id, "main")?;
         let config = std::fs::read_to_string(&model_info.config_path)
             .map_err(|_| LibError::ModelConfigReadFailed)?;
         let max_input_len =
@@ -172,21 +170,13 @@ pub struct CausalEmbeddingModel {
 }
 
 impl CausalEmbeddingModel {
-    pub fn new(model_id: &str, cache_path: PathBuf, use_gpu: bool) -> Result<Self, Box<dyn Error>> {
-        eprintln!("[DEBUG] CausalEmbeddingModel::new - model_id={}", model_id);
-
+    pub fn new(model_info: LocalModelInfo, use_gpu: bool) -> Result<Self, Box<dyn Error>> {
         let device = if use_gpu {
             Device::new_cuda(0).map_err(|_| LibError::DeviceCudaInitFailed)?
         } else {
             Device::Cpu
         };
         eprintln!("[DEBUG] Device created: {:?}", device);
-
-        let model_info = build_model_info(cache_path.clone(), model_id, "main")?;
-        eprintln!(
-            "[DEBUG] Model info built - config={:?}, tokenizer={:?}, weights={:?}",
-            model_info.config_path, model_info.tokenizer_path, model_info.weights_path
-        );
 
         let config = std::fs::read_to_string(&model_info.config_path)
             .map_err(|_| LibError::ModelConfigReadFailed)?;
@@ -285,18 +275,18 @@ pub enum LocalModel {
 
 impl LocalModel {
     pub fn new(model_id: &str, cache_path: PathBuf, use_gpu: bool) -> Result<Self, Box<dyn Error>> {
-        let model_info = build_model_info(cache_path.clone(), model_id, "main")?;
+        let model_info = build_model_info(cache_path, model_id, "main")?;
         let config = std::fs::read_to_string(&model_info.config_path)
             .map_err(|_| LibError::ModelConfigReadFailed)?;
         let arch = ModelArch::from_config(&config);
 
         match arch {
             ModelArch::Bert => {
-                let model = BertEmbeddingModel::new(model_id, cache_path, use_gpu)?;
+                let model = BertEmbeddingModel::new(model_info, use_gpu)?;
                 Ok(LocalModel::Bert(model))
             }
             ModelArch::Causal => {
-                let model = CausalEmbeddingModel::new(model_id, cache_path, use_gpu)?;
+                let model = CausalEmbeddingModel::new(model_info, use_gpu)?;
                 Ok(LocalModel::Causal(model))
             }
         }
