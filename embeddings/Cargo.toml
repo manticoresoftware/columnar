@@ -3,12 +3,12 @@ name = "manticore-knn-embeddings"
 version = "1.1.1"
 edition = "2021"
 
-# Use local candle when at ../../candle (relative to this crate) for qwen3::Config and compact qwen.rs.
-# To use upstream candle instead, replace path with: git = "https://github.com/huggingface/candle.git", rev = "..." 
+# Candle: git dep so CI works without a local candle clone.
+# For local dev with ../../candle, add a [patch] section to use path deps.
 [dependencies]
-candle-core = { path = "../../candle/candle-core" }
-candle-nn = { path = "../../candle/candle-nn" }
-candle-transformers = { path = "../../candle/candle-transformers" }
+candle-core = { git = "https://github.com/huggingface/candle.git", rev = "3b39794c" }
+candle-nn = { git = "https://github.com/huggingface/candle.git", rev = "3b39794c" }
+candle-transformers = { git = "https://github.com/huggingface/candle.git", rev = "3b39794c" }
 tokenizers = "0.15.2"
 hf-hub = { git = "https://github.com/huggingface/hf-hub.git", rev = "ac22200ea0b5af4d8c362f699be0340647b19060", default-features = false,features = ["ureq"] }
 anyhow = "1.0.81"
