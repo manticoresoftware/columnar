@@ -1,9 +1,22 @@
 use super::local::{build_model_info, LocalModel};
-use std::path::PathBuf;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::TextModel;
+    use crate::utils::{get_hidden_size, get_max_input_length};
+    use approx::assert_abs_diff_eq;
+    use std::path::PathBuf;
+
+    fn check_embedding_properties(embedding: &[f32], expected_len: usize) {
+        assert_eq!(embedding.len(), expected_len);
+        let norm: f32 = embedding.iter().map(|&x| x * x).sum::<f32>().sqrt();
+        assert_abs_diff_eq!(norm, 1.0, epsilon = 1e-6);
+    }
+
+    fn test_cache_path() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".cache/manticore")
+    }
 
     // Note: These tests require actual model files to run successfully
     // They are designed to test the structure and error handling
@@ -72,7 +85,7 @@ mod tests {
         let revision = "main";
 
         // This will likely fail without network/files, but tests the structure
-        let result = build_model_info(cache_path, model_id, revision, false);
+        let result = build_model_info(cache_path, model_id, revision);
 
         if result.is_err() {
             let error_str = if let Err(error) = result {
@@ -177,8 +190,6 @@ mod tests {
     #[test]
     fn test_model_configuration_parsing() {
         // Test configuration parsing logic
-        use crate::utils::{get_hidden_size, get_max_input_length};
-
         let valid_config = r#"{
             "hidden_size": 384,
             "max_position_embeddings": 512,
@@ -308,6 +319,163 @@ mod tests {
                 // Error should be properly cleaned up when dropped
             }
         }
+    }
+
+    #[test]
+    fn test_all_minilm_l6_v2() {
+        let model_id = "sentence-transformers/all-MiniLM-L6-v2";
+        let cache_path = test_cache_path();
+
+        let test_sentences = [
+            "This is a test sentence.",
+            "Another sentence to encode.",
+            "Sentence transformers are awesome!",
+        ];
+
+        for sentence in &test_sentences {
+            let local_model = LocalModel::new(model_id, cache_path.clone(), false).unwrap();
+            let embedding = local_model.predict(&[sentence]).unwrap();
+            check_embedding_properties(&embedding[0], local_model.get_hidden_size());
+        }
+    }
+
+    #[test]
+    fn test_embedding_consistency() {
+        let model_id = "sentence-transformers/all-MiniLM-L6-v2";
+        let cache_path = test_cache_path();
+        let local_model = LocalModel::new(model_id, cache_path, false).unwrap();
+
+        let sentence = &["This is a test sentence."];
+        let embedding1 = local_model.predict(sentence).unwrap();
+        let embedding2 = local_model.predict(sentence).unwrap();
+
+        for (e1, e2) in embedding1[0].iter().zip(embedding2[0].iter()) {
+            assert_abs_diff_eq!(e1, e2, epsilon = 1e-6);
+        }
+    }
+
+    #[test]
+    fn test_hidden_size() {
+        let model_id = "sentence-transformers/all-MiniLM-L6-v2";
+        let cache_path = test_cache_path();
+        let local_model = LocalModel::new(model_id, cache_path, false).unwrap();
+        assert_eq!(local_model.get_hidden_size(), 384);
+    }
+
+    #[test]
+    fn test_max_input_len() {
+        let model_id = "sentence-transformers/all-MiniLM-L6-v2";
+        let cache_path = test_cache_path();
+        let local_model = LocalModel::new(model_id, cache_path, false).unwrap();
+        assert_eq!(local_model.get_max_input_len(), 512);
+    }
+
+    #[test]
+    fn test_qwen_embedding_properties() {
+        // Integration test for Qwen embedding models
+        let model_id = "Qwen/Qwen3-Embedding-0.6B";
+        let cache_path = test_cache_path();
+
+        let local_model = LocalModel::new(model_id, cache_path.clone(), false)
+            .expect("Qwen model should load successfully");
+
+        assert_eq!(local_model.get_hidden_size(), 1024);
+        assert_eq!(local_model.get_max_input_len(), 32768);
+
+        let test_text = &["This is a test sentence for Qwen embedding model."];
+        let embeddings = local_model
+            .predict(test_text)
+            .expect("Qwen model should generate embeddings");
+
+        check_embedding_properties(&embeddings[0], local_model.get_hidden_size());
+    }
+
+    #[test]
+    fn test_llama_embedding_properties() {
+        // Integration test for Llama-based embedding models.
+        let model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0";
+        let cache_path = test_cache_path();
+
+        let local_model =
+            LocalModel::new(model_id, cache_path.clone(), false).expect("Llama model should load");
+
+        let test_text = &["This is a test sentence for Llama embedding model."];
+        let embeddings = local_model.predict(test_text).unwrap();
+
+        check_embedding_properties(&embeddings[0], local_model.get_hidden_size());
+    }
+
+    #[test]
+    fn test_mistral_embedding_properties() {
+        // Integration test for Mistral-based embedding models.
+        let model_id = "Locutusque/TinyMistral-248M-v2";
+        let cache_path = test_cache_path();
+
+        let local_model = LocalModel::new(model_id, cache_path.clone(), false)
+            .expect("Mistral model should load");
+
+        let test_text = &["This is a test sentence for Mistral embedding model."];
+        let embeddings = local_model.predict(test_text).unwrap();
+        check_embedding_properties(&embeddings[0], local_model.get_hidden_size());
+    }
+
+    #[test]
+    fn test_gemma_embedding_properties() {
+        // Integration test for Gemma-based embedding models.
+        let model_id = "h2oai/embeddinggemma-300m";
+        let cache_path = test_cache_path();
+
+        let local_model =
+            LocalModel::new(model_id, cache_path.clone(), false).expect("Gemma model should load");
+
+        let test_text = &["This is a test sentence for Gemma embedding model."];
+        let embeddings = local_model.predict(test_text).unwrap();
+        check_embedding_properties(&embeddings[0], local_model.get_hidden_size());
+    }
+
+    #[test]
+    fn test_causal_model_batch_embeddings() {
+        // Test batch processing with Qwen model
+        let model_id = "Qwen/Qwen3-Embedding-0.6B";
+        let cache_path = test_cache_path();
+
+        let result = LocalModel::new(model_id, cache_path.clone(), false);
+
+        let local_model = match result {
+            Ok(m) => m,
+            Err(e) => {
+                println!("Qwen batch test skipped: {}", e);
+                return;
+            }
+        };
+
+        let test_texts = &[
+            "First test sentence.",
+            "Second test sentence with different content.",
+            "Third sentence for batch processing verification.",
+        ];
+
+        let embeddings = local_model.predict(test_texts).unwrap();
+
+        assert_eq!(embeddings.len(), test_texts.len());
+
+        for embedding in &embeddings {
+            check_embedding_properties(embedding, local_model.get_hidden_size());
+        }
+
+        let first = &embeddings[0];
+        let second = &embeddings[1];
+        let mut differences = 0;
+        for (a, b) in first.iter().zip(second.iter()) {
+            let diff: f32 = (*a - *b).abs();
+            if diff > 1e-6 {
+                differences += 1;
+            }
+        }
+        assert!(
+            differences > 100,
+            "Embeddings should be different for different texts"
+        );
     }
 
     // Integration test with existing tests from local.rs

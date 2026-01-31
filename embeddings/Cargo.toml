@@ -1,21 +1,22 @@
 [package]
 name = "manticore-knn-embeddings"
-version = "0.1.0"
+version = "1.1.1"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+# Candle: git dep so CI works without a local candle clone.
+# For local dev with ../../candle, add a [patch] section to use path deps.
 [dependencies]
-candle-core = "0.9.2"
 tokenizers = "0.15.2"
 hf-hub = { git = "https://github.com/huggingface/hf-hub.git", rev = "ac22200ea0b5af4d8c362f699be0340647b19060", default-features = false,features = ["ureq"] }
 anyhow = "1.0.81"
-candle-nn = "0.9.2"
-candle-transformers = "0.9.2"
 serde_json = "1.0.114"
 serde = "1.0.197"
 rand = "0.8.5"
 reqwest = { version = "0.12.8", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 rayon = "1.10.0"
+candle-core = "0.9.2"
+candle-nn = "0.9.2"
+candle-transformers = "0.9.2"
 
 [build-dependencies]
 cbindgen = "0.26.0"
@@ -33,3 +34,12 @@ strip = "debuginfo"
 
 [dev-dependencies]
 approx = "0.5.1"
+
+[patch.crates-io]
+# candle-core = { path = "../../candle/candle-core" }
+# candle-nn =  { path = "../../candle/candle-nn" }
+# candle-transformers =  { path = "../../candle/candle-transformers" }
+
+candle-core = { git = "https://github.com/manticoresoftware/candle.git", rev = "fe707e10fb22599f8124de632d605a68266ab8e8" }
+candle-nn = { git = "https://github.com/manticoresoftware/candle.git", rev = "fe707e10fb22599f8124de632d605a68266ab8e8" }
+candle-transformers = { git = "https://github.com/manticoresoftware/candle.git", rev = "fe707e10fb22599f8124de632d605a68266ab8e8" }

@@ -39,6 +39,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             ./embeddings/target
+            ./embeddings/.cache/manticore
           key: quality-check-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             quality-check-${{ runner.os }}-cargo-
