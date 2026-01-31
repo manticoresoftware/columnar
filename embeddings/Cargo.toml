@@ -36,6 +36,10 @@ strip = "debuginfo"
 approx = "0.5.1"
 
 [patch.crates-io]
-candle-core = { git = "https://github.com/manticoresoftware/candle.git", rev = "7c9849d3f5cbd1b986e40644f51fb21d120bc2ee" }
-candle-nn = { git = "https://github.com/manticoresoftware/candle.git", rev = "7c9849d3f5cbd1b986e40644f51fb21d120bc2ee" }
-candle-transformers = { git = "https://github.com/manticoresoftware/candle.git", rev = "7c9849d3f5cbd1b986e40644f51fb21d120bc2ee" }
+# candle-core = { path = "../../candle/candle-core" }
+# candle-nn =  { path = "../../candle/candle-nn" }
+# candle-transformers =  { path = "../../candle/candle-transformers" }
+
+candle-core = { git = "https://github.com/manticoresoftware/candle.git", rev = "fe707e10fb22599f8124de632d605a68266ab8e8" }
+candle-nn = { git = "https://github.com/manticoresoftware/candle.git", rev = "fe707e10fb22599f8124de632d605a68266ab8e8" }
+candle-transformers = { git = "https://github.com/manticoresoftware/candle.git", rev = "fe707e10fb22599f8124de632d605a68266ab8e8" }
