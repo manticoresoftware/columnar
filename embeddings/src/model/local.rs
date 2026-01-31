@@ -475,18 +475,6 @@ impl TextModel for LocalModel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use approx::assert_abs_diff_eq;
-    use std::path::PathBuf;
-
-    fn check_embedding_properties(embedding: &[f32], expected_len: usize) {
-        assert_eq!(embedding.len(), expected_len);
-        let norm: f32 = embedding.iter().map(|&x| x * x).sum::<f32>().sqrt();
-        assert_abs_diff_eq!(norm, 1.0, epsilon = 1e-6);
-    }
-
-    fn test_cache_path() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".cache/manticore")
-    }
 
     #[test]
     fn test_model_arch_detection_qwen3() {

@@ -3,6 +3,7 @@ use super::local::{build_model_info, LocalModel};
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::TextModel;
     use crate::utils::{get_hidden_size, get_max_input_length};
     use approx::assert_abs_diff_eq;
     use std::path::PathBuf;
@@ -466,7 +467,8 @@ mod tests {
         let second = &embeddings[1];
         let mut differences = 0;
         for (a, b) in first.iter().zip(second.iter()) {
-            if (a - b).abs() > 1e-6 {
+            let diff: f32 = (*a - *b).abs();
+            if diff > 1e-6 {
                 differences += 1;
             }
         }
