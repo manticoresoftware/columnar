@@ -36,7 +36,7 @@ pub struct EmbedLib {
 const LIB: EmbedLib = EmbedLib {
     version: 2usize,
     version_str: {
-        let version_bytes = b"1.1.0\0";
+        let version_bytes = b"1.1.1\0";
         version_bytes.as_ptr() as *const c_char
     },
     load_model: TextModelWrapper::load_model,

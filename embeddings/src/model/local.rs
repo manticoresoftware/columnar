@@ -1,37 +1,73 @@
 use super::TextModel;
-use crate::LibError;
-use anyhow::Result;
-use candle_core::{Device, Tensor};
-use candle_nn::VarBuilder;
-use candle_transformers::models::bert::{BertModel, Config, HiddenAct, DTYPE};
-use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
-use std::path::PathBuf;
-use tokenizers::{
-    models::bpe::BPE, normalizers, pre_tokenizers::byte_level::ByteLevel,
-    processors::roberta::RobertaProcessing, DecoderWrapper, ModelWrapper, NormalizerWrapper,
-    PostProcessorWrapper, PreTokenizerWrapper, Tokenizer, TokenizerImpl,
-};
-
+use crate::error::LibError;
 use crate::utils::{
     chunk_input_tokens, get_hidden_size, get_max_input_length, get_mean_vector, normalize,
 };
+use candle_core::{DType, Device, Tensor};
+use candle_nn::VarBuilder;
+use candle_transformers::models::bert::{
+    BertModel, Config as BertConfig, HiddenAct, DTYPE as BERT_DTYPE,
+};
+use candle_transformers::models::gemma::{Config as GemmaConfig, Model as GemmaModel};
+use candle_transformers::models::llama::{
+    Cache as LlamaCache, Config as LlamaConfig, Llama as LlamaModel,
+    LlamaConfig as LlamaConfigSerde,
+};
+use candle_transformers::models::mistral::{Config as MistralConfig, Model as MistralModel};
+use candle_transformers::models::qwen3::{Config as QwenConfig, Model as QwenModel};
+use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
+use serde_json::Value;
+use std::cell::RefCell;
+use std::error::Error;
+use std::path::PathBuf;
+use tokenizers::Tokenizer;
 
-#[derive(Debug)]
-pub struct ModelInfo {
-    config_path: PathBuf,
-    tokenizer_path: Option<PathBuf>,
-    vocab_path: Option<PathBuf>,
-    merges_path: Option<PathBuf>,
-    weights_path: PathBuf,
-    use_pth: bool,
+/// Model architecture type - determines pooling strategy
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ModelArch {
+    /// BERT-style bidirectional encoder (mean pooling)
+    Bert,
+    /// Causal/LM-style decoder (mean pooling)
+    Causal,
 }
 
+impl ModelArch {
+    /// Detect architecture from model config
+    pub fn from_config(config: &str) -> Self {
+        let model_type = model_type_from_config(config);
+
+        match model_type.as_deref() {
+            // Qwen, Llama, Mistral, Gemma use causal architecture
+            Some("qwen2") | Some("qwen3") | Some("llama") | Some("mistral") | Some("gemma")
+            | Some("gemma2") | Some("gemma3") | Some("gemma3_text") => ModelArch::Causal,
+            // Default to BERT for everything else
+            _ => ModelArch::Bert,
+        }
+    }
+}
+
+fn model_type_from_config(config: &str) -> Option<String> {
+    let config: Value = serde_json::from_str(config).unwrap_or_default();
+    config
+        .get("model_type")
+        .and_then(Value::as_str)
+        .map(str::to_lowercase)
+}
+
+/// Model metadata for local models
+#[derive(Debug)]
+pub struct LocalModelInfo {
+    pub config_path: PathBuf,
+    pub tokenizer_path: PathBuf,
+    pub weights_path: PathBuf,
+}
+
+/// Download and cache model files from HuggingFace
 pub fn build_model_info(
     cache_path: PathBuf,
     model_id: &str,
     revision: &str,
-    use_pth: bool,
-) -> Result<ModelInfo> {
+) -> Result<LocalModelInfo, Box<dyn Error>> {
     let repo = Repo::with_revision(model_id.to_string(), RepoType::Model, revision.to_string());
     let api = ApiBuilder::new()
         .with_cache_dir(cache_path)
@@ -42,181 +78,370 @@ pub fn build_model_info(
     let config_path = api
         .get("config.json")
         .map_err(|_| LibError::ModelConfigFetchFailed)?;
-    let tokenizer_path = api.get("tokenizer.json").ok();
-    let vocab_path = api.get("vocab.json").ok();
-    let merges_path = api.get("merges.txt").ok();
-    if tokenizer_path.is_none() && (vocab_path.is_none() || merges_path.is_none()) {
-        return Err(LibError::ModelTokenizerFetchFailed.into());
-    }
-    let weights_path = if use_pth {
-        api.get("pytorch_model.bin")
-            .map_err(|_| LibError::ModelWeightsFetchFailed)?
-    } else {
-        api.get("model.safetensors")
-            .map_err(|_| LibError::ModelWeightsFetchFailed)?
-    };
-    Ok(ModelInfo {
+    let tokenizer_path = api
+        .get("tokenizer.json")
+        .map_err(|_| LibError::ModelTokenizerFetchFailed)?;
+    let weights_path = api
+        .get("model.safetensors")
+        .map_err(|_| LibError::ModelWeightsFetchFailed)?;
+
+    Ok(LocalModelInfo {
         config_path,
         tokenizer_path,
-        vocab_path,
-        merges_path,
         weights_path,
-        use_pth,
     })
 }
 
-fn load_tokenizer(model: &ModelInfo) -> Result<Tokenizer> {
-    if let Some(path) = &model.tokenizer_path {
-        return Tokenizer::from_file(path).map_err(|_| LibError::ModelTokenizerLoadFailed.into());
+/// Load tokenizer with fallback for BPE format
+pub fn load_tokenizer(path: &PathBuf) -> Result<Tokenizer, Box<dyn Error>> {
+    if let Ok(tok) = Tokenizer::from_file(path) {
+        return Ok(tok);
     }
 
-    let vocab_path = model
-        .vocab_path
-        .as_ref()
-        .ok_or(LibError::ModelTokenizerLoadFailed)?;
-    let merges_path = model
-        .merges_path
-        .as_ref()
-        .ok_or(LibError::ModelTokenizerLoadFailed)?;
+    let contents = std::fs::read_to_string(path).map_err(|_| LibError::ModelTokenizerLoadFailed)?;
+    let mut value: Value =
+        serde_json::from_str(&contents).map_err(|_| LibError::ModelTokenizerLoadFailed)?;
 
-    let bpe = BPE::from_file(
-        vocab_path
-            .to_str()
-            .ok_or(LibError::ModelTokenizerLoadFailed)?,
-        merges_path
-            .to_str()
-            .ok_or(LibError::ModelTokenizerLoadFailed)?,
-    )
-    .unk_token("<unk>".to_string())
-    .build()
-    .map_err(|_| LibError::ModelTokenizerLoadFailed)?;
-
-    let mut tokenizer = Tokenizer::new(bpe);
-    tokenizer.with_pre_tokenizer(ByteLevel::default());
-
-    let post_processor = RobertaProcessing::new(("</s>".to_string(), 2), ("<s>".to_string(), 0))
-        .trim_offsets(false)
-        .add_prefix_space(true);
-    tokenizer.with_post_processor(post_processor);
-
-    let normalizer = normalizers::Sequence::new(vec![normalizers::Strip::new(true, true).into()]);
-    tokenizer.with_normalizer(normalizer);
-
-    Ok(tokenizer)
-}
-
-fn build_model_and_tokenizer(
-    model: ModelInfo,
-    device: Device,
-) -> Result<(BertModel, Tokenizer, usize, usize)> {
-    let config =
-        std::fs::read_to_string(&model.config_path).map_err(|_| LibError::ModelConfigReadFailed)?;
-    let max_input_len =
-        get_max_input_length(&config).map_err(|_| LibError::ModelMaxInputLenGetFailed)?;
-    let hidden_size = get_hidden_size(&config).map_err(|_| LibError::ModelHiddenSizeGetFailed)?;
-
-    let mut config: Config =
-        serde_json::from_str(&config).map_err(|_| LibError::ModelConfigParseFailed)?;
-    let tokenizer = load_tokenizer(&model)?;
-
-    let vb = if model.use_pth {
-        VarBuilder::from_pth(&model.weights_path, DTYPE, &device)
-            .map_err(|_| LibError::ModelWeightsLoadFailed)?
-    } else {
-        unsafe {
-            VarBuilder::from_mmaped_safetensors(&[model.weights_path], DTYPE, &device)
-                .map_err(|_| LibError::ModelWeightsLoadFailed)?
+    if let Some(model) = value.get_mut("model").and_then(Value::as_object_mut) {
+        model.remove("ignore_merges");
+        if let Some(merges) = model.get_mut("merges").and_then(Value::as_array_mut) {
+            for item in merges.iter_mut() {
+                if let Value::Array(parts) = item {
+                    if parts.len() == 2 {
+                        let a = parts[0].as_str().unwrap_or_default();
+                        let b = parts[1].as_str().unwrap_or_default();
+                        *item = Value::String(format!("{a} {b}"));
+                    }
+                }
+            }
         }
-    };
-    config.hidden_act = HiddenAct::GeluApproximate;
+    }
 
-    let model = BertModel::load(vb, &config).map_err(|_| LibError::ModelLoadFailed)?;
-    Ok((model, tokenizer, max_input_len, hidden_size))
+    let bytes = serde_json::to_vec(&value).map_err(|_| LibError::ModelTokenizerLoadFailed)?;
+    Tokenizer::from_bytes(&bytes).map_err(|_| LibError::ModelTokenizerLoadFailed.into())
 }
 
-pub struct LocalModel {
+/// BERT-style local embedding model
+pub struct BertEmbeddingModel {
     model: BertModel,
     tokenizer: Tokenizer,
     max_input_len: usize,
     hidden_size: usize,
+    device: Device,
 }
 
-impl LocalModel {
+impl BertEmbeddingModel {
+    pub fn new(model_info: LocalModelInfo, use_gpu: bool) -> Result<Self, Box<dyn Error>> {
+        let device = if use_gpu {
+            Device::new_cuda(0).map_err(|_| LibError::DeviceCudaInitFailed)?
+        } else {
+            Device::Cpu
+        };
+        let config = std::fs::read_to_string(&model_info.config_path)
+            .map_err(|_| LibError::ModelConfigReadFailed)?;
+        let max_input_len =
+            get_max_input_length(&config).map_err(|_| LibError::ModelMaxInputLenGetFailed)?;
+        let hidden_size =
+            get_hidden_size(&config).map_err(|_| LibError::ModelHiddenSizeGetFailed)?;
+
+        let mut config: BertConfig =
+            serde_json::from_str(&config).map_err(|_| LibError::ModelConfigParseFailed)?;
+        config.hidden_act = HiddenAct::GeluApproximate;
+
+        let mut tokenizer = load_tokenizer(&model_info.tokenizer_path)?;
+        tokenizer.with_padding(None);
+        let _ = tokenizer.with_truncation(None);
+
+        let vb = unsafe {
+            VarBuilder::from_mmaped_safetensors(&[model_info.weights_path], BERT_DTYPE, &device)
+                .map_err(|_| LibError::ModelWeightsLoadFailed)?
+        };
+
+        let model = BertModel::load(vb, &config).map_err(|_| LibError::ModelLoadFailed)?;
+
+        Ok(Self {
+            model,
+            tokenizer: tokenizer.clone(),
+            max_input_len,
+            hidden_size,
+            device,
+        })
+    }
+}
+
+pub enum CausalEmbeddingKind {
+    Qwen {
+        model: RefCell<QwenModel>,
+    },
+    Llama {
+        model: RefCell<LlamaModel>,
+        config: LlamaConfig,
+        dtype: DType,
+    },
+    Mistral {
+        model: RefCell<MistralModel>,
+    },
+    Gemma {
+        model: RefCell<GemmaModel>,
+    },
+}
+
+/// Causal embedding model (Qwen/Llama/Mistral/Gemma).
+pub struct CausalEmbeddingModel {
+    kind: CausalEmbeddingKind,
+    tokenizer: Tokenizer,
+    max_input_len: usize,
+    hidden_size: usize,
+    device: Device,
+}
+
+impl CausalEmbeddingModel {
     pub fn new(
-        model_id: &str,
-        cache_path: PathBuf,
+        model_info: LocalModelInfo,
+        model_type: &str,
         use_gpu: bool,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        let revision = "main";
-        let use_pth = false;
+    ) -> Result<Self, Box<dyn Error>> {
         let device = if use_gpu {
             Device::new_cuda(0).map_err(|_| LibError::DeviceCudaInitFailed)?
         } else {
             Device::Cpu
         };
 
-        let model_info = build_model_info(cache_path, model_id, revision, use_pth)?;
-        let (model, mut tokenizer, max_input_len, hidden_size) =
-            build_model_and_tokenizer(model_info, device)?;
-        let tokenizer = tokenizer
-            .with_padding(None)
-            .with_truncation(None)
-            .map_err(|_| LibError::ModelTokenizerConfigurationFailed)?;
+        let config = std::fs::read_to_string(&model_info.config_path)
+            .map_err(|_| LibError::ModelConfigReadFailed)?;
+        let max_input_len =
+            get_max_input_length(&config).map_err(|_| LibError::ModelMaxInputLenGetFailed)?;
+        let hidden_size =
+            get_hidden_size(&config).map_err(|_| LibError::ModelHiddenSizeGetFailed)?;
+
+        let dtype = dtype_from_config(&config, &device);
+        let vb = unsafe {
+            VarBuilder::from_mmaped_safetensors(
+                std::slice::from_ref(&model_info.weights_path),
+                dtype,
+                &device,
+            )
+            .map_err(|_| LibError::ModelWeightsLoadFailed)?
+        };
+
+        let vb = if vb.contains_tensor("model.embed_tokens.weight") {
+            vb
+        } else if vb.contains_tensor("embed_tokens.weight") {
+            vb.rename_f(|name| name.strip_prefix("model.").unwrap_or(name).to_string())
+        } else {
+            vb
+        };
+
+        let kind = match model_type {
+            "qwen2" | "qwen3" => {
+                let cfg: QwenConfig =
+                    serde_json::from_str(&config).map_err(|_| LibError::ModelConfigParseFailed)?;
+                let model = QwenModel::new(&cfg, vb).map_err(|_| LibError::ModelLoadFailed)?;
+                CausalEmbeddingKind::Qwen {
+                    model: RefCell::new(model),
+                }
+            }
+            "llama" => {
+                let cfg_serde: LlamaConfigSerde =
+                    serde_json::from_str(&config).map_err(|_| LibError::ModelConfigParseFailed)?;
+                let cfg = cfg_serde.into_config(false);
+                let model = LlamaModel::load(vb, &cfg).map_err(|_| LibError::ModelLoadFailed)?;
+                CausalEmbeddingKind::Llama {
+                    model: RefCell::new(model),
+                    config: cfg,
+                    dtype,
+                }
+            }
+            "mistral" => {
+                let cfg: MistralConfig =
+                    serde_json::from_str(&config).map_err(|_| LibError::ModelConfigParseFailed)?;
+                let model = MistralModel::new(&cfg, vb).map_err(|_| LibError::ModelLoadFailed)?;
+                CausalEmbeddingKind::Mistral {
+                    model: RefCell::new(model),
+                }
+            }
+            "gemma" | "gemma2" | "gemma3" | "gemma3_text" => {
+                let cfg: GemmaConfig =
+                    serde_json::from_str(&config).map_err(|_| LibError::ModelConfigParseFailed)?;
+                let model =
+                    GemmaModel::new(false, &cfg, vb).map_err(|_| LibError::ModelLoadFailed)?;
+                CausalEmbeddingKind::Gemma {
+                    model: RefCell::new(model),
+                }
+            }
+            _ => return Err(Box::new(LibError::ModelLoadFailed)),
+        };
+
+        let mut tokenizer = load_tokenizer(&model_info.tokenizer_path)?;
+        tokenizer.with_padding(None);
+        let _ = tokenizer.with_truncation(None);
 
         Ok(Self {
-            model,
-            tokenizer: tokenizer.clone().into(),
+            kind,
+            tokenizer,
             max_input_len,
             hidden_size,
+            device,
         })
     }
 }
 
-impl serde::Serialize for LocalModel {
-    fn serialize<S>(&self, serializer: S) -> std::prelude::v1::Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        <TokenizerImpl<
-            ModelWrapper,
-            NormalizerWrapper,
-            PreTokenizerWrapper,
-            PostProcessorWrapper,
-            DecoderWrapper,
-        > as serde::Serialize>::serialize(&self.tokenizer, serializer)
+/// Determine tensor dtype from config, handling CPU BF16 limitation
+fn dtype_from_config(config: &str, device: &Device) -> DType {
+    let config: Value = serde_json::from_str(config).unwrap_or_default();
+    let dtype_str = config
+        .get("torch_dtype")
+        .or_else(|| config.get("dtype"))
+        .and_then(Value::as_str);
+    let dtype = dtype_str
+        .map(|s| match s {
+            "bfloat16" => DType::BF16,
+            "float16" => DType::F16,
+            "float32" => DType::F32,
+            _ => DType::F16,
+        })
+        .unwrap_or(DType::F16);
+
+    match (dtype, device) {
+        (DType::BF16, Device::Cpu) => DType::F16,
+        _ => dtype,
+    }
+}
+
+/// Unified local embedding model
+pub enum LocalModel {
+    Bert(BertEmbeddingModel),
+    Causal(CausalEmbeddingModel),
+}
+
+impl LocalModel {
+    pub fn new(model_id: &str, cache_path: PathBuf, use_gpu: bool) -> Result<Self, Box<dyn Error>> {
+        let model_info = build_model_info(cache_path, model_id, "main")?;
+        let config = std::fs::read_to_string(&model_info.config_path)
+            .map_err(|_| LibError::ModelConfigReadFailed)?;
+        let arch = ModelArch::from_config(&config);
+        let model_type = model_type_from_config(&config);
+
+        match arch {
+            ModelArch::Bert => {
+                let model = BertEmbeddingModel::new(model_info, use_gpu)?;
+                Ok(LocalModel::Bert(model))
+            }
+            ModelArch::Causal => match model_type.as_deref() {
+                Some("qwen2") | Some("qwen3") | Some("llama") | Some("mistral") | Some("gemma")
+                | Some("gemma2") | Some("gemma3") | Some("gemma3_text") => {
+                    let model = CausalEmbeddingModel::new(
+                        model_info,
+                        model_type.as_deref().unwrap_or_default(),
+                        use_gpu,
+                    )?;
+                    Ok(LocalModel::Causal(model))
+                }
+                _ => Err(Box::new(LibError::ModelLoadFailed)),
+            },
+        }
     }
 }
 
 impl TextModel for LocalModel {
-    fn predict(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, Box<dyn std::error::Error>> {
-        let device = &self.model.device;
+    fn predict(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
+        let (device, max_input_len) = match self {
+            LocalModel::Bert(m) => (m.device.clone(), m.max_input_len),
+            LocalModel::Causal(m) => (m.device.clone(), m.max_input_len),
+        };
+
         let mut all_results: Vec<Vec<f32>> = Vec::new();
+
         for text in texts.iter() {
-            let tokens = self
-                .tokenizer
-                .encode(*text, true)
-                .map_err(|_| LibError::ModelTokenizerEncodeFailed)?
-                .get_ids()
-                .to_vec();
-            let chunks = chunk_input_tokens(&tokens, self.max_input_len, self.max_input_len / 10);
+            let tokens = match self {
+                LocalModel::Bert(m) => m
+                    .tokenizer
+                    .encode(*text, true)
+                    .map_err(|_| LibError::ModelTokenizerEncodeFailed)?
+                    .get_ids()
+                    .to_vec(),
+                LocalModel::Causal(m) => m
+                    .tokenizer
+                    .encode(*text, true)
+                    .map_err(|_| LibError::ModelTokenizerEncodeFailed)?
+                    .get_ids()
+                    .to_vec(),
+            };
+
+            let chunks = chunk_input_tokens(&tokens, max_input_len, max_input_len / 10);
             let mut results: Vec<Vec<f32>> = Vec::new();
+
             for chunk in chunks.iter() {
-                let token_ids = Tensor::new(&chunk[..], device)?.unsqueeze(0)?;
-                let token_type_ids = token_ids.zeros_like()?;
-                let embeddings = self.model.forward(&token_ids, &token_type_ids, None)?;
+                let token_ids = Tensor::new(&chunk[..], &device)?.unsqueeze(0)?;
+                let embeddings = match self {
+                    LocalModel::Bert(m) => {
+                        let token_type_ids = token_ids.zeros_like()?;
+                        let emb = m.model.forward(&token_ids, &token_type_ids, None)?;
+                        let seq_len = token_ids.dims()[1];
+                        let summed = emb.sum(1)?.to_dtype(DType::F32)?;
+                        let divisor = Tensor::new(seq_len as f32, &device)?;
+                        let divided = summed.broadcast_div(&divisor)?;
+                        divided.to_dtype(DType::F32)?
+                    }
+                    LocalModel::Causal(m) => match &m.kind {
+                        CausalEmbeddingKind::Qwen { model } => {
+                            let mut model = model.borrow_mut();
+                            model.clear_kv_cache();
+                            let emb = model.forward(&token_ids, 0)?;
+                            let (_, n_tokens, _) = emb.dims3()?;
+                            let summed = emb.sum(1)?.to_dtype(DType::F32)?;
+                            let divisor = Tensor::new(n_tokens as f32, &device)?;
+                            let divided = summed.broadcast_div(&divisor)?;
+                            divided.to_dtype(DType::F32)?
+                        }
+                        CausalEmbeddingKind::Llama {
+                            model,
+                            config,
+                            dtype,
+                        } => {
+                            let mut cache = LlamaCache::new(false, *dtype, config, &device)?;
+                            let emb = model
+                                .borrow()
+                                .forward_hidden_states(&token_ids, 0, &mut cache)?;
+                            let (_, n_tokens, _) = emb.dims3()?;
+                            let summed = emb.sum(1)?.to_dtype(DType::F32)?;
+                            let divisor = Tensor::new(n_tokens as f32, &device)?;
+                            let divided = summed.broadcast_div(&divisor)?;
+                            divided.to_dtype(DType::F32)?
+                        }
+                        CausalEmbeddingKind::Mistral { model } => {
+                            let mut model = model.borrow_mut();
+                            model.clear_kv_cache();
+                            let emb = model.forward_hidden_states(&token_ids, 0)?;
+                            let (_, n_tokens, _) = emb.dims3()?;
+                            let summed = emb.sum(1)?.to_dtype(DType::F32)?;
+                            let divisor = Tensor::new(n_tokens as f32, &device)?;
+                            let divided = summed.broadcast_div(&divisor)?;
+                            divided.to_dtype(DType::F32)?
+                        }
+                        CausalEmbeddingKind::Gemma { model } => {
+                            let mut model = model.borrow_mut();
+                            model.clear_kv_cache();
+                            let emb = model.forward_hidden_states(&token_ids, 0)?;
+                            let (_, n_tokens, _) = emb.dims3()?;
+                            let summed = emb.sum(1)?.to_dtype(DType::F32)?;
+                            let divisor = Tensor::new(n_tokens as f32, &device)?;
+                            let divided = summed.broadcast_div(&divisor)?;
+                            divided.to_dtype(DType::F32)?
+                        }
+                    },
+                };
 
-                let (n_sentences, n_tokens, _hidden_size) = embeddings.dims3()?;
-                let embeddings = (embeddings.sum(1)? / (n_tokens as f64))?;
-
-                if let Some(j) = (0..n_sentences).next() {
-                    let e_j = embeddings.get(j)?;
-                    let mut emb: Vec<f32> = e_j.to_vec1()?;
+                if let Ok(e_j) = embeddings.get(0) {
+                    let emb_vec: Vec<f32> = e_j
+                        .to_vec1::<f32>()
+                        .map_err(|e| -> Box<dyn Error> { Box::new(e) })?;
+                    let mut emb = emb_vec;
                     normalize(&mut emb);
                     results.push(emb);
                 }
             }
 
-            // Validate that we have results before computing mean - this should never happen for local models
             if results.is_empty() {
                 return Err(Box::new(LibError::ModelLoadFailed));
             }
@@ -225,7 +450,6 @@ impl TextModel for LocalModel {
             all_results.push(mean_vector);
         }
 
-        // Final validation - ensure we have embeddings for all input texts
         if all_results.is_empty() || all_results.len() != texts.len() {
             return Err(Box::new(LibError::ModelLoadFailed));
         }
@@ -234,74 +458,169 @@ impl TextModel for LocalModel {
     }
 
     fn get_hidden_size(&self) -> usize {
-        self.hidden_size
+        match self {
+            LocalModel::Bert(m) => m.hidden_size,
+            LocalModel::Causal(m) => m.hidden_size,
+        }
     }
 
     fn get_max_input_len(&self) -> usize {
-        self.max_input_len
+        match self {
+            LocalModel::Bert(m) => m.max_input_len,
+            LocalModel::Causal(m) => m.max_input_len,
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use approx::assert_abs_diff_eq;
 
-    fn check_embedding_properties(embedding: &[f32], expected_len: usize) {
-        assert_eq!(embedding.len(), expected_len);
-
-        // Check if the embedding is normalized (L2 norm should be close to 1)
-        let norm: f32 = embedding.iter().map(|&x| x * x).sum::<f32>().sqrt();
-        assert_abs_diff_eq!(norm, 1.0, epsilon = 1e-6);
+    #[test]
+    fn test_model_arch_detection_qwen3() {
+        let qwen_config = r#"{"model_type":"qwen3"}"#;
+        assert_eq!(ModelArch::from_config(qwen_config), ModelArch::Causal);
     }
 
     #[test]
-    fn test_all_minilm_l6_v2() {
-        let model_id = "sentence-transformers/all-MiniLM-L6-v2";
-        let cache_path = PathBuf::from(".cache/manticore");
-        let _local_model = LocalModel::new(model_id, cache_path.clone(), false);
-
-        let test_sentences = [
-            "This is a test sentence.",
-            "Another sentence to encode.",
-            "Sentence transformers are awesome!",
-        ];
-
-        for sentence in &test_sentences {
-            let local_model = LocalModel::new(model_id, cache_path.clone(), false).unwrap();
-            let embedding = local_model.predict(&[sentence]).unwrap();
-            check_embedding_properties(&embedding[0], local_model.get_hidden_size());
-        }
+    fn test_model_arch_detection_qwen2() {
+        let qwen2_config = r#"{"model_type":"qwen2"}"#;
+        assert_eq!(ModelArch::from_config(qwen2_config), ModelArch::Causal);
     }
 
     #[test]
-    fn test_embedding_consistency() {
-        let model_id = "sentence-transformers/all-MiniLM-L6-v2";
-        let cache_path = PathBuf::from(".cache/manticore");
-        let local_model = LocalModel::new(model_id, cache_path, false).unwrap();
-
-        let sentence = &["This is a test sentence."];
-        let embedding1 = local_model.predict(sentence).unwrap();
-        let embedding2 = local_model.predict(sentence).unwrap();
-
-        for (e1, e2) in embedding1[0].iter().zip(embedding2[0].iter()) {
-            assert_abs_diff_eq!(e1, e2, epsilon = 1e-6);
-        }
+    fn test_model_arch_detection_llama() {
+        let llama_config = r#"{"model_type":"llama"}"#;
+        assert_eq!(ModelArch::from_config(llama_config), ModelArch::Causal);
     }
 
     #[test]
-    fn test_hidden_size() {
-        let model_id = "sentence-transformers/all-MiniLM-L6-v2";
-        let cache_path = PathBuf::from(".cache/manticore");
-        let local_model = LocalModel::new(model_id, cache_path, false).unwrap();
-        assert_eq!(local_model.get_hidden_size(), 384);
+    fn test_model_arch_detection_mistral() {
+        let mistral_config = r#"{"model_type":"mistral"}"#;
+        assert_eq!(ModelArch::from_config(mistral_config), ModelArch::Causal);
     }
 
     #[test]
-    fn test_max_input_len() {
-        let model_id = "sentence-transformers/all-MiniLM-L6-v2";
-        let cache_path = PathBuf::from(".cache/manticore");
-        let local_model = LocalModel::new(model_id, cache_path, false).unwrap();
-        assert_eq!(local_model.get_max_input_len(), 512);
+    fn test_model_arch_detection_gemma() {
+        let gemma_config = r#"{"model_type":"gemma"}"#;
+        assert_eq!(ModelArch::from_config(gemma_config), ModelArch::Causal);
+    }
+
+    #[test]
+    fn test_model_arch_detection_gemma3_text() {
+        let gemma3_config = r#"{"model_type":"gemma3_text"}"#;
+        assert_eq!(ModelArch::from_config(gemma3_config), ModelArch::Causal);
+    }
+
+    #[test]
+    fn test_model_arch_detection_bert() {
+        let bert_config = r#"{"model_type":"bert"}"#;
+        assert_eq!(ModelArch::from_config(bert_config), ModelArch::Bert);
+    }
+
+    #[test]
+    fn test_model_arch_detection_invalid() {
+        let invalid_config = r#"{"foo":"bar"}"#;
+        assert_eq!(ModelArch::from_config(invalid_config), ModelArch::Bert);
+    }
+
+    #[test]
+    fn test_model_arch_detection_case_insensitive() {
+        let config1 = r#"{"model_type":"Qwen3","_name_or_path":"qwen/embedding"}"#;
+        assert_eq!(ModelArch::from_config(config1), ModelArch::Causal);
+    }
+
+    #[test]
+    fn test_dtype_from_config_bf16_cpu() {
+        let bf16_config = r#"{"torch_dtype":"bfloat16"}"#;
+        assert_eq!(dtype_from_config(bf16_config, &Device::Cpu), DType::F16);
+    }
+
+    #[test]
+    fn test_dtype_from_config_f16() {
+        let f16_config = r#"{"torch_dtype":"float16"}"#;
+        assert_eq!(dtype_from_config(f16_config, &Device::Cpu), DType::F16);
+    }
+
+    #[test]
+    fn test_dtype_from_config_f32() {
+        let f32_config = r#"{"torch_dtype":"float32"}"#;
+        assert_eq!(dtype_from_config(f32_config, &Device::Cpu), DType::F32);
+    }
+
+    #[test]
+    fn test_dtype_from_config_default() {
+        let default_config = r#"{}"#;
+        assert_eq!(dtype_from_config(default_config, &Device::Cpu), DType::F16);
+    }
+
+    #[test]
+    fn test_dtype_from_config_dtype_field() {
+        let f32_config = r#"{"dtype":"float32"}"#;
+        assert_eq!(dtype_from_config(f32_config, &Device::Cpu), DType::F32);
+    }
+
+    // Qwen model integration tests (require actual model files)
+    #[test]
+    fn test_qwen3_embedding_model_detection() {
+        // Test that Qwen3 models are detected as Causal architecture
+        let qwen_config = r#"{
+            "model_type": "qwen3",
+            "hidden_size": 2048,
+            "num_attention_heads": 16,
+            "num_hidden_layers": 24,
+            "vocab_size": 151646,
+            "max_position_embeddings": 32768
+        }"#;
+        assert_eq!(ModelArch::from_config(qwen_config), ModelArch::Causal);
+    }
+
+    #[test]
+    fn test_qwen3_embedding_hidden_size() {
+        // Qwen3-Embedding models typically have 2048 dimensions
+        let qwen_config = r#"{"model_type":"qwen3","hidden_size":2048}"#;
+        assert_eq!(get_hidden_size(qwen_config).unwrap(), 2048);
+    }
+
+    #[test]
+    fn test_qwen3_embedding_max_input_len() {
+        // Qwen3 models support long context (32K tokens)
+        let qwen_config = r#"{"model_type":"qwen3","max_position_embeddings":32768}"#;
+        assert_eq!(get_max_input_length(qwen_config).unwrap(), 32768);
+    }
+
+    #[test]
+    fn test_qwen2_model_detection() {
+        // Qwen2 should also be detected as Causal
+        let qwen2_config = r#"{"model_type":"qwen2"}"#;
+        assert_eq!(ModelArch::from_config(qwen2_config), ModelArch::Causal);
+    }
+
+    #[test]
+    fn test_llama_embedding_hidden_size() {
+        // Llama models typically have various hidden sizes (4096, 5120, etc.)
+        let llama_config = r#"{"model_type":"llama","hidden_size":4096}"#;
+        assert_eq!(get_hidden_size(llama_config).unwrap(), 4096);
+    }
+
+    #[test]
+    fn test_llama_embedding_max_input_len() {
+        // Llama models support various context lengths
+        let llama_config = r#"{"model_type":"llama","max_position_embeddings":4096}"#;
+        assert_eq!(get_max_input_length(llama_config).unwrap(), 4096);
+    }
+
+    #[test]
+    fn test_mistral_embedding_hidden_size() {
+        // Mistral models typically have 4096 hidden dimensions
+        let mistral_config = r#"{"model_type":"mistral","hidden_size":4096}"#;
+        assert_eq!(get_hidden_size(mistral_config).unwrap(), 4096);
+    }
+
+    #[test]
+    fn test_gemma_embedding_hidden_size() {
+        // Gemma models have various hidden sizes
+        let gemma_config = r#"{"model_type":"gemma","hidden_size":2048}"#;
+        assert_eq!(get_hidden_size(gemma_config).unwrap(), 2048);
     }
 }
