@@ -95,7 +95,7 @@ pub fn build_model_info(
             let weight_map = index_json
                 .get("weight_map")
                 .and_then(Value::as_object)
-                .ok_or_else(|| LibError::ModelWeightsFetchFailed)?;
+                .ok_or(LibError::ModelWeightsFetchFailed)?;
 
             let mut shards: Vec<String> = weight_map
                 .values()
