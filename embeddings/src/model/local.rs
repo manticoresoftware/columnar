@@ -20,6 +20,7 @@ use serde_json::Value;
 use std::cell::RefCell;
 use std::error::Error;
 use std::path::PathBuf;
+use std::sync::Mutex;
 use tokenizers::Tokenizer;
 
 /// Model architecture type - determines pooling strategy
@@ -193,6 +194,7 @@ pub struct CausalEmbeddingModel {
     max_input_len: usize,
     hidden_size: usize,
     device: Device,
+    predict_lock: Mutex<()>,
 }
 
 impl CausalEmbeddingModel {
@@ -282,6 +284,7 @@ impl CausalEmbeddingModel {
             max_input_len,
             hidden_size,
             device,
+            predict_lock: Mutex::new(()),
         })
     }
 }
@@ -345,6 +348,15 @@ impl LocalModel {
 
 impl TextModel for LocalModel {
     fn predict(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
+        let _predict_guard = match self {
+            LocalModel::Causal(m) => Some(
+                m.predict_lock
+                    .lock()
+                    .map_err(|_| LibError::ModelLoadFailed)?,
+            ),
+            LocalModel::Bert(_) => None,
+        };
+
         let (device, max_input_len) = match self {
             LocalModel::Bert(m) => (m.device.clone(), m.max_input_len),
             LocalModel::Causal(m) => (m.device.clone(), m.max_input_len),
