@@ -6,9 +6,7 @@ mod tests {
     use crate::model::TextModel;
     use crate::utils::{get_hidden_size, get_max_input_length};
     use approx::assert_abs_diff_eq;
-    use std::collections::HashSet;
     use std::path::PathBuf;
-    use std::sync::{Mutex, OnceLock};
 
     fn check_embedding_properties(embedding: &[f32], expected_len: usize) {
         assert_eq!(embedding.len(), expected_len);
@@ -16,26 +14,7 @@ mod tests {
         assert_abs_diff_eq!(norm, 1.0, epsilon = 1e-6);
     }
 
-    fn ensure_model_cached(model_id: &str, cache_path: &PathBuf) {
-        static DOWNLOADED: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
-        let downloaded = DOWNLOADED.get_or_init(|| Mutex::new(HashSet::new()));
-        let mut set = downloaded.lock().expect("model cache lock poisoned");
-        if set.contains(model_id) {
-            return;
-        }
-        std::fs::create_dir_all(cache_path).expect("failed to create model cache directory");
-        build_model_info(cache_path.clone(), model_id, "main")
-            .expect("failed to download model into cache");
-        set.insert(model_id.to_string());
-    }
-
     fn test_cache_path() -> PathBuf {
-        if let Ok(path) = std::env::var("MANTICORE_TEST_CACHE") {
-            return PathBuf::from(path);
-        }
-        if let Ok(path) = std::env::var("MANTICORE_CACHE_PATH") {
-            return PathBuf::from(path);
-        }
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".cache/manticore")
     }
 
@@ -346,7 +325,6 @@ mod tests {
     fn test_all_minilm_l6_v2() {
         let model_id = "sentence-transformers/all-MiniLM-L6-v2";
         let cache_path = test_cache_path();
-        ensure_model_cached(model_id, &cache_path);
 
         let test_sentences = [
             "This is a test sentence.",
@@ -365,7 +343,6 @@ mod tests {
     fn test_embedding_consistency() {
         let model_id = "sentence-transformers/all-MiniLM-L6-v2";
         let cache_path = test_cache_path();
-        ensure_model_cached(model_id, &cache_path);
         let local_model = LocalModel::new(model_id, cache_path, false).unwrap();
 
         let sentence = &["This is a test sentence."];
@@ -381,7 +358,6 @@ mod tests {
     fn test_hidden_size() {
         let model_id = "sentence-transformers/all-MiniLM-L6-v2";
         let cache_path = test_cache_path();
-        ensure_model_cached(model_id, &cache_path);
         let local_model = LocalModel::new(model_id, cache_path, false).unwrap();
         assert_eq!(local_model.get_hidden_size(), 384);
     }
@@ -390,7 +366,6 @@ mod tests {
     fn test_max_input_len() {
         let model_id = "sentence-transformers/all-MiniLM-L6-v2";
         let cache_path = test_cache_path();
-        ensure_model_cached(model_id, &cache_path);
         let local_model = LocalModel::new(model_id, cache_path, false).unwrap();
         assert_eq!(local_model.get_max_input_len(), 512);
     }
@@ -400,7 +375,6 @@ mod tests {
         // Integration test for Qwen embedding models
         let model_id = "Qwen/Qwen3-Embedding-0.6B";
         let cache_path = test_cache_path();
-        ensure_model_cached(model_id, &cache_path);
 
         let local_model = LocalModel::new(model_id, cache_path.clone(), false)
             .expect("Qwen model should load successfully");
@@ -421,7 +395,6 @@ mod tests {
         // Integration test for Llama-based embedding models.
         let model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0";
         let cache_path = test_cache_path();
-        ensure_model_cached(model_id, &cache_path);
 
         let local_model =
             LocalModel::new(model_id, cache_path.clone(), false).expect("Llama model should load");
@@ -437,7 +410,6 @@ mod tests {
         // Integration test for Mistral-based embedding models.
         let model_id = "Locutusque/TinyMistral-248M-v2";
         let cache_path = test_cache_path();
-        ensure_model_cached(model_id, &cache_path);
 
         let local_model = LocalModel::new(model_id, cache_path.clone(), false)
             .expect("Mistral model should load");
@@ -452,7 +424,6 @@ mod tests {
         // Integration test for Gemma-based embedding models.
         let model_id = "h2oai/embeddinggemma-300m";
         let cache_path = test_cache_path();
-        ensure_model_cached(model_id, &cache_path);
 
         let local_model =
             LocalModel::new(model_id, cache_path.clone(), false).expect("Gemma model should load");
@@ -467,7 +438,6 @@ mod tests {
         // Test batch processing with Qwen model
         let model_id = "Qwen/Qwen3-Embedding-0.6B";
         let cache_path = test_cache_path();
-        ensure_model_cached(model_id, &cache_path);
 
         let result = LocalModel::new(model_id, cache_path.clone(), false);
 

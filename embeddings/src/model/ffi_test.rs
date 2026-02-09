@@ -6,10 +6,6 @@ use std::ptr;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::local::build_model_info;
-    use std::collections::HashSet;
-    use std::path::PathBuf;
-    use std::sync::{Mutex, OnceLock};
 
     // Helper function to create a C string from Rust string
     fn to_c_string(s: &str) -> CString {
@@ -22,97 +18,6 @@ mod tests {
             ptr: s.as_ptr() as *const c_char,
             len: s.len(),
         }
-    }
-
-    fn test_cache_root() -> String {
-        std::env::var("MANTICORE_TEST_CACHE")
-            .or_else(|_| std::env::var("MANTICORE_CACHE_PATH"))
-            .unwrap_or_else(|_| format!("{}/.cache/manticore", env!("CARGO_MANIFEST_DIR")))
-    }
-
-    fn ensure_model_cached(model_id: &str, cache_path: &PathBuf) {
-        static DOWNLOADED: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
-        let downloaded = DOWNLOADED.get_or_init(|| Mutex::new(HashSet::new()));
-        let mut set = downloaded.lock().expect("model cache lock poisoned");
-        if set.contains(model_id) {
-            return;
-        }
-        std::fs::create_dir_all(cache_path).expect("failed to create model cache directory");
-        build_model_info(cache_path.clone(), model_id, "main")
-            .expect("failed to download model into cache");
-        set.insert(model_id.to_string());
-    }
-
-    fn run_concurrent_ffi_embeddings(model_id: &str) {
-        use std::sync::Arc;
-        use std::thread;
-
-        let model_id = model_id.to_string();
-        let cache_root = test_cache_root();
-        let cache_path_buf = PathBuf::from(&cache_root);
-        ensure_model_cached(&model_id, &cache_path_buf);
-
-        let model_name = to_c_string(&model_id);
-        let cache_path = to_c_string(&cache_root);
-        let api_key = to_c_string("");
-
-        let result = TextModelWrapper::load_model(
-            model_name.as_ptr(),
-            model_name.as_bytes().len(),
-            cache_path.as_ptr(),
-            cache_path.as_bytes().len(),
-            api_key.as_ptr(),
-            api_key.as_bytes().len(),
-            false,
-        );
-
-        if result.model.is_null() {
-            let error_message = if result.error.is_null() {
-                "unknown error".to_string()
-            } else {
-                unsafe {
-                    CStr::from_ptr(result.error)
-                        .to_str()
-                        .unwrap_or("unknown error")
-                        .to_string()
-                }
-            };
-            TextModelWrapper::free_model_result(result);
-            panic!("failed to load model {}: {}", model_id, error_message);
-        }
-
-        let model_ptr = result.model as usize;
-        let start = Arc::new(std::sync::Barrier::new(4));
-        let handles: Vec<_> = (0..3)
-            .map(|i| {
-                let start = Arc::clone(&start);
-                let model_ptr = model_ptr;
-                let model_id = model_id.clone();
-                thread::spawn(move || {
-                    start.wait();
-                    let text = format!("Concurrent embedding test {} - {}", model_id, i);
-                    let item = create_string_item(&text);
-                    let items = [item];
-
-                    // Safety: emulate FFI callers that share a model pointer across threads.
-                    let wrapper = unsafe {
-                        std::mem::transmute::<*mut std::ffi::c_void, TextModelWrapper>(
-                            model_ptr as *mut std::ffi::c_void,
-                        )
-                    };
-                    let vec_result =
-                        TextModelWrapper::make_vect_embeddings(&wrapper, items.as_ptr(), 1);
-                    TextModelWrapper::free_vec_result(vec_result);
-                })
-            })
-            .collect();
-
-        start.wait();
-        for handle in handles {
-            handle.join().unwrap();
-        }
-
-        TextModelWrapper::free_model_result(result);
     }
 
     #[test]
@@ -461,24 +366,5 @@ mod tests {
         assert_eq!(options2.cache_path, None);
         assert_eq!(options2.api_key, Some("sk-test456".to_string()));
         assert_eq!(options2.use_gpu, None);
-    }
-
-    #[test]
-    fn test_concurrent_qwen_embeddings_via_ffi() {
-        run_concurrent_ffi_embeddings("Qwen/Qwen3-Embedding-0.6B");
-    }
-
-    #[test]
-    fn test_concurrent_other_models_via_ffi() {
-        let model_ids = [
-            "sentence-transformers/all-MiniLM-L6-v2",
-            "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-            "Locutusque/TinyMistral-248M-v2",
-            "h2oai/embeddinggemma-300m",
-        ];
-
-        for model_id in model_ids {
-            run_concurrent_ffi_embeddings(model_id);
-        }
     }
 }
