@@ -18,9 +18,10 @@ use candle_transformers::models::qwen3::{Config as QwenConfig, Model as QwenMode
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use serde_json::Value;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::error::Error;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, OnceLock};
 use tokenizers::Tokenizer;
 
 /// Model architecture type - determines pooling strategy
@@ -63,12 +64,84 @@ pub struct LocalModelInfo {
     pub weights_paths: Vec<PathBuf>,
 }
 
+fn model_download_lock(model_id: &str) -> Arc<Mutex<()>> {
+    static LOCKS: OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> = OnceLock::new();
+    let locks = LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut map = locks.lock().unwrap_or_else(|e| e.into_inner());
+    map.entry(model_id.to_string())
+        .or_insert_with(|| Arc::new(Mutex::new(())))
+        .clone()
+}
+
+#[cfg(test)]
+struct DownloadTrackerGuard {
+    model_id: String,
+}
+
+#[cfg(test)]
+fn download_tracker_state() -> &'static Mutex<HashMap<String, (usize, usize)>> {
+    static TRACKER: OnceLock<Mutex<HashMap<String, (usize, usize)>>> = OnceLock::new();
+    TRACKER.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+#[cfg(test)]
+fn download_tracker_enter(model_id: &str) -> DownloadTrackerGuard {
+    let mut map = download_tracker_state()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let entry = map.entry(model_id.to_string()).or_insert((0, 0));
+    entry.0 += 1;
+    if entry.0 > entry.1 {
+        entry.1 = entry.0;
+    }
+    DownloadTrackerGuard {
+        model_id: model_id.to_string(),
+    }
+}
+
+#[cfg(test)]
+impl Drop for DownloadTrackerGuard {
+    fn drop(&mut self) {
+        let mut map = download_tracker_state()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if let Some(entry) = map.get_mut(&self.model_id) {
+            if entry.0 > 0 {
+                entry.0 -= 1;
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn reset_download_tracker(model_id: &str) {
+    let mut map = download_tracker_state()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    map.insert(model_id.to_string(), (0, 0));
+}
+
+#[cfg(test)]
+pub(crate) fn download_max_for(model_id: &str) -> usize {
+    let map = download_tracker_state()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    map.get(model_id).map(|entry| entry.1).unwrap_or(0)
+}
+
 /// Download and cache model files from HuggingFace
 pub fn build_model_info(
     cache_path: PathBuf,
     model_id: &str,
     revision: &str,
 ) -> Result<LocalModelInfo, Box<dyn Error>> {
+    let download_lock = model_download_lock(model_id);
+    let _download_guard = download_lock
+        .lock()
+        .map_err(|_| LibError::ModelLoadFailed)?;
+    #[cfg(test)]
+    let _download_tracker = download_tracker_enter(model_id);
+
     let repo = Repo::with_revision(model_id.to_string(), RepoType::Model, revision.to_string());
     let api = ApiBuilder::new()
         .with_cache_dir(cache_path)

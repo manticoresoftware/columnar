@@ -20,6 +20,75 @@ mod tests {
         }
     }
 
+    fn run_concurrent_ffi_embeddings(model_id: &str) {
+        use std::sync::{Arc, Barrier};
+        use std::thread;
+
+        let model_name = to_c_string(model_id);
+        let cache_path = to_c_string("");
+        let api_key = to_c_string("");
+
+        let result = TextModelWrapper::load_model(
+            model_name.as_ptr(),
+            model_name.as_bytes().len(),
+            cache_path.as_ptr(),
+            cache_path.as_bytes().len(),
+            api_key.as_ptr(),
+            api_key.as_bytes().len(),
+            false,
+        );
+
+        if result.model.is_null() {
+            let error_message = if result.error.is_null() {
+                "unknown error".to_string()
+            } else {
+                unsafe {
+                    CStr::from_ptr(result.error)
+                        .to_str()
+                        .unwrap_or("unknown error")
+                        .to_string()
+                }
+            };
+            TextModelWrapper::free_model_result(result);
+            panic!("failed to load model {}: {}", model_id, error_message);
+        }
+
+        let model_ptr = result.model as usize;
+        let start = Arc::new(Barrier::new(4));
+        let handles: Vec<_> = (0..3)
+            .map(|i| {
+                let start = Arc::clone(&start);
+                let model_ptr = model_ptr;
+                let model_id = model_id.to_string();
+                thread::spawn(move || {
+                    start.wait();
+                    let text = format!("Concurrent embedding test {} - {}", model_id, i);
+                    let item = create_string_item(&text);
+                    let items = [item];
+
+                    // Safety: emulate FFI callers that share a model pointer across threads.
+                    let wrapper = unsafe {
+                        std::mem::transmute::<*mut std::ffi::c_void, TextModelWrapper>(
+                            model_ptr as *mut std::ffi::c_void,
+                        )
+                    };
+                    let vec_result =
+                        TextModelWrapper::make_vect_embeddings(&wrapper, items.as_ptr(), 1);
+                    assert!(vec_result.error.is_null());
+                    assert_eq!(vec_result.len, 1);
+                    TextModelWrapper::free_vec_result(vec_result);
+                })
+            })
+            .collect();
+
+        start.wait();
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        TextModelWrapper::free_model_result(result);
+    }
+
     #[test]
     fn test_text_model_result_structure() {
         // Test that TextModelResult has the expected structure
@@ -366,5 +435,10 @@ mod tests {
         assert_eq!(options2.cache_path, None);
         assert_eq!(options2.api_key, Some("sk-test456".to_string()));
         assert_eq!(options2.use_gpu, None);
+    }
+
+    #[test]
+    fn test_concurrent_qwen_embeddings_via_ffi() {
+        run_concurrent_ffi_embeddings("Qwen/Qwen3-Embedding-0.6B");
     }
 }
