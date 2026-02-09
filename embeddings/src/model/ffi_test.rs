@@ -58,7 +58,6 @@ mod tests {
         let handles: Vec<_> = (0..3)
             .map(|i| {
                 let start = Arc::clone(&start);
-                let model_ptr = model_ptr;
                 let model_id = model_id.to_string();
                 thread::spawn(move || {
                     start.wait();
