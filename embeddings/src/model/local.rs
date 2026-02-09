@@ -8,16 +8,17 @@ use candle_nn::VarBuilder;
 use candle_transformers::models::bert::{
     BertModel, Config as BertConfig, HiddenAct, DTYPE as BERT_DTYPE,
 };
-use candle_transformers::models::gemma::{Config as GemmaConfig, Model as GemmaModel};
+use candle_transformers::models::gemma::{Config as GemmaConfig, GemmaCache, Model as GemmaModel};
 use candle_transformers::models::llama::{
     Cache as LlamaCache, Config as LlamaConfig, Llama as LlamaModel,
     LlamaConfig as LlamaConfigSerde,
 };
-use candle_transformers::models::mistral::{Config as MistralConfig, Model as MistralModel};
-use candle_transformers::models::qwen3::{Config as QwenConfig, Model as QwenModel};
+use candle_transformers::models::mistral::{
+    Config as MistralConfig, MistralCache, Model as MistralModel,
+};
+use candle_transformers::models::qwen3::{Config as QwenConfig, Model as QwenModel, Qwen3Cache};
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use serde_json::Value;
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::error::Error;
 use std::path::PathBuf;
@@ -279,18 +280,21 @@ impl BertEmbeddingModel {
 
 pub enum CausalEmbeddingKind {
     Qwen {
-        model: RefCell<QwenModel>,
+        model: Arc<QwenModel>,
+        config: QwenConfig,
     },
     Llama {
-        model: RefCell<LlamaModel>,
+        model: Arc<LlamaModel>,
         config: LlamaConfig,
         dtype: DType,
     },
     Mistral {
-        model: RefCell<MistralModel>,
+        model: Arc<MistralModel>,
+        config: MistralConfig,
     },
     Gemma {
-        model: RefCell<GemmaModel>,
+        model: Arc<GemmaModel>,
+        config: GemmaConfig,
     },
 }
 
@@ -301,7 +305,6 @@ pub struct CausalEmbeddingModel {
     max_input_len: usize,
     hidden_size: usize,
     device: Device,
-    predict_lock: Mutex<()>,
 }
 
 impl CausalEmbeddingModel {
@@ -343,7 +346,8 @@ impl CausalEmbeddingModel {
                     serde_json::from_str(&config).map_err(|_| LibError::ModelConfigParseFailed)?;
                 let model = QwenModel::new(&cfg, vb).map_err(|_| LibError::ModelLoadFailed)?;
                 CausalEmbeddingKind::Qwen {
-                    model: RefCell::new(model),
+                    model: Arc::new(model),
+                    config: cfg,
                 }
             }
             "llama" => {
@@ -352,7 +356,7 @@ impl CausalEmbeddingModel {
                 let cfg = cfg_serde.into_config(false);
                 let model = LlamaModel::load(vb, &cfg).map_err(|_| LibError::ModelLoadFailed)?;
                 CausalEmbeddingKind::Llama {
-                    model: RefCell::new(model),
+                    model: Arc::new(model),
                     config: cfg,
                     dtype,
                 }
@@ -362,7 +366,8 @@ impl CausalEmbeddingModel {
                     serde_json::from_str(&config).map_err(|_| LibError::ModelConfigParseFailed)?;
                 let model = MistralModel::new(&cfg, vb).map_err(|_| LibError::ModelLoadFailed)?;
                 CausalEmbeddingKind::Mistral {
-                    model: RefCell::new(model),
+                    model: Arc::new(model),
+                    config: cfg,
                 }
             }
             "gemma" | "gemma2" | "gemma3" | "gemma3_text" => {
@@ -371,7 +376,8 @@ impl CausalEmbeddingModel {
                 let model =
                     GemmaModel::new(false, &cfg, vb).map_err(|_| LibError::ModelLoadFailed)?;
                 CausalEmbeddingKind::Gemma {
-                    model: RefCell::new(model),
+                    model: Arc::new(model),
+                    config: cfg,
                 }
             }
             _ => return Err(Box::new(LibError::ModelLoadFailed)),
@@ -387,7 +393,6 @@ impl CausalEmbeddingModel {
             max_input_len,
             hidden_size,
             device,
-            predict_lock: Mutex::new(()),
         })
     }
 }
@@ -451,15 +456,6 @@ impl LocalModel {
 
 impl TextModel for LocalModel {
     fn predict(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
-        let _predict_guard = match self {
-            LocalModel::Causal(m) => Some(
-                m.predict_lock
-                    .lock()
-                    .map_err(|_| LibError::ModelLoadFailed)?,
-            ),
-            LocalModel::Bert(_) => None,
-        };
-
         let (device, max_input_len) = match self {
             LocalModel::Bert(m) => (m.device.clone(), m.max_input_len),
             LocalModel::Causal(m) => (m.device.clone(), m.max_input_len),
@@ -499,10 +495,9 @@ impl TextModel for LocalModel {
                         divided.to_dtype(DType::F32)?
                     }
                     LocalModel::Causal(m) => match &m.kind {
-                        CausalEmbeddingKind::Qwen { model } => {
-                            let mut model = model.borrow_mut();
-                            model.clear_kv_cache();
-                            let emb = model.forward(&token_ids, 0)?;
+                        CausalEmbeddingKind::Qwen { model, config } => {
+                            let mut cache = Qwen3Cache::new(config.num_hidden_layers);
+                            let emb = model.forward_with_cache(&token_ids, 0, &mut cache)?;
                             let (_, n_tokens, _) = emb.dims3()?;
                             let summed = emb.sum(1)?.to_dtype(DType::F32)?;
                             let divisor = Tensor::new(n_tokens as f32, &device)?;
@@ -515,29 +510,27 @@ impl TextModel for LocalModel {
                             dtype,
                         } => {
                             let mut cache = LlamaCache::new(false, *dtype, config, &device)?;
+                            let emb = model.forward_hidden_states(&token_ids, 0, &mut cache)?;
+                            let (_, n_tokens, _) = emb.dims3()?;
+                            let summed = emb.sum(1)?.to_dtype(DType::F32)?;
+                            let divisor = Tensor::new(n_tokens as f32, &device)?;
+                            let divided = summed.broadcast_div(&divisor)?;
+                            divided.to_dtype(DType::F32)?
+                        }
+                        CausalEmbeddingKind::Mistral { model, config } => {
+                            let mut cache = MistralCache::new(config.num_hidden_layers);
                             let emb = model
-                                .borrow()
-                                .forward_hidden_states(&token_ids, 0, &mut cache)?;
+                                .forward_hidden_states_with_cache(&token_ids, 0, &mut cache)?;
                             let (_, n_tokens, _) = emb.dims3()?;
                             let summed = emb.sum(1)?.to_dtype(DType::F32)?;
                             let divisor = Tensor::new(n_tokens as f32, &device)?;
                             let divided = summed.broadcast_div(&divisor)?;
                             divided.to_dtype(DType::F32)?
                         }
-                        CausalEmbeddingKind::Mistral { model } => {
-                            let mut model = model.borrow_mut();
-                            model.clear_kv_cache();
-                            let emb = model.forward_hidden_states(&token_ids, 0)?;
-                            let (_, n_tokens, _) = emb.dims3()?;
-                            let summed = emb.sum(1)?.to_dtype(DType::F32)?;
-                            let divisor = Tensor::new(n_tokens as f32, &device)?;
-                            let divided = summed.broadcast_div(&divisor)?;
-                            divided.to_dtype(DType::F32)?
-                        }
-                        CausalEmbeddingKind::Gemma { model } => {
-                            let mut model = model.borrow_mut();
-                            model.clear_kv_cache();
-                            let emb = model.forward_hidden_states(&token_ids, 0)?;
+                        CausalEmbeddingKind::Gemma { model, config } => {
+                            let mut cache = GemmaCache::new(config.num_hidden_layers);
+                            let emb = model
+                                .forward_hidden_states_with_cache(&token_ids, 0, &mut cache)?;
                             let (_, n_tokens, _) = emb.dims3()?;
                             let summed = emb.sum(1)?.to_dtype(DType::F32)?;
                             let divisor = Tensor::new(n_tokens as f32, &device)?;
