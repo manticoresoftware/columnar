@@ -40,6 +40,6 @@ approx = "0.5.1"
 # candle-nn =  { path = "../../candle/candle-nn" }
 # candle-transformers =  { path = "../../candle/candle-transformers" }
 
-candle-core = { git = "https://github.com/manticoresoftware/candle.git", rev = "fe707e10fb22599f8124de632d605a68266ab8e8" }
-candle-nn = { git = "https://github.com/manticoresoftware/candle.git", rev = "fe707e10fb22599f8124de632d605a68266ab8e8" }
-candle-transformers = { git = "https://github.com/manticoresoftware/candle.git", rev = "fe707e10fb22599f8124de632d605a68266ab8e8" }
+candle-core = { git = "https://github.com/manticoresoftware/candle.git", rev = "196118024c1377f5fd132ca0db038d16901cd71f" }
+candle-nn = { git = "https://github.com/manticoresoftware/candle.git", rev = "196118024c1377f5fd132ca0db038d16901cd71f" }
+candle-transformers = { git = "https://github.com/manticoresoftware/candle.git", rev = "196118024c1377f5fd132ca0db038d16901cd71f" }

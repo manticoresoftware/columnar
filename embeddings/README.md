@@ -13,4 +13,3 @@ cargo build --lib --release
 ```bash
 g++ -o test examples/test.cpp -Ltarget/release -lmanticore_knn_embeddings -I. -lpthread -ldl -std=c++17
 ```
-
