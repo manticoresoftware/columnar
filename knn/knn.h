@@ -26,7 +26,7 @@
 namespace knn
 {
 
-static const int LIB_VERSION = 9;
+static const int LIB_VERSION = 10;
 static const uint32_t STORAGE_VERSION = 3;
 
 enum class HNSWSimilarity_e
@@ -71,6 +71,15 @@ struct DocDist_t
 	float		m_fDist;
 };
 
+class KNNFilter_i
+{
+public:
+	virtual			~KNNFilter_i() = default;
+
+	virtual bool	IsAllowed ( uint32_t tRowID ) const = 0;
+	virtual int64_t	GetFilterCount() const = 0;	// return -1 when filter cardinality is unknown
+};
+
 class Distance_i
 {
 public:
@@ -91,7 +100,8 @@ public:
 	virtual			~KNN_i() = default;
 
 	virtual bool	Load ( const std::string & sFilename, std::string & sError ) = 0;
-	virtual Iterator_i * CreateIterator ( const std::string & sName, const util::Span_T<float> & dData, int iResults, int iEf, std::string & sError ) = 0;
+	virtual Iterator_i * CreateIterator ( const std::string & sName, const util::Span_T<float> & dData, int iResults, int iEf, KNNFilter_i * pFilter, std::string & sError ) = 0;
+	virtual bool	ShouldUseFullscan ( const std::string & sName, int64_t iResults, int iEf, int64_t iFilterCount ) = 0;
 };
 
 class Builder_i
