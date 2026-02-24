@@ -1,4 +1,4 @@
-use super::local::{build_model_info, LocalModel};
+use super::local::{build_model_info, download_max_for, reset_download_tracker, LocalModel};
 
 #[cfg(test)]
 mod tests {
@@ -7,6 +7,8 @@ mod tests {
     use crate::utils::{get_hidden_size, get_max_input_length};
     use approx::assert_abs_diff_eq;
     use std::path::PathBuf;
+    use std::sync::{Arc, Barrier};
+    use std::thread;
 
     fn check_embedding_properties(embedding: &[f32], expected_len: usize) {
         assert_eq!(embedding.len(), expected_len);
@@ -103,6 +105,33 @@ mod tests {
                     || error_str.to_lowercase().contains("config")
             );
         }
+    }
+
+    #[test]
+    fn test_concurrent_model_init_serialized() {
+        let cache_path = test_cache_path();
+        let model_id = "Qwen/Qwen3-Embedding-0.6B";
+        reset_download_tracker(model_id);
+
+        let start = Arc::new(Barrier::new(3));
+        let mut handles = Vec::new();
+
+        for _ in 0..2 {
+            let start = Arc::clone(&start);
+            let cache_path = cache_path.clone();
+            let model_id = model_id.to_string();
+            handles.push(thread::spawn(move || {
+                start.wait();
+                build_model_info(cache_path, &model_id, "main").expect("model init failed");
+            }));
+        }
+
+        start.wait();
+        for handle in handles {
+            handle.join().expect("model init thread panicked");
+        }
+
+        assert!(download_max_for(model_id) <= 1);
     }
 
     #[test]
