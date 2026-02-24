@@ -1,3 +1,4 @@
+test
 <p align="center">
   <a href="https://manticoresearch.com" target="_blank" rel="noopener">
     <img src="https://manticoresearch.com/manticore-logo-central.svg" width="15%" alt="Manicore Search Logo">
