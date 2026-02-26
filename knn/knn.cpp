@@ -85,6 +85,21 @@ static void SaveQuantizationSettings ( const QuantizationSettings_t & tSettings,
 
 /////////////////////////////////////////////////////////////////////
 
+class HNSWFilterWrapper_c : public hnswlib::BaseFilterFunctor
+{
+public:
+				HNSWFilterWrapper_c ( KNNFilter_i * pFilter ) : m_pFilter ( pFilter ) {}
+	virtual		~HNSWFilterWrapper_c() = default;
+
+	bool		operator() ( hnswlib::labeltype id ) override	{ return m_pFilter->IsAllowed ( (uint32_t)id ); }
+	long long	getFilterCount() const override					{ return (long long)m_pFilter->GetFilterCount(); }
+
+private:
+	KNNFilter_i * m_pFilter = nullptr;
+};
+
+/////////////////////////////////////////////////////////////////////
+
 class HNSWDist_c
 {
 public:
@@ -184,7 +199,8 @@ public:
 
 	bool	Load ( FileReader_c & tReader, std::string & sError ) override	{ return m_pAlg->loadIndex ( tReader, m_pSpace.get(), sError ); 	}
 	const std::string &	GetName() const override	{ return m_sName; }
-	void	Search ( std::vector<DocDist_t> & dResults, const Span_T<float> & dData, int64_t iResults, int iEf, std::vector<uint8_t> & dQuantized ) const override;
+	void	Search ( std::vector<DocDist_t> & dResults, const Span_T<float> & dData, int64_t iResults, int iEf, std::vector<uint8_t> & dQuantized, KNNFilter_i * pFilter = nullptr ) const override;
+	bool	ShouldUseFullscan ( int64_t iResults, int iEf, int64_t iFilterCount ) const override { return m_pAlg->shouldBypassHnswForFilteredSearch ( iResults, (long long)iFilterCount, iEf ); }
 
 private:
 	std::string											m_sName;
@@ -203,7 +219,7 @@ HNSWIndex_c::HNSWIndex_c ( const std::string & sName, int64_t iNumElements, cons
 }
 
 
-void HNSWIndex_c::Search ( std::vector<DocDist_t> & dResults, const Span_T<float> & dData, int64_t iResults, int iEf, std::vector<uint8_t> & dQuantized ) const
+void HNSWIndex_c::Search ( std::vector<DocDist_t> & dResults, const Span_T<float> & dData, int64_t iResults, int iEf, std::vector<uint8_t> & dQuantized, KNNFilter_i * pFilter ) const
 {
 	if ( !m_pAlg->cur_element_count )
 		return;
@@ -215,8 +231,12 @@ void HNSWIndex_c::Search ( std::vector<DocDist_t> & dResults, const Span_T<float
 		pData = dQuantized.data();
 	}
 
+	std::unique_ptr<HNSWFilterWrapper_c> pFilterWrapper;
+	if ( pFilter )
+		pFilterWrapper = std::make_unique<HNSWFilterWrapper_c>(pFilter);
+
 	size_t iSearchEf = iEf;
-	auto tPQ = m_pAlg->searchKnn ( pData, iResults, nullptr, &iSearchEf );
+	auto tPQ = m_pAlg->searchKnn ( pData, iResults, pFilterWrapper.get(), &iSearchEf );
 	dResults.resize(0);
 	dResults.reserve ( tPQ.size() );
 	while ( !tPQ.empty() )
@@ -232,7 +252,8 @@ class KNN_c : public KNN_i
 {
 public:
 	bool			Load ( const std::string & sFilename, std::string & sError ) override;
-	Iterator_i *	CreateIterator ( const std::string & sName, const Span_T<float> & dData, int iResults, int iEf, std::string & sError ) override;
+	Iterator_i *	CreateIterator ( const std::string & sName, const Span_T<float> & dData, int iResults, int iEf, KNNFilter_i * pFilter, std::string & sError ) override;
+	bool			ShouldUseFullscan ( const std::string & sName, int64_t iResults, int iEf, int64_t iFilterCount ) override;
 
 private:
 	std::vector<std::unique_ptr<HNSWIndex_i>>		m_dIndexes;
@@ -286,7 +307,7 @@ bool KNN_c::Load ( const std::string & sFilename, std::string & sError )
 }
 
 
-Iterator_i * KNN_c::CreateIterator ( const std::string & sName, const Span_T<float> & dData, int iResults, int iEf , std::string & sError )
+Iterator_i * KNN_c::CreateIterator ( const std::string & sName, const Span_T<float> & dData, int iResults, int iEf, KNNFilter_i * pFilter, std::string & sError )
 {
 	HNSWIndex_i * pIndex = GetIndex(sName);
 	if ( !pIndex )
@@ -295,7 +316,17 @@ Iterator_i * KNN_c::CreateIterator ( const std::string & sName, const Span_T<flo
 		return nullptr;
 	}
 
-	return knn::CreateIterator ( *pIndex, dData, iResults, iEf );
+	return knn::CreateIterator ( *pIndex, dData, iResults, iEf, pFilter );
+}
+
+
+bool KNN_c::ShouldUseFullscan ( const std::string & sName, int64_t iResults, int iEf, int64_t iFilterCount )
+{
+	HNSWIndex_i * pIndex = GetIndex(sName);
+	if ( !pIndex )
+		return false;
+
+	return pIndex->ShouldUseFullscan ( iResults, iEf, iFilterCount );
 }
 
 
