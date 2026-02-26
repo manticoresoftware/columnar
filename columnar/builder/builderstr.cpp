@@ -73,7 +73,7 @@ public:
 	void					AddDoc ( const int64_t * pData, int iLength ) final;
 
 protected:
-	std::unique_ptr<IntCodec_i>	m_pCodec;
+	IntCodecPooledPtr_t			m_pCodec;
 
 	std::vector<std::string>	m_dCollected;
 	std::unordered_map<std::string, int> m_hUnique;

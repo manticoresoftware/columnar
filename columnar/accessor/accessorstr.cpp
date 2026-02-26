@@ -194,7 +194,7 @@ public:
 	FORCE_INLINE Span_T<uint32_t> GetValueIndexes()						{ return m_tValuesRead; }
 
 private:
-	std::unique_ptr<IntCodec_i>			m_pCodec;
+	IntCodecPooledPtr_t					m_pCodec;
 	uint32_t							m_uVersion = 0;
 	std::vector<std::vector<uint8_t>>	m_dTableValues;
 	SpanResizeable_T<uint32_t>			m_dTableValueLengths;
@@ -279,7 +279,7 @@ public:
 	FORCE_INLINE Span_T<Span_T<uint8_t>> & ReadAllSubblockValues ( int iSubblockId, FileReader_c & tReader );
 
 private:
-	std::unique_ptr<IntCodec_i>	m_pCodec;
+	IntCodecPooledPtr_t			m_pCodec;
 	uint32_t					m_uVersion = 0;
 	SpanResizeable_T<uint32_t>	m_dTmp;
 	SpanResizeable_T<uint64_t>	m_dOffsets;

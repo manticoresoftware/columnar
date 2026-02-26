@@ -190,7 +190,7 @@ public:
 	FORCE_INLINE void	ReadSortedFlag ( FileReader_c & tReader );
 
 protected:
-	std::unique_ptr<IntCodec_i>	m_pCodec;
+	IntCodecPooledPtr_t			m_pCodec;
 	uint32_t					m_uVersion = 0;
 	bool						m_bValuesSortedAsc = true;
 	int64_t						m_tValuesOffset = 0;
