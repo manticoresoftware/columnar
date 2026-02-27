@@ -69,7 +69,7 @@ jobs:
         MANTICORE_LOCATOR: ${{ inputs.MANTICORE_LOCATOR }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           set-safe-directory: true
@@ -80,14 +80,14 @@ jobs:
           git config --global --add safe.directory /__w/columnar/columnar
 
       - name: Check out main cache before building
-        uses: actions/cache@v3.3.1
+        uses: actions/cache@v4
         with:
           path: cache
           enableCrossOsArchive: true
           key: ${{ inputs.cache_key }}
 
       - name: Check out deps cache before building
-        uses: actions/cache@v3.3.1
+        uses: actions/cache@v4
         with:
           path: build/_deps/cache
           enableCrossOsArchive: true
@@ -98,7 +98,7 @@ jobs:
 
       - name: Upload build artifacts
         if: success()
-        uses: manticoresoftware/upload_artifact_with_retries@v2
+        uses: manticoresoftware/upload_artifact_with_retries@v4
         with:
           name: build_${{ inputs.DISTR }}_${{ inputs.CTEST_CONFIGURATION_TYPE }}_${{ inputs.arch }}
           path: ${{ inputs.artifact_list }}

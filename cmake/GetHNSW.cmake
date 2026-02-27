@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set ( HNSW_GITHUB "https://github.com/manticoresoftware/hnswlib/archive/refs/heads/master.zip" )
+set ( HNSW_GITHUB "https://github.com/manticoresoftware/hnswlib/archive/8aee68f66d51a46dc070c96dca0627baa6d4d08b.zip" )
 set ( HNSW_BUNDLEZIP "${LIBS_BUNDLE}/hnswlib-0.7.0.tar.gz" )
 
 cmake_minimum_required ( VERSION 3.17 FATAL_ERROR )
