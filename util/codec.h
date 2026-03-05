@@ -67,6 +67,5 @@ using IntCodecPooledPtr_t = std::unique_ptr<IntCodec_i, CodecPoolDeleter_t>;
 
 IntCodecPooledPtr_t CreateIntCodec ( const std::string & sCodec32, const std::string & sCodec64 );
 std::shared_ptr<IntCodec_i> CreateIntCodecShared ( const std::string & sCodec32, const std::string & sCodec64 );
-void ClearIntCodecPool();
 
 } // namespace util
