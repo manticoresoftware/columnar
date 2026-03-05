@@ -26,7 +26,7 @@
 namespace knn
 {
 
-static const int LIB_VERSION = 10;
+static const int LIB_VERSION = 11;
 static const uint32_t STORAGE_VERSION = 3;
 
 enum class HNSWSimilarity_e
@@ -71,6 +71,17 @@ struct DocDist_t
 	float		m_fDist;
 };
 
+struct SearchStats_t
+{
+	int64_t	m_iDistanceComputations = 0;
+};
+
+enum class HNSWTerminationPolicy_e
+{
+	NONE,
+	QUANTILE
+};
+
 class KNNFilter_i
 {
 public:
@@ -92,6 +103,7 @@ class Iterator_i : public common::BlockIterator_i
 {
 public:
 	virtual util::Span_T<const DocDist_t> GetData() const = 0;
+	virtual SearchStats_t GetStats() const = 0;
 };
 
 class KNN_i
@@ -100,7 +112,7 @@ public:
 	virtual			~KNN_i() = default;
 
 	virtual bool	Load ( const std::string & sFilename, std::string & sError ) = 0;
-	virtual Iterator_i * CreateIterator ( const std::string & sName, const util::Span_T<float> & dData, int iResults, int iEf, KNNFilter_i * pFilter, std::string & sError ) = 0;
+	virtual Iterator_i * CreateIterator ( const std::string & sName, const util::Span_T<float> & dData, int iResults, int iEf, KNNFilter_i * pFilter, HNSWTerminationPolicy_e ePolicy, bool bCollectMetrics, std::string & sError ) = 0;
 	virtual bool	ShouldUseFullscan ( const std::string & sName, int64_t iResults, int iEf, int64_t iFilterCount ) = 0;
 };
 

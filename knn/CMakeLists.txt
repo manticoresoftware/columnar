@@ -18,7 +18,7 @@ cmake_minimum_required ( VERSION 3.21 ) # because of IMPORTED_RUNTIME_ARTIFACTS
 
 include ( GetHNSW )
 
-add_library ( knn_lib MODULE knn.cpp knn.h iterator.cpp iterator.h embeddings.cpp embeddings.h quantizer.cpp quantizer.h space.cpp space.h ${CMAKE_SOURCE_DIR}/embeddings/manticoresearch_text_embeddings.h )
+add_library ( knn_lib MODULE knn.cpp knn.h iterator.cpp iterator.h embeddings.cpp embeddings.h quantizer.cpp quantizer.h quantile.cpp quantile.h space.cpp space.h termination.cpp termination.h ${CMAKE_SOURCE_DIR}/embeddings/manticoresearch_text_embeddings.h )
 target_include_directories(knn_lib PRIVATE ${CMAKE_SOURCE_DIR}/embeddings)
 
 target_link_libraries ( knn_lib PRIVATE hnswlib::hnswlib columnar_root util common )
