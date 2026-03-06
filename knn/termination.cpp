@@ -22,24 +22,19 @@ using namespace util;
 
 namespace knn
 {
+
 static FORCE_INLINE int CalcPatience ( size_t ef )
 {
-	if ( ef <= 200 )
+	if ( ef <= 800 )
+		return 9;
+
+	if ( ef <= 2000 )
 		return 8;
 
-	if ( ef <= 800 )
+	if ( ef <= 4000 )
 		return 7;
 
-	if ( ef <= 1000 )
-		return 6;
-
-	if ( ef <= 3000 )
-		return 5;
-
-	if ( ef <= 6000 )
-		return 4;
-
-	return 3;
+	return 6;
 }
 
 

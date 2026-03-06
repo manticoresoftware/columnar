@@ -31,8 +31,8 @@ public:
 	bool	shouldTerminate ( size_t ef, size_t currentSize );
 
 protected:
-	static constexpr double DEFAULT_THRESHOLD_QUANTILE = 0.15;
-	static constexpr size_t THRESHOLD_WINDOW_SIZE = 64;
+	static constexpr double DEFAULT_THRESHOLD_QUANTILE = 0.2;
+	static constexpr size_t THRESHOLD_WINDOW_SIZE = 128;
 
 	int     m_iCollected = 0;
 	int     m_iPrevCollected = 0;
@@ -47,7 +47,7 @@ public:
 		TerminationQuantileL2_c() : TerminationQuantile_c ( L2_THRESHOLD_QUANTILE ) {}
 
 protected:
-	static constexpr double L2_THRESHOLD_QUANTILE = 0.11;
+	static constexpr double L2_THRESHOLD_QUANTILE = 0.14;
 };
 
 } // namespace knn
