@@ -30,10 +30,10 @@ class KNNIndex_i
 public:
 	virtual			~KNNIndex_i() = default;
 
-	virtual void	Search ( std::vector<DocDist_t> & dResults, const util::Span_T<float> & dData, int64_t iResults, int iEf, std::vector<uint8_t> & dQuantized, KNNFilter_i * pFilter = nullptr ) const = 0;
+	virtual void	Search ( std::vector<DocDist_t> & dResults, const util::Span_T<float> & dData, int64_t iResults, int iEf, std::vector<uint8_t> & dQuantized, int64_t * pDistanceComputations = nullptr, KNNFilter_i * pFilter = nullptr, HNSWTerminationPolicy_e ePolicy = HNSWTerminationPolicy_e::NONE ) const = 0;
 	virtual bool	ShouldUseFullscan ( int64_t iResults, int iEf, int64_t iFilterCount ) const = 0;
 };
 
-Iterator_i * CreateIterator ( KNNIndex_i & tIndex, const util::Span_T<float> & dData, int64_t iResults, int iEf, KNNFilter_i * pFilter = nullptr );
+Iterator_i * CreateIterator ( KNNIndex_i & tIndex, const util::Span_T<float> & dData, int64_t iResults, int iEf, bool bCollectMetrics = false, KNNFilter_i * pFilter = nullptr, HNSWTerminationPolicy_e ePolicy = HNSWTerminationPolicy_e::NONE );
 
 } // namespace knn

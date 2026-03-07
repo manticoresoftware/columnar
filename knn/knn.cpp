@@ -18,6 +18,7 @@
 #include "iterator.h"
 #include "embeddings.h"
 #include "quantizer.h"
+#include "termination.h"
 #include "space.h"
 #include "util/reader.h"
 
@@ -199,7 +200,7 @@ public:
 
 	bool	Load ( FileReader_c & tReader, std::string & sError ) override	{ return m_pAlg->loadIndex ( tReader, m_pSpace.get(), sError ); 	}
 	const std::string &	GetName() const override	{ return m_sName; }
-	void	Search ( std::vector<DocDist_t> & dResults, const Span_T<float> & dData, int64_t iResults, int iEf, std::vector<uint8_t> & dQuantized, KNNFilter_i * pFilter = nullptr ) const override;
+	void	Search ( std::vector<DocDist_t> & dResults, const Span_T<float> & dData, int64_t iResults, int iEf, std::vector<uint8_t> & dQuantized, int64_t * pDistanceComputations = nullptr, KNNFilter_i * pFilter = nullptr, HNSWTerminationPolicy_e ePolicy = HNSWTerminationPolicy_e::NONE ) const override;
 	bool	ShouldUseFullscan ( int64_t iResults, int iEf, int64_t iFilterCount ) const override { return m_pAlg->shouldBypassHnswForFilteredSearch ( iResults, (long long)iFilterCount, iEf ); }
 
 private:
@@ -219,8 +220,24 @@ HNSWIndex_c::HNSWIndex_c ( const std::string & sName, int64_t iNumElements, cons
 }
 
 
-void HNSWIndex_c::Search ( std::vector<DocDist_t> & dResults, const Span_T<float> & dData, int64_t iResults, int iEf, std::vector<uint8_t> & dQuantized, KNNFilter_i * pFilter ) const
+template<typename T>
+static void ExtractResults ( T tPQ, std::vector<DocDist_t> & dResults )
 {
+	dResults.resize(0);
+	dResults.reserve ( tPQ.size() );
+	while ( !tPQ.empty() )
+	{
+		dResults.push_back ( { (uint32_t)tPQ.top().second, (float)tPQ.top().first } );
+		tPQ.pop();
+	}
+}
+
+
+void HNSWIndex_c::Search ( std::vector<DocDist_t> & dResults, const Span_T<float> & dData, int64_t iResults, int iEf, std::vector<uint8_t> & dQuantized, int64_t * pDistanceComputations, KNNFilter_i * pFilter, HNSWTerminationPolicy_e ePolicy ) const
+{
+	if ( pDistanceComputations )
+		*pDistanceComputations = 0;
+
 	if ( !m_pAlg->cur_element_count )
 		return;
 
@@ -236,13 +253,52 @@ void HNSWIndex_c::Search ( std::vector<DocDist_t> & dResults, const Span_T<float
 		pFilterWrapper = std::make_unique<HNSWFilterWrapper_c>(pFilter);
 
 	size_t iSearchEf = iEf;
-	auto tPQ = m_pAlg->searchKnn ( pData, iResults, pFilterWrapper.get(), &iSearchEf );
-	dResults.resize(0);
-	dResults.reserve ( tPQ.size() );
-	while ( !tPQ.empty() )
+	long iBeforeDistanceComputations = 0;
+	if ( pDistanceComputations )
+		iBeforeDistanceComputations = m_pAlg->metric_distance_computations.load();
+
+	bool bCollectMetrics = !!pDistanceComputations;
+	bool bQuantile = ePolicy==HNSWTerminationPolicy_e::QUANTILE;
+	bool bL2 = m_eSimilarity==HNSWSimilarity_e::L2;
+	int iSearchPath = bCollectMetrics*4 + bQuantile*2 + bL2;
+
+	switch ( iSearchPath )
 	{
-		dResults.push_back ( { (uint32_t)tPQ.top().second, (float)tPQ.top().first } );
-		tPQ.pop();
+	case 0:
+	case 1:
+		ExtractResults ( m_pAlg->searchKnn<hnswlib::NoopTerminationState, false> ( pData, iResults, pFilterWrapper.get(), &iSearchEf ), dResults );
+		break;
+
+	case 2:
+		ExtractResults ( m_pAlg->searchKnn<TerminationQuantile_c, false> ( pData, iResults, pFilterWrapper.get(), &iSearchEf ), dResults );
+		break;
+
+	case 3:
+		ExtractResults ( m_pAlg->searchKnn<TerminationQuantileL2_c, false> ( pData, iResults, pFilterWrapper.get(), &iSearchEf ), dResults );
+		break;
+
+	case 4:
+	case 5:
+		ExtractResults ( m_pAlg->searchKnn<hnswlib::NoopTerminationState, true> ( pData, iResults, pFilterWrapper.get(), &iSearchEf ), dResults );
+		break;
+
+	case 6:
+		ExtractResults ( m_pAlg->searchKnn<TerminationQuantile_c, true> ( pData, iResults, pFilterWrapper.get(), &iSearchEf ), dResults );
+		break;
+
+	case 7:
+		ExtractResults ( m_pAlg->searchKnn<TerminationQuantileL2_c, true> ( pData, iResults, pFilterWrapper.get(), &iSearchEf ), dResults );
+		break;
+
+	default:
+		assert(0);
+		break;
+	}
+
+	if ( pDistanceComputations )
+	{
+		long iAfterDistanceComputations = m_pAlg->metric_distance_computations.load();
+		*pDistanceComputations = std::max ( 0L, iAfterDistanceComputations - iBeforeDistanceComputations );
 	}
 }
 
@@ -252,7 +308,7 @@ class KNN_c : public KNN_i
 {
 public:
 	bool			Load ( const std::string & sFilename, std::string & sError ) override;
-	Iterator_i *	CreateIterator ( const std::string & sName, const Span_T<float> & dData, int iResults, int iEf, KNNFilter_i * pFilter, std::string & sError ) override;
+	Iterator_i *	CreateIterator ( const std::string & sName, const Span_T<float> & dData, int iResults, int iEf, KNNFilter_i * pFilter, HNSWTerminationPolicy_e ePolicy, bool bCollectMetrics, std::string & sError ) override;
 	bool			ShouldUseFullscan ( const std::string & sName, int64_t iResults, int iEf, int64_t iFilterCount ) override;
 
 private:
@@ -307,7 +363,7 @@ bool KNN_c::Load ( const std::string & sFilename, std::string & sError )
 }
 
 
-Iterator_i * KNN_c::CreateIterator ( const std::string & sName, const Span_T<float> & dData, int iResults, int iEf, KNNFilter_i * pFilter, std::string & sError )
+Iterator_i * KNN_c::CreateIterator ( const std::string & sName, const Span_T<float> & dData, int iResults, int iEf, KNNFilter_i * pFilter, HNSWTerminationPolicy_e ePolicy, bool bCollectMetrics, std::string & sError )
 {
 	HNSWIndex_i * pIndex = GetIndex(sName);
 	if ( !pIndex )
@@ -316,7 +372,7 @@ Iterator_i * KNN_c::CreateIterator ( const std::string & sName, const Span_T<flo
 		return nullptr;
 	}
 
-	return knn::CreateIterator ( *pIndex, dData, iResults, iEf, pFilter );
+	return knn::CreateIterator ( *pIndex, dData, iResults, iEf, bCollectMetrics, pFilter, ePolicy );
 }
 
 

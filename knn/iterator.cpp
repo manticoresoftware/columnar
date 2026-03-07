@@ -27,11 +27,12 @@ using namespace util;
 class RowidIteratorKNN_c : public Iterator_i
 {
 public:
-			RowidIteratorKNN_c ( KNNIndex_i & tIndex, const Span_T<float> & dData, int64_t iResults, int iEf, KNNFilter_i * pFilter );
+			RowidIteratorKNN_c ( KNNIndex_i & tIndex, const Span_T<float> & dData, int64_t iResults, int iEf, bool bCollectMetrics, KNNFilter_i * pFilter, HNSWTerminationPolicy_e ePolicy );
 
 	bool	HintRowID ( uint32_t tRowID ) override;
 	bool	GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBlock ) override;
 	int64_t	GetNumProcessed() const override			{ return m_iIndex; }
+	SearchStats_t GetStats() const override				{ return { m_iDistanceComputations }; }
 	void	SetCutoff ( int iCutoff ) override			{}
 	bool	WasCutoffHit() const override				{ return false; }
 	void	AddDesc ( std::vector<common::IteratorDesc_t> & dDesc ) const override {}
@@ -45,12 +46,13 @@ private:
 	std::vector<DocDist_t>	m_dCollected;
 	std::vector<uint8_t>	m_dQuantized;
 	int						m_iIndex = 0;
+	int64_t					m_iDistanceComputations = 0;
 };
 
 
-RowidIteratorKNN_c::RowidIteratorKNN_c ( KNNIndex_i & tIndex, const Span_T<float> & dData, int64_t iResults, int iEf, KNNFilter_i * pFilter )
+RowidIteratorKNN_c::RowidIteratorKNN_c ( KNNIndex_i & tIndex, const Span_T<float> & dData, int64_t iResults, int iEf, bool bCollectMetrics, KNNFilter_i * pFilter, HNSWTerminationPolicy_e ePolicy )
 {
-	tIndex.Search ( m_dCollected, dData, iResults, iEf, m_dQuantized, pFilter );
+	tIndex.Search ( m_dCollected, dData, iResults, iEf, m_dQuantized, bCollectMetrics ? &m_iDistanceComputations : nullptr, pFilter, ePolicy );
 	std::sort ( m_dCollected.begin(), m_dCollected.end(), []( const auto & a, const auto & b ) { return a.m_tRowID<b.m_tRowID; } );
 	m_dRowIDs.resize(DOCS_PER_CHUNK);
 }
@@ -99,9 +101,9 @@ bool RowidIteratorKNN_c::GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBlock )
 
 /////////////////////////////////////////////////////////////////////
 
-Iterator_i * CreateIterator ( KNNIndex_i & tIndex, const util::Span_T<float> & dData, int64_t iResults, int iEf, KNNFilter_i * pFilter )
+Iterator_i * CreateIterator ( KNNIndex_i & tIndex, const util::Span_T<float> & dData, int64_t iResults, int iEf, bool bCollectMetrics, KNNFilter_i * pFilter, HNSWTerminationPolicy_e ePolicy )
 {
-	return new RowidIteratorKNN_c ( tIndex, dData, iResults, iEf, pFilter );
+	return new RowidIteratorKNN_c ( tIndex, dData, iResults, iEf, bCollectMetrics, pFilter, ePolicy );
 }
 
 } // namespace knn

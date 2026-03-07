@@ -20,6 +20,7 @@
 // The algorithm is based on the paper "RaBitQ" (https://arxiv.org/abs/2405.12497)
 
 #include "quantizer.h"
+#include "quantile.h"
 
 #include "util_private.h"
 #include "reader.h"
@@ -40,122 +41,6 @@ using namespace util;
 namespace knn
 {
 
-class P2QuantileEstimator_c
-{
-public:
-			P2QuantileEstimator_c ( double fQuantile );
-
-	void	Insert ( float fValue );
-	bool	Ready() const	{ return m_iCount>=NUM_MARKERS; }
-	float	Get() const		{ return m_dQ[2]; } 
-
-private:
-	static const int NUM_MARKERS=5;
-
-	double	m_dQ[NUM_MARKERS];  // heights of the markers
-	double	m_dN[NUM_MARKERS];  // positions of the markers
-	double	m_dNP[NUM_MARKERS]; // desired positions
-	double	m_dDN[NUM_MARKERS]; // increments for desired positions
-	int		m_iCount = 0;
-
-	void				InitializeMarkers ( float fValue );
-	FORCE_INLINE int	FindMarker ( float fValue );
-	FORCE_INLINE void	IncrementPositions ( int iMarker );
-	FORCE_INLINE void	AdjustMarkerHeights();
-};
-
-
-P2QuantileEstimator_c::P2QuantileEstimator_c ( double fQuantile )
-{
-	m_dDN[0] = 0.0;
-	m_dDN[1] = fQuantile / 2.0;
-	m_dDN[2] = fQuantile;
-	m_dDN[3] = (1.0 + fQuantile) / 2.0;
-	m_dDN[4] = 1.0;
-}
-
-
-void P2QuantileEstimator_c::Insert ( float fValue )
-{
-	m_iCount++;
-
-	if ( m_iCount<=NUM_MARKERS )
-	{
-		InitializeMarkers(fValue);
-		return;
-	}
-		
-	int iMarker = FindMarker(fValue);
-	IncrementPositions(iMarker);
-	AdjustMarkerHeights();
-}
-
-
-void P2QuantileEstimator_c::InitializeMarkers ( float fValue )
-{
-	m_dQ[m_iCount-1] = fValue;
-	if ( m_iCount<NUM_MARKERS)
-		return;
-
-	std::sort ( m_dQ, m_dQ+NUM_MARKERS );
-
-	for ( int i = 0; i < NUM_MARKERS; i++ )
-	{
-		m_dN[i] = i+1;
-		m_dNP[i] = 1 + (NUM_MARKERS-1) * m_dDN[i];
-	}
-}
-
-
-int P2QuantileEstimator_c::FindMarker ( float fValue )
-{
-	if ( fValue < m_dQ[0] )
-	{
-		m_dQ[0] = fValue;
-		return 0;
-	}
-
-	if ( fValue >= m_dQ[NUM_MARKERS-1] )
-	{
-		m_dQ[NUM_MARKERS-1] = fValue;
-		return NUM_MARKERS-2;
-	}
-		
-	for ( int i = 0; i < NUM_MARKERS-1; i++ )
-		if ( m_dQ[i]<=fValue && fValue<m_dQ[i+1] )
-			return i;
-
-	assert ( 0 && "Unable to find marker" );
-	return 0;
-}
-
-
-void P2QuantileEstimator_c::IncrementPositions ( int iMarker )
-{
-	for ( int i = iMarker + 1; i < NUM_MARKERS; i++ )
-		m_dN[i]++;
-
-	for ( int i = 0; i < NUM_MARKERS; i++ )
-		m_dNP[i] += m_dDN[i];
-}
-
-
-void P2QuantileEstimator_c::AdjustMarkerHeights()
-{
-	for ( int i=1; i < NUM_MARKERS-1; i++ )
-	{
-		double fD = m_dNP[i] - m_dN[i];
-		if ( ( fD>=1.0f && m_dN[i+1]-m_dN[i] > 1.0f ) || ( fD<=-1.0f && m_dN[i-1]-m_dN[i] < -1.0f ) )
-		{
-			int iSign = fD>=1.0f ? 1 : -1;
-			double fNewQ = m_dQ[i] + iSign*( m_dQ[i+iSign] - m_dQ[i] )/( m_dN[i+iSign] - m_dN[i] );
-			m_dQ[i] = fNewQ;
-			m_dN[i] += iSign;
-		}
-	}
-}
-
-///////////////////////////////////////////////////////////////////////////////
 
 class ScalarQuantizer8Bit_c : public ScalarQuantizer_i
 {
@@ -240,8 +125,8 @@ bool ScalarQuantizer8Bit_c::FinalizeTraining ( std::string & sError )
 	const size_t TRAINED_SIZE_THRESH = 1000;
 	if ( m_bQuantilesEnabled && m_uNumTrained>TRAINED_SIZE_THRESH && m_tQuantile1.Ready() && m_tQuantile2.Ready() )
 	{
-		m_tSettings.m_fMin = std::max ( m_tSettings.m_fMin, m_tQuantile1.Get() );
-		m_tSettings.m_fMax = std::min ( m_tSettings.m_fMax, m_tQuantile2.Get() );
+		m_tSettings.m_fMin = std::max ( m_tSettings.m_fMin, (float)m_tQuantile1.Get() );
+		m_tSettings.m_fMax = std::min ( m_tSettings.m_fMax, (float)m_tQuantile2.Get() );
 	}
 
 	m_fDiff = m_tSettings.m_fMax - m_tSettings.m_fMin;
