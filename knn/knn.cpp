@@ -221,7 +221,7 @@ HNSWIndex_c::HNSWIndex_c ( const std::string & sName, int64_t iNumElements, cons
 
 
 template<typename T>
-static void ExtractResults ( T tPQ, std::vector<DocDist_t> & dResults )
+static void ExtractResults ( T && tPQ, std::vector<DocDist_t> & dResults )
 {
 	dResults.resize(0);
 	dResults.reserve ( tPQ.size() );
@@ -258,7 +258,7 @@ void HNSWIndex_c::Search ( std::vector<DocDist_t> & dResults, const Span_T<float
 		iBeforeDistanceComputations = m_pAlg->metric_distance_computations.load();
 
 	bool bCollectMetrics = !!pDistanceComputations;
-	bool bQuantile = ePolicy==HNSWTerminationPolicy_e::QUANTILE;
+	bool bQuantile = ePolicy==HNSWTerminationPolicy_e::QUANTILE && iResults > 10;	// disable early termination for k<=10
 	bool bL2 = m_eSimilarity==HNSWSimilarity_e::L2;
 	int iSearchPath = bCollectMetrics*4 + bQuantile*2 + bL2;
 
