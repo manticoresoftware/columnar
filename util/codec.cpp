@@ -217,6 +217,123 @@ public:
 
 //////////////////////////////////////////////////////////////////////////
 
+class Int64SVBCodec_c
+{
+public:
+	Int64SVBCodec_c ( const std::string & sCodec ) {}
+
+	FORCE_INLINE void Encode ( const util::Span_T<uint64_t> & dUncompressed, std::vector<uint32_t> & dCompressed )				{ SplitAndEncode ( dUncompressed, dCompressed ); }
+	FORCE_INLINE void EncodeDelta ( util::Span_T<uint64_t> & dUncompressed, std::vector<uint32_t> & dCompressed )
+	{
+		ComputeDeltas ( dUncompressed.data(), (int)dUncompressed.size(), true );
+		SplitAndEncode ( dUncompressed, dCompressed );
+	}
+
+	FORCE_INLINE void Decode ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint64_t> & dDecompressed )	{	DecodeAndMerge ( dCompressed, dDecompressed );	}
+	FORCE_INLINE void DecodeDelta ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint64_t> & dDecompressed )
+	{
+		DecodeAndMerge ( dCompressed, dDecompressed );
+		ComputeInverseDeltasAsc ( dDecompressed );
+	}
+
+private:
+	static constexpr uint32_t LO_ONLY_FLAG = 0x80000000u;
+
+	std::vector<uint32_t> m_dHi;
+	std::vector<uint32_t> m_dLo;
+
+	FORCE_INLINE void SplitAndEncode ( const util::Span_T<uint64_t> & dUncompressed, std::vector<uint32_t> & dCompressed );
+	FORCE_INLINE void DecodeAndMerge ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint64_t> & dDecompressed );
+
+};
+
+
+void Int64SVBCodec_c::SplitAndEncode ( const util::Span_T<uint64_t> & dUncompressed, std::vector<uint32_t> & dCompressed )
+{
+	auto uNumValues = dUncompressed.size();
+	m_dLo.resize(uNumValues);
+
+	uint64_t uHiMask = 0;
+	for ( size_t i = 0; i < uNumValues; i++ )
+	{
+		uHiMask |= dUncompressed[i];
+		m_dLo[i] = (uint32_t)( dUncompressed[i] );
+	}
+
+	bool bAllFitIn32 = !( uHiMask >> 32 );
+
+	size_t uMaxCompressed = streamvbyte_max_compressedbytes(uNumValues);
+
+	if ( bAllFitIn32 )
+	{
+		// single-stream: header with flag + lo stream only
+		size_t uMaxTotalBytes = sizeof(uint32_t) + ( ( uMaxCompressed + 3 ) & ~(size_t)3 );
+		dCompressed.resize ( ( uMaxTotalBytes + sizeof(uint32_t) - 1 ) / sizeof(uint32_t) );
+
+		uint8_t * pOut = (uint8_t*)dCompressed.data();
+		*(uint32_t*)pOut = LO_ONLY_FLAG;
+
+		size_t uLoBytes = streamvbyte_encode ( m_dLo.data(), (uint32_t)uNumValues, pOut + sizeof(uint32_t) );
+
+		size_t uTotalBytes = sizeof(uint32_t) + uLoBytes;
+		dCompressed.resize ( ( uTotalBytes + sizeof(uint32_t) - 1 ) / sizeof(uint32_t) );
+		return;
+	}
+
+	// two-stream: header with hiBytes + hi stream + lo stream
+	m_dHi.resize(uNumValues);
+	for ( size_t i = 0; i < uNumValues; i++ )
+		m_dHi[i] = (uint32_t)( dUncompressed[i] >> 32 );
+
+	size_t uMaxTotalBytes = sizeof(uint32_t) + 2 * ( ( uMaxCompressed + 3 ) & ~(size_t)3 );
+	dCompressed.resize ( ( uMaxTotalBytes + sizeof(uint32_t) - 1 ) / sizeof(uint32_t) );
+
+	uint8_t * pOut = (uint8_t*)dCompressed.data();
+
+	size_t uHiBytes = streamvbyte_encode ( m_dHi.data(), (uint32_t)uNumValues, pOut + sizeof(uint32_t) );
+	*(uint32_t*)pOut = (uint32_t)uHiBytes;
+
+	size_t uHiAligned = ( uHiBytes + 3 ) & ~(size_t)3;
+	size_t uLoBytes = streamvbyte_encode ( m_dLo.data(), (uint32_t)uNumValues, pOut + sizeof(uint32_t) + uHiAligned );
+
+	size_t uTotalBytes = sizeof(uint32_t) + uHiAligned + uLoBytes;
+	dCompressed.resize ( ( uTotalBytes + sizeof(uint32_t) - 1 ) / sizeof(uint32_t) );
+}
+
+
+void Int64SVBCodec_c::DecodeAndMerge ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint64_t> & dDecompressed )
+{
+	auto uNumValues = dDecompressed.size();
+	const uint8_t * pIn = (const uint8_t*)dCompressed.data();
+	uint32_t uHeader = *(const uint32_t*)pIn;
+
+	if ( uHeader & LO_ONLY_FLAG )
+	{
+		// single-stream: all values fit in 32 bits
+		m_dLo.resize(uNumValues);
+		streamvbyte_decode ( pIn + sizeof(uint32_t), m_dLo.data(), (uint32_t)uNumValues );
+
+		for ( size_t i = 0; i < uNumValues; i++ )
+			dDecompressed[i] = (uint64_t)m_dLo[i];
+
+		return;
+	}
+
+	// two-stream
+	m_dHi.resize(uNumValues);
+	m_dLo.resize(uNumValues);
+
+	streamvbyte_decode ( pIn + sizeof(uint32_t), m_dHi.data(), (uint32_t)uNumValues );
+
+	size_t uHiAligned = ( uHeader + 3 ) & ~(size_t)3;
+	streamvbyte_decode ( pIn + sizeof(uint32_t) + uHiAligned, m_dLo.data(), (uint32_t)uNumValues );
+
+	for ( size_t i = 0; i < uNumValues; i++ )
+		dDecompressed[i] = ( (uint64_t)m_dHi[i] << 32 ) | (uint64_t)m_dLo[i];
+}
+
+//////////////////////////////////////////////////////////////////////////
+
 template<typename CODEC32, typename CODEC64>
 class IntCodec_T : public IntCodec_i, public CODEC32, public CODEC64
 {
@@ -385,8 +502,15 @@ IntCodecPooledPtr_t CreateIntCodec ( const std::string & sCodec32, const std::st
 	std::unique_ptr<IntCodec_i> pCodec = IntCodecPool_c::Get().Acquire ( sCodec32, sCodec64 );
 	if ( !pCodec )
 	{
-		if ( sCodec32=="libstreamvbyte" )
+		bool bSVB32 = ( sCodec32=="libstreamvbyte" );
+		bool bSVB64 = ( sCodec64=="libstreamvbyte" );
+
+		if ( bSVB32 && bSVB64 )
+			pCodec = std::make_unique<IntCodec_T<Int32SVBCodec_c, Int64SVBCodec_c>> ( sCodec32, sCodec64 );
+		else if ( bSVB32 )
 			pCodec = std::make_unique<IntCodec_T<Int32SVBCodec_c, Int64FastPFORCodec_c>> ( sCodec32, sCodec64 );
+		else if ( bSVB64 )
+			pCodec = std::make_unique<IntCodec_T<Int32FastPFORCodec_c, Int64SVBCodec_c>> ( sCodec32, sCodec64 );
 		else
 			pCodec = std::make_unique<IntCodec_T<Int32FastPFORCodec_c, Int64FastPFORCodec_c>> ( sCodec32, sCodec64 );
 	}
