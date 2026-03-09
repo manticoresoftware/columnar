@@ -39,7 +39,8 @@ static FORCE_INLINE int CalcPatience ( size_t ef )
 
 
 TerminationQuantile_c::TerminationQuantile_c ( double fThresholdQuantile )
-	: m_tThresholdQuantile ( THRESHOLD_WINDOW_SIZE, fThresholdQuantile )
+	: m_iPatience ( CalcPatience(10) )	// initialize with a small enough k
+	, m_tThresholdQuantile ( THRESHOLD_WINDOW_SIZE, fThresholdQuantile )
 {}
 
 void TerminationQuantile_c::reset()
@@ -60,23 +61,20 @@ bool TerminationQuantile_c::shouldTerminate ( size_t ef, size_t currentSize )
 		m_iPrevCollected = m_iCollected;
 		m_iScored = 0;
 		m_iBadRounds = 0;
+		m_iPatience = CalcPatience(ef);
 		return false;
 	}
 
 	double fDiscoveryRate = double( m_iCollected - m_iPrevCollected ) / ( 1e-9 + double(m_iScored) );
 	bool bBadRound = fDiscoveryRate < m_tThresholdQuantile.Get();
+	m_iBadRounds = bBadRound * (m_iBadRounds + 1);
 
-	if ( bBadRound )
-		m_iBadRounds++;
-	else
-		m_iBadRounds = 0;
-
-	m_tThresholdQuantile.Insert ( fDiscoveryRate );
+	m_tThresholdQuantile.Insert(fDiscoveryRate);
 
 	m_iPrevCollected = m_iCollected;
 	m_iScored = 0;
 
-	return m_iBadRounds >= CalcPatience(ef);
+	return m_iBadRounds >= m_iPatience;
 }
 
 } // namespace knn

@@ -38,6 +38,7 @@ protected:
 	int     m_iPrevCollected = 0;
 	int     m_iScored = 0;
 	int		m_iBadRounds = 0;
+	int		m_iPatience = 0;
 	MP2QuantileEstimator_c  m_tThresholdQuantile;
 };
 

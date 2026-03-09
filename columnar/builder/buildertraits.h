@@ -38,7 +38,7 @@ struct Settings_t
 {
 	int			m_iSubblockSize = 1024;
 	std::string	m_sCompressionUINT32 = "libstreamvbyte";
-	std::string	m_sCompressionUINT64 = "fastpfor256";
+	std::string	m_sCompressionUINT64 = "libstreamvbyte";
 
 	void		Load ( util::FileReader_c & tReader );
 	void		Save ( util::FileWriter_c & tWriter );
