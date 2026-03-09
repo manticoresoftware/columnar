@@ -39,7 +39,8 @@ static FORCE_INLINE int CalcPatience ( size_t ef )
 
 
 TerminationQuantile_c::TerminationQuantile_c ( double fThresholdQuantile )
-	: m_tThresholdQuantile ( THRESHOLD_WINDOW_SIZE, fThresholdQuantile )
+	: m_iPatience ( CalcPatience(10) )	// initialize with a small enough k
+	, m_tThresholdQuantile ( THRESHOLD_WINDOW_SIZE, fThresholdQuantile )
 {}
 
 void TerminationQuantile_c::reset()
