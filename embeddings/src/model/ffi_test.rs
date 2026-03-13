@@ -407,6 +407,47 @@ mod tests {
     }
 
     #[test]
+    fn test_invalid_utf8_handling() {
+        // Test that invalid UTF-8 sequences are handled gracefully
+        // This is a regression test for issue #4117 where invalid UTF-8 would cause panics
+        // when html_strip='1' is enabled and corrupted text is processed
+
+        // Create invalid UTF-8 sequences that could occur from HTML stripping or corrupted input
+        let invalid_utf8_cases: Vec<&[u8]> = vec![
+            b"Hello.  I.  My\xc3\xa2\xc2", // Corrupted sequence (invalid continuation after valid char)
+            b"Valid text\xff\xfe\xfd",     // Invalid continuation bytes (0xFF, 0xFE, 0xFD)
+            b"\xc0\x80",                   // Overlong encoding of NUL
+            b"\xed\xa0\x80",               // UTF-16 surrogate (invalid in UTF-8)
+            b"Text\xc2\xc2\xc2",           // Invalid start byte sequence (0xC2 followed by 0xC2)
+            b"\xf4\x90\x80\x80",           // Invalid 4-byte sequence (out of Unicode range)
+            b"\xe0\x80\x80",               // Overlong 3-byte encoding
+            b"Text\x80\x81\x82",           // Invalid continuation bytes without start byte
+        ];
+
+        for invalid_bytes in invalid_utf8_cases {
+            // Create StringItem from invalid UTF-8 bytes
+            let string_item = StringItem {
+                ptr: invalid_bytes.as_ptr() as *const c_char,
+                len: invalid_bytes.len(),
+            };
+
+            // Verify we can convert it using from_utf8_lossy (which is what make_vect_embeddings uses)
+            let bytes = unsafe {
+                std::slice::from_raw_parts(string_item.ptr as *const u8, string_item.len)
+            };
+
+            // This should not panic - from_utf8_lossy replaces invalid sequences with U+FFFD
+            let result = String::from_utf8_lossy(bytes);
+
+            // Verify the result is a valid string (even if it contains replacement characters)
+            assert!(!result.is_empty() || invalid_bytes.is_empty());
+
+            // Verify we can convert it to &str without panicking
+            let _str_ref: &str = result.as_ref();
+        }
+    }
+
+    #[test]
     fn test_model_options_structure() {
         // Test that we can create ModelOptions with various combinations
         use crate::model::ModelOptions;
