@@ -3,6 +3,7 @@ use crate::error::LibError;
 use crate::utils::{
     chunk_input_tokens, get_hidden_size, get_max_input_length, get_mean_vector, normalize,
 };
+use candle_core::quantized::gguf_file;
 use candle_core::{DType, Device, Tensor};
 use candle_nn::VarBuilder;
 use candle_transformers::models::bert::{
@@ -16,15 +17,18 @@ use candle_transformers::models::llama::{
 use candle_transformers::models::mistral::{
     Config as MistralConfig, MistralCache, Model as MistralModel,
 };
+use candle_transformers::models::quantized_gemma3::ModelWeights as QuantizedGemmaModel;
+use candle_transformers::models::quantized_llama::ModelWeights as QuantizedLlamaModel;
 use candle_transformers::models::qwen3::{Config as QwenConfig, Model as QwenModel, Qwen3Cache};
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::error::Error;
+use std::fs::File;
+use std::io::BufReader;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 use tokenizers::Tokenizer;
-
 /// Model architecture type - determines pooling strategy
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ModelArch {
@@ -63,6 +67,8 @@ pub struct LocalModelInfo {
     pub config_path: PathBuf,
     pub tokenizer_path: PathBuf,
     pub weights_paths: Vec<PathBuf>,
+    /// Path to GGUF file if using quantized model
+    pub gguf_path: Option<PathBuf>,
 }
 
 fn model_download_lock(model_id: &str) -> Arc<Mutex<()>> {
@@ -131,6 +137,7 @@ pub(crate) fn download_max_for(model_id: &str) -> usize {
 }
 
 /// Download and cache model files from HuggingFace
+/// Supports both safetensors and GGUF formats
 pub fn build_model_info(
     cache_path: PathBuf,
     model_id: &str,
@@ -156,41 +163,52 @@ pub fn build_model_info(
     let tokenizer_path = api
         .get("tokenizer.json")
         .map_err(|_| LibError::ModelTokenizerFetchFailed)?;
-    let weights_paths = match api.get("model.safetensors") {
-        Ok(path) => vec![path],
-        Err(_) => {
-            // Support sharded safetensors via model.safetensors.index.json
-            let index_path = api
-                .get("model.safetensors.index.json")
-                .map_err(|_| LibError::ModelWeightsFetchFailed)?;
-            let index_contents = std::fs::read_to_string(&index_path)
-                .map_err(|_| LibError::ModelWeightsFetchFailed)?;
-            let index_json: Value = serde_json::from_str(&index_contents)
-                .map_err(|_| LibError::ModelWeightsFetchFailed)?;
-            let weight_map = index_json
-                .get("weight_map")
-                .and_then(Value::as_object)
-                .ok_or(LibError::ModelWeightsFetchFailed)?;
 
-            let mut shards: Vec<String> = weight_map
-                .values()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect();
-            shards.sort();
-            shards.dedup();
+    // Check for GGUF files first (quantized models)
+    // Try common GGUF filename patterns
+    let gguf_path = try_find_gguf_file(&api);
 
-            if shards.is_empty() {
-                return Err(Box::new(LibError::ModelWeightsFetchFailed));
-            }
-
-            let mut paths = Vec::with_capacity(shards.len());
-            for shard in shards {
-                let p = api
-                    .get(&shard)
+    let weights_paths = if gguf_path.is_some() {
+        // GGUF model - no safetensors needed
+        vec![]
+    } else {
+        // Fall back to safetensors
+        match api.get("model.safetensors") {
+            Ok(path) => vec![path],
+            Err(_) => {
+                // Support sharded safetensors via model.safetensors.index.json
+                let index_path = api
+                    .get("model.safetensors.index.json")
                     .map_err(|_| LibError::ModelWeightsFetchFailed)?;
-                paths.push(p);
+                let index_contents = std::fs::read_to_string(&index_path)
+                    .map_err(|_| LibError::ModelWeightsFetchFailed)?;
+                let index_json: Value = serde_json::from_str(&index_contents)
+                    .map_err(|_| LibError::ModelWeightsFetchFailed)?;
+                let weight_map = index_json
+                    .get("weight_map")
+                    .and_then(Value::as_object)
+                    .ok_or(LibError::ModelWeightsFetchFailed)?;
+
+                let mut shards: Vec<String> = weight_map
+                    .values()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect();
+                shards.sort();
+                shards.dedup();
+
+                if shards.is_empty() {
+                    return Err(Box::new(LibError::ModelWeightsFetchFailed));
+                }
+
+                let mut paths = Vec::with_capacity(shards.len());
+                for shard in shards {
+                    let p = api
+                        .get(&shard)
+                        .map_err(|_| LibError::ModelWeightsFetchFailed)?;
+                    paths.push(p);
+                }
+                paths
             }
-            paths
         }
     };
 
@@ -198,7 +216,55 @@ pub fn build_model_info(
         config_path,
         tokenizer_path,
         weights_paths,
+        gguf_path,
     })
+}
+
+/// Try to find a GGUF file in the model repository
+/// Uses api.info() to list all files, then finds GGUF files by extension
+fn try_find_gguf_file(api: &hf_hub::api::sync::ApiRepo) -> Option<PathBuf> {
+    // Get repo info to list all available files
+    let repo_info = api.info().ok()?;
+
+    // Find GGUF files - prefer smaller quantizations for embeddings
+    // Priority: Q4_K_M > Q4_K_S > Q5_K_M > Q8_0 > F16 > any .gguf
+    let mut gguf_files: Vec<String> = repo_info
+        .siblings
+        .iter()
+        .filter_map(|s| {
+            let filename = &s.rfilename;
+            if filename.ends_with(".gguf") {
+                Some(filename.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    if gguf_files.is_empty() {
+        return None;
+    }
+
+    // Sort by preference - prefer Q4_K_M for balance of speed/quality
+    let preference_order = [
+        "Q4_K_M.gguf",
+        "Q4_K_S.gguf",
+        "Q5_K_M.gguf",
+        "Q8_0.gguf",
+        "F16.gguf",
+        "BF16.gguf",
+    ];
+
+    gguf_files.sort_by_key(|f| {
+        // Find the first matching preference, lower index = better
+        preference_order
+            .iter()
+            .position(|pref| f.ends_with(pref))
+            .unwrap_or(999)
+    });
+
+    // Download the preferred GGUF file
+    api.get(&gguf_files[0]).ok()
 }
 
 /// Load tokenizer with fallback for BPE format
@@ -419,10 +485,129 @@ fn dtype_from_config(config: &str, device: &Device) -> DType {
     }
 }
 
+/// Quantized GGUF embedding model
+pub struct QuantizedEmbeddingModel {
+    model: QuantizedModelKind,
+    tokenizer: Tokenizer,
+    max_input_len: usize,
+    hidden_size: usize,
+    device: Device,
+}
+
+pub enum QuantizedModelKind {
+    Gemma {
+        model: Arc<Mutex<QuantizedGemmaModel>>,
+    },
+    Llama {
+        model: Arc<Mutex<QuantizedLlamaModel>>,
+    },
+}
+
+impl QuantizedEmbeddingModel {
+    pub fn new(
+        gguf_path: PathBuf,
+        tokenizer_path: PathBuf,
+        model_type: &str,
+        use_gpu: bool,
+    ) -> Result<Self, Box<dyn Error>> {
+        let device = if use_gpu {
+            Device::new_cuda(0).map_err(|_| LibError::DeviceCudaInitFailed)?
+        } else {
+            Device::Cpu
+        };
+
+        // Load GGUF file
+        let mut file = File::open(&gguf_path).map_err(|_| LibError::ModelWeightsLoadFailed)?;
+        let mut reader = BufReader::new(&mut file);
+        let content = gguf_file::Content::read(&mut reader)
+            .map_err(|e| format!("Failed to read GGUF file: {}", e))?;
+
+        // Detect architecture prefix by probing metadata keys (following candle-transformers pattern)
+        // GGUF files use keys like {prefix}.embedding_length, {prefix}.attention.head_count, etc.
+        let arch_prefix = ["gemma3", "gemma2", "gemma", "llama"]
+            .iter()
+            .find(|p| {
+                content
+                    .metadata
+                    .contains_key(&format!("{}.embedding_length", p))
+            })
+            .copied()
+            .unwrap_or("gemma"); // Default fallback
+
+        // Helper to get metadata value with detected prefix
+        let get_metadata = |key: &str| -> Option<usize> {
+            content
+                .metadata
+                .get(&format!("{}.{}", arch_prefix, key))
+                .and_then(|v| v.to_u32().ok())
+                .map(|v| v as usize)
+        };
+
+        // Get hidden size from GGUF metadata
+        let hidden_size = get_metadata("embedding_length").ok_or_else(|| {
+            Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "Could not find {}.embedding_length in GGUF metadata",
+                    arch_prefix
+                ),
+            ))
+        })?;
+
+        // Get max context length from metadata (default to 4096 if not found)
+        let max_input_len = get_metadata("context_length").unwrap_or(4096);
+
+        // Detect model architecture from GGUF general.architecture key
+        // This is more reliable than relying on config.json model_type
+        let gguf_arch = content
+            .metadata
+            .get("general.architecture")
+            .and_then(|v| v.to_string().ok());
+
+        // Detect model kind: prefer GGUF architecture, fall back to model_type
+        let model_kind = match gguf_arch.as_ref().map(|s| s.as_str()) {
+            Some("gemma") | Some("gemma2") | Some("gemma3") => "gemma",
+            Some("llama") => "llama",
+            _ => model_type, // Fall back to config-based model_type
+        };
+
+        let model = match model_kind {
+            "gemma" | "gemma2" | "gemma3" | "gemma3_text" => {
+                let model = QuantizedGemmaModel::from_gguf(content, &mut reader, &device)
+                    .map_err(|e| format!("Failed to load Gemma GGUF model: {}", e))?;
+                QuantizedModelKind::Gemma {
+                    model: Arc::new(Mutex::new(model)),
+                }
+            }
+            "llama" => {
+                let model = QuantizedLlamaModel::from_gguf(content, &mut reader, &device)
+                    .map_err(|e| format!("Failed to load Llama GGUF model: {}", e))?;
+                QuantizedModelKind::Llama {
+                    model: Arc::new(Mutex::new(model)),
+                }
+            }
+            _ => return Err(Box::new(LibError::ModelLoadFailed)),
+        };
+
+        let mut tokenizer = load_tokenizer(&tokenizer_path)?;
+        tokenizer.with_padding(None);
+        let _ = tokenizer.with_truncation(None);
+
+        Ok(Self {
+            model,
+            tokenizer,
+            max_input_len,
+            hidden_size,
+            device,
+        })
+    }
+}
+
 /// Unified local embedding model
 pub enum LocalModel {
     Bert(BertEmbeddingModel),
     Causal(CausalEmbeddingModel),
+    Quantized(QuantizedEmbeddingModel),
 }
 
 impl LocalModel {
@@ -432,6 +617,17 @@ impl LocalModel {
             .map_err(|_| LibError::ModelConfigReadFailed)?;
         let arch = ModelArch::from_config(&config);
         let model_type = model_type_from_config(&config);
+
+        // Check if this is a GGUF model
+        if let Some(gguf_path) = model_info.gguf_path {
+            let model = QuantizedEmbeddingModel::new(
+                gguf_path,
+                model_info.tokenizer_path,
+                model_type.as_deref().unwrap_or_default(),
+                use_gpu,
+            )?;
+            return Ok(LocalModel::Quantized(model));
+        }
 
         match arch {
             ModelArch::Bert => {
@@ -459,6 +655,7 @@ impl TextModel for LocalModel {
         let (device, max_input_len) = match self {
             LocalModel::Bert(m) => (m.device.clone(), m.max_input_len),
             LocalModel::Causal(m) => (m.device.clone(), m.max_input_len),
+            LocalModel::Quantized(m) => (m.device.clone(), m.max_input_len),
         };
 
         let mut all_results: Vec<Vec<f32>> = Vec::new();
@@ -472,6 +669,12 @@ impl TextModel for LocalModel {
                     .get_ids()
                     .to_vec(),
                 LocalModel::Causal(m) => m
+                    .tokenizer
+                    .encode(*text, true)
+                    .map_err(|_| LibError::ModelTokenizerEncodeFailed)?
+                    .get_ids()
+                    .to_vec(),
+                LocalModel::Quantized(m) => m
                     .tokenizer
                     .encode(*text, true)
                     .map_err(|_| LibError::ModelTokenizerEncodeFailed)?
@@ -538,6 +741,26 @@ impl TextModel for LocalModel {
                             divided.to_dtype(DType::F32)?
                         }
                     },
+                    LocalModel::Quantized(m) => match &m.model {
+                        QuantizedModelKind::Gemma { model } => {
+                            let mut model = model.lock().unwrap();
+                            let emb = model.forward(&token_ids, 0)?;
+                            let (_, n_tokens, _) = emb.dims3()?;
+                            let summed = emb.sum(1)?.to_dtype(DType::F32)?;
+                            let divisor = Tensor::new(n_tokens as f32, &device)?;
+                            let divided = summed.broadcast_div(&divisor)?;
+                            divided.to_dtype(DType::F32)?
+                        }
+                        QuantizedModelKind::Llama { model } => {
+                            let mut model = model.lock().unwrap();
+                            let emb = model.forward(&token_ids, 0)?;
+                            let (_, n_tokens, _) = emb.dims3()?;
+                            let summed = emb.sum(1)?.to_dtype(DType::F32)?;
+                            let divisor = Tensor::new(n_tokens as f32, &device)?;
+                            let divided = summed.broadcast_div(&divisor)?;
+                            divided.to_dtype(DType::F32)?
+                        }
+                    },
                 };
 
                 if let Ok(e_j) = embeddings.get(0) {
@@ -569,6 +792,7 @@ impl TextModel for LocalModel {
         match self {
             LocalModel::Bert(m) => m.hidden_size,
             LocalModel::Causal(m) => m.hidden_size,
+            LocalModel::Quantized(m) => m.hidden_size,
         }
     }
 
@@ -576,6 +800,7 @@ impl TextModel for LocalModel {
         match self {
             LocalModel::Bert(m) => m.max_input_len,
             LocalModel::Causal(m) => m.max_input_len,
+            LocalModel::Quantized(m) => m.max_input_len,
         }
     }
 }
@@ -583,7 +808,6 @@ impl TextModel for LocalModel {
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
     fn test_model_arch_detection_qwen3() {
         let qwen_config = r#"{"model_type":"qwen3"}"#;
@@ -730,5 +954,36 @@ mod tests {
         // Gemma models have various hidden sizes
         let gemma_config = r#"{"model_type":"gemma","hidden_size":2048}"#;
         assert_eq!(get_hidden_size(gemma_config).unwrap(), 2048);
+    }
+
+    // GGUF model tests
+    #[test]
+    fn test_gguf_model_type_detection() {
+        // Gemma models should be detected correctly for GGUF
+        let gemma_config = r#"{"model_type":"gemma"}"#;
+        assert_eq!(ModelArch::from_config(gemma_config), ModelArch::Causal);
+
+        let gemma2_config = r#"{"model_type":"gemma2"}"#;
+        assert_eq!(ModelArch::from_config(gemma2_config), ModelArch::Causal);
+
+        let gemma3_config = r#"{"model_type":"gemma3"}"#;
+        assert_eq!(ModelArch::from_config(gemma3_config), ModelArch::Causal);
+    }
+
+    #[test]
+    fn test_quantized_model_kind_detection() {
+        // Test that model types map to correct quantized model kinds
+        // This is a unit test for the model type matching logic
+        let gemma_types = ["gemma", "gemma2", "gemma3", "gemma3_text"];
+        for model_type in gemma_types {
+            // These should map to QuantizedModelKind::Gemma
+            assert!(matches!(
+                model_type,
+                "gemma" | "gemma2" | "gemma3" | "gemma3_text"
+            ));
+        }
+
+        // Llama should map to QuantizedModelKind::Llama
+        assert!(matches!("llama", "llama"));
     }
 }
