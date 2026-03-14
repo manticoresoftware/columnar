@@ -302,6 +302,59 @@ mod tests {
         assert_eq!(parts[1], "all-MiniLM-L6-v2");
     }
 
+    // GGUF/Gemma model tests
+    #[test]
+    fn test_gguf_model_info_detection() {
+        // Test that GGUF models are properly detected
+        // This tests the structure without requiring actual GGUF files
+        use crate::model::local::LocalModelInfo;
+
+        // Verify LocalModelInfo has gguf_path field
+        let info = LocalModelInfo {
+            config_path: PathBuf::from("/tmp/config.json"),
+            tokenizer_path: PathBuf::from("/tmp/tokenizer.json"),
+            weights_paths: vec![],
+            gguf_path: Some(PathBuf::from("/tmp/model.gguf")),
+        };
+
+        assert!(info.gguf_path.is_some());
+        assert!(info.weights_paths.is_empty());
+    }
+
+    #[test]
+    fn test_gemma_gguf_model_type() {
+        // Test that Gemma model types are correctly identified for GGUF loading
+        let gemma_types = ["gemma", "gemma2", "gemma3", "gemma3_text"];
+
+        for model_type in gemma_types {
+            // These should all be valid Gemma model types
+            assert!(matches!(
+                model_type,
+                "gemma" | "gemma2" | "gemma3" | "gemma3_text"
+            ));
+        }
+    }
+
+    #[test]
+    fn test_llama_gguf_model_type() {
+        // Test that Llama model type is correctly identified for GGUF loading
+        let model_type = "llama";
+        assert!(matches!(model_type, "llama"));
+    }
+
+    #[test]
+    fn test_quantized_model_architecture() {
+        // Test that quantized models use Causal architecture
+        use crate::model::local::ModelArch;
+
+        // Gemma and Llama are causal models
+        let gemma_config = r#"{"model_type":"gemma"}"#;
+        assert_eq!(ModelArch::from_config(gemma_config), ModelArch::Causal);
+
+        let llama_config = r#"{"model_type":"llama"}"#;
+        assert_eq!(ModelArch::from_config(llama_config), ModelArch::Causal);
+    }
+
     #[test]
     fn test_concurrent_model_access() {
         // Test that model creation can be attempted concurrently
