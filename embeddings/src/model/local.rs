@@ -776,8 +776,10 @@ impl TextModel for LocalModel {
                         let emb = model.forward(&token_ids)?;
                         // emb shape: [batch, seq_len, hidden_size]
                         // CLS pooling: take first token embedding
-                        let cls_emb = emb.i((0, 0))?;
-                        cls_emb.to_dtype(DType::F32)?
+                        // Keep batch dimension for consistency with other models
+                        let cls_emb = emb.i(0)?; // [seq_len, hidden_size]
+                        let first_token = cls_emb.i(0)?; // [hidden_size]
+                        first_token.unsqueeze(0)?.to_dtype(DType::F32)? // [1, hidden_size]
                     }
                     LocalModel::Causal(m) => match &m.kind {
                         CausalEmbeddingKind::Qwen { model, config } => {
