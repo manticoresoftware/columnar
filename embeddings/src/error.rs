@@ -18,6 +18,10 @@ pub enum LibError {
     RemoteInvalidAPIKey,
     RemoteRequestSendFailed,
     RemoteResponseParseFailed,
+    /// Model requires HF token but none was provided
+    ModelRequiresToken,
+    /// Invalid or expired HF token
+    HuggingFaceTokenInvalid,
 }
 
 // Implement std::error::Error for LibError
@@ -56,6 +60,12 @@ impl std::fmt::Display for LibError {
             }
             LibError::RemoteResponseParseFailed => {
                 write!(f, "Failed to parse response from remote model")
+            }
+            LibError::ModelRequiresToken => {
+                write!(f, "Model requires HuggingFace token but none was provided")
+            }
+            LibError::HuggingFaceTokenInvalid => {
+                write!(f, "Invalid or expired HuggingFace token")
             }
         }
     }

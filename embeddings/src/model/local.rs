@@ -147,6 +147,7 @@ pub fn build_model_info(
     cache_path: PathBuf,
     model_id: &str,
     revision: &str,
+    hf_token: Option<&str>,
 ) -> Result<LocalModelInfo, Box<dyn Error>> {
     let download_lock = model_download_lock(model_id);
     let _download_guard = download_lock
@@ -156,12 +157,14 @@ pub fn build_model_info(
     let _download_tracker = download_tracker_enter(model_id);
 
     let repo = Repo::with_revision(model_id.to_string(), RepoType::Model, revision.to_string());
-    let api = ApiBuilder::new()
-        .with_cache_dir(cache_path)
+    let mut api_builder = ApiBuilder::new().with_cache_dir(cache_path);
+    if let Some(token) = hf_token {
+        api_builder = api_builder.with_token(Some(token.to_string()));
+    }
+    let api = api_builder
         .build()
         .map_err(|_| LibError::HuggingFaceApiBuildFailed)?;
     let api = api.repo(repo);
-
     let config_path = api
         .get("config.json")
         .map_err(|_| LibError::ModelConfigFetchFailed)?;
@@ -665,8 +668,13 @@ pub enum LocalModel {
 }
 
 impl LocalModel {
-    pub fn new(model_id: &str, cache_path: PathBuf, use_gpu: bool) -> Result<Self, Box<dyn Error>> {
-        let model_info = build_model_info(cache_path, model_id, "main")?;
+    pub fn new(
+        model_id: &str,
+        cache_path: PathBuf,
+        use_gpu: bool,
+        hf_token: Option<&str>,
+    ) -> Result<Self, Box<dyn Error>> {
+        let model_info = build_model_info(cache_path, model_id, "main", hf_token)?;
         let config = std::fs::read_to_string(&model_info.config_path)
             .map_err(|_| LibError::ModelConfigReadFailed)?;
         let arch = ModelArch::from_config(&config);
