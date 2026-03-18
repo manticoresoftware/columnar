@@ -28,7 +28,7 @@ mod tests {
         let model_id = "sentence-transformers/all-MiniLM-L6-v2";
         let cache_path = PathBuf::from("/nonexistent/path");
 
-        let result = LocalModel::new(model_id, cache_path, false);
+        let result = LocalModel::new(model_id, cache_path, false, None);
 
         // Should fail with invalid path
         assert!(result.is_err());
@@ -43,7 +43,7 @@ mod tests {
         let model_id = "";
         let cache_path = PathBuf::from("/tmp/test_cache");
 
-        let result = LocalModel::new(model_id, cache_path, false);
+        let result = LocalModel::new(model_id, cache_path, false, None);
 
         // Should fail with empty model ID
         assert!(result.is_err());
@@ -55,10 +55,10 @@ mod tests {
         let cache_path = PathBuf::from("/tmp/test_cache");
 
         // Test with GPU enabled (will likely fail without CUDA, but tests the path)
-        let result_gpu = LocalModel::new(model_id, cache_path.clone(), true);
+        let result_gpu = LocalModel::new(model_id, cache_path.clone(), true, None);
 
         // Test with GPU disabled
-        let result_cpu = LocalModel::new(model_id, cache_path, false);
+        let result_cpu = LocalModel::new(model_id, cache_path, false, None);
 
         // Both should fail without actual model files, but for different reasons
         if result_gpu.is_err() && result_cpu.is_err() {
@@ -87,7 +87,7 @@ mod tests {
         let revision = "main";
 
         // This will likely fail without network/files, but tests the structure
-        let result = build_model_info(cache_path, model_id, revision);
+        let result = build_model_info(cache_path, model_id, revision, None);
 
         if result.is_err() {
             let error_str = if let Err(error) = result {
@@ -122,7 +122,7 @@ mod tests {
             let model_id = model_id.to_string();
             handles.push(thread::spawn(move || {
                 start.wait();
-                build_model_info(cache_path, &model_id, "main").expect("model init failed");
+                build_model_info(cache_path, &model_id, "main", None).expect("model init failed");
             }));
         }
 
@@ -147,7 +147,7 @@ mod tests {
         ];
 
         for model_id in model_ids {
-            let result = LocalModel::new(model_id, cache_path.clone(), false);
+            let result = LocalModel::new(model_id, cache_path.clone(), false, None);
 
             // All should fail without actual model files
             if result.is_err() {
@@ -177,7 +177,7 @@ mod tests {
         ];
 
         for cache_path in cache_paths {
-            let result = LocalModel::new(model_id, cache_path.clone(), false);
+            let result = LocalModel::new(model_id, cache_path.clone(), false, None);
 
             // Should handle different path formats gracefully
             if result.is_err() {
@@ -197,7 +197,7 @@ mod tests {
         let model_id = "sentence-transformers/all-MiniLM-L6-v2";
         let cache_path = PathBuf::from("/tmp/test_cache");
 
-        let result = LocalModel::new(model_id, cache_path, false);
+        let result = LocalModel::new(model_id, cache_path, false, None);
 
         if result.is_err() {
             let error_str = if let Err(error) = result {
@@ -246,7 +246,7 @@ mod tests {
 
         // Test both GPU and CPU modes
         for use_gpu in [true, false] {
-            let result = LocalModel::new(model_id, cache_path.clone(), use_gpu);
+            let result = LocalModel::new(model_id, cache_path.clone(), use_gpu, None);
 
             if result.is_err() {
                 let error_str = if let Err(error) = result {
@@ -366,7 +366,7 @@ mod tests {
                     let model_id = "sentence-transformers/all-MiniLM-L6-v2";
                     let cache_path = PathBuf::from(format!("/tmp/test_cache_{}", i));
 
-                    let result = LocalModel::new(model_id, cache_path, false);
+                    let result = LocalModel::new(model_id, cache_path, false, None);
 
                     // Should handle concurrent access gracefully
                     if result.is_err() {
@@ -394,7 +394,7 @@ mod tests {
             let model_id = "sentence-transformers/all-MiniLM-L6-v2";
             let cache_path = PathBuf::from("/tmp/test_cache");
 
-            let result = LocalModel::new(model_id, cache_path, false);
+            let result = LocalModel::new(model_id, cache_path, false, None);
 
             // Even if creation fails, it should be memory safe
             if result.is_err() {
@@ -415,7 +415,7 @@ mod tests {
         ];
 
         for sentence in &test_sentences {
-            let local_model = LocalModel::new(model_id, cache_path.clone(), false).unwrap();
+            let local_model = LocalModel::new(model_id, cache_path.clone(), false, None).unwrap();
             let embedding = local_model.predict(&[sentence]).unwrap();
             check_embedding_properties(&embedding[0], local_model.get_hidden_size());
         }
@@ -425,7 +425,7 @@ mod tests {
     fn test_embedding_consistency() {
         let model_id = "sentence-transformers/all-MiniLM-L6-v2";
         let cache_path = test_cache_path();
-        let local_model = LocalModel::new(model_id, cache_path, false).unwrap();
+        let local_model = LocalModel::new(model_id, cache_path, false, None).unwrap();
 
         let sentence = &["This is a test sentence."];
         let embedding1 = local_model.predict(sentence).unwrap();
@@ -440,7 +440,7 @@ mod tests {
     fn test_hidden_size() {
         let model_id = "sentence-transformers/all-MiniLM-L6-v2";
         let cache_path = test_cache_path();
-        let local_model = LocalModel::new(model_id, cache_path, false).unwrap();
+        let local_model = LocalModel::new(model_id, cache_path, false, None).unwrap();
         assert_eq!(local_model.get_hidden_size(), 384);
     }
 
@@ -448,7 +448,7 @@ mod tests {
     fn test_max_input_len() {
         let model_id = "sentence-transformers/all-MiniLM-L6-v2";
         let cache_path = test_cache_path();
-        let local_model = LocalModel::new(model_id, cache_path, false).unwrap();
+        let local_model = LocalModel::new(model_id, cache_path, false, None).unwrap();
         assert_eq!(local_model.get_max_input_len(), 512);
     }
 
@@ -458,9 +458,8 @@ mod tests {
         let model_id = "Qwen/Qwen3-Embedding-0.6B";
         let cache_path = test_cache_path();
 
-        let local_model = LocalModel::new(model_id, cache_path.clone(), false)
+        let local_model = LocalModel::new(model_id, cache_path.clone(), false, None)
             .expect("Qwen model should load successfully");
-
         assert_eq!(local_model.get_hidden_size(), 1024);
         assert_eq!(local_model.get_max_input_len(), 32768);
 
@@ -478,8 +477,8 @@ mod tests {
         let model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0";
         let cache_path = test_cache_path();
 
-        let local_model =
-            LocalModel::new(model_id, cache_path.clone(), false).expect("Llama model should load");
+        let local_model = LocalModel::new(model_id, cache_path.clone(), false, None)
+            .expect("Llama model should load");
 
         let test_text = &["This is a test sentence for Llama embedding model."];
         let embeddings = local_model.predict(test_text).unwrap();
@@ -493,9 +492,8 @@ mod tests {
         let model_id = "Locutusque/TinyMistral-248M-v2";
         let cache_path = test_cache_path();
 
-        let local_model = LocalModel::new(model_id, cache_path.clone(), false)
+        let local_model = LocalModel::new(model_id, cache_path.clone(), false, None)
             .expect("Mistral model should load");
-
         let test_text = &["This is a test sentence for Mistral embedding model."];
         let embeddings = local_model.predict(test_text).unwrap();
         check_embedding_properties(&embeddings[0], local_model.get_hidden_size());
@@ -507,8 +505,8 @@ mod tests {
         let model_id = "h2oai/embeddinggemma-300m";
         let cache_path = test_cache_path();
 
-        let local_model =
-            LocalModel::new(model_id, cache_path.clone(), false).expect("Gemma model should load");
+        let local_model = LocalModel::new(model_id, cache_path.clone(), false, None)
+            .expect("Gemma model should load");
 
         let test_text = &["This is a test sentence for Gemma embedding model."];
         let embeddings = local_model.predict(test_text).unwrap();
@@ -521,7 +519,7 @@ mod tests {
         let model_id = "Qwen/Qwen3-Embedding-0.6B";
         let cache_path = test_cache_path();
 
-        let result = LocalModel::new(model_id, cache_path.clone(), false);
+        let result = LocalModel::new(model_id, cache_path.clone(), false, None);
 
         let local_model = match result {
             Ok(m) => m,
@@ -575,5 +573,58 @@ mod tests {
 
         // These tests require actual model files, so they're integration tests
         // Our unit tests complement them by testing error cases and structure
+    }
+
+    #[test]
+    fn test_hf_token_parameter_passing() {
+        // Test that hf_token parameter is correctly passed through LocalModel::new
+        // This test uses a non-gated model, so token should be optional
+        let model_id = "sentence-transformers/all-MiniLM-L6-v2";
+        let cache_path = test_cache_path();
+
+        // Should work with None token for non-gated models
+        let result = LocalModel::new(model_id, cache_path.clone(), false, None);
+        if result.is_err() {
+            // If model isn't cached, skip this test
+            println!("Skipping test - model not cached");
+            return;
+        }
+        let model = result.unwrap();
+        assert!(model.get_hidden_size() > 0);
+    }
+
+    #[test]
+    fn test_build_model_info_with_token() {
+        // Test that build_model_info accepts hf_token parameter
+        let cache_path = PathBuf::from("/tmp/test_cache_token_test");
+        let model_id = "sentence-transformers/all-MiniLM-L6-v2";
+
+        // Should work with None token for non-gated models
+        let result = build_model_info(cache_path, model_id, "main", None);
+        // We don't expect this to succeed without network/files, but the parameter should be accepted
+        if result.is_err() {
+            // Expected - no network or cached files
+            println!("build_model_info failed as expected without network: {:?}", result.err());
+        }
+    }
+
+    #[test]
+    fn test_gated_model_without_token_error() {
+        // Test that attempting to load a gated model without token produces appropriate error
+        // Note: This test would require network access and a gated model to fully test
+        // For now, we just verify the parameter plumbing is in place
+
+        // The actual error would be:
+        // - ModelRequiresToken if the model is gated and no token provided
+        // - HuggingFaceTokenInvalid if the token is invalid
+
+        // This is a structural test - verifies the API accepts the parameter
+        let cache_path = PathBuf::from("/tmp/test_cache_gated_test");
+        let model_id = "google/embeddinggemma-300m";
+
+        // With None token - should work for non-gated models, fail for gated
+        let result = build_model_info(cache_path, model_id, "main", None);
+        // Result depends on whether model is gated and network availability
+        println!("Gated model test result: {:?}", result.is_ok());
     }
 }

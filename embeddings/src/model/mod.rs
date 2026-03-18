@@ -103,12 +103,19 @@ pub fn create_model(options: ModelOptions) -> Result<Model, Box<dyn Error>> {
 
     // Local models - auto-detect architecture from config
     // Supports: BERT, SentenceTransformers, Qwen, Llama, Mistral, Gemma, etc.
+    // For gated models, api_key is used as HuggingFace token
     let cache_path = PathBuf::from(
         options
             .cache_path
             .unwrap_or(String::from(".cache/manticore")),
     );
 
-    let model = local::LocalModel::new(model_id, cache_path, options.use_gpu.unwrap_or(false))?;
+    let hf_token = options.api_key.as_deref();
+    let model = local::LocalModel::new(
+        model_id,
+        cache_path,
+        options.use_gpu.unwrap_or(false),
+        hf_token,
+    )?;
     Ok(Model::Local(Box::new(model)))
 }
