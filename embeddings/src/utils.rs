@@ -2,20 +2,48 @@ use anyhow::Result;
 use serde_json::Value;
 
 /// Get maximum input length for sequence for the current model
+/// Supports multiple config field names for different model architectures
 pub fn get_max_input_length(contents: &str) -> Result<usize> {
     let config: Value = serde_json::from_str(contents)?;
-    let max_length = config["max_position_embeddings"]
-        .as_u64()
-        .ok_or_else(|| std::io::Error::other("Max position embeddings not found"))?;
-    Ok(max_length as usize)
+
+    // Try standard field first (BERT, Llama, etc.)
+    if let Some(max_len) = config
+        .get("max_position_embeddings")
+        .and_then(Value::as_u64)
+    {
+        return Ok(max_len as usize);
+    }
+
+    // Try n_positions (some models use this)
+    if let Some(n_pos) = config.get("n_positions").and_then(Value::as_u64) {
+        return Ok(n_pos as usize);
+    }
+
+    // T5 models use relative_attention_max_distance or default to 512
+    if config.get("model_type").and_then(Value::as_str) == Some("t5") {
+        // T5 uses relative position embeddings, default max is 512
+        return Ok(512);
+    }
+
+    Err(std::io::Error::other("Max position embeddings not found").into())
 }
 
+/// Get hidden size for the current model
+/// Supports multiple config field names for different model architectures
 pub fn get_hidden_size(contents: &str) -> Result<usize> {
     let config: Value = serde_json::from_str(contents)?;
-    let max_length = config["hidden_size"]
-        .as_u64()
-        .ok_or_else(|| std::io::Error::other("Hidden size not found"))?;
-    Ok(max_length as usize)
+
+    // Try standard field first (BERT, Llama, etc.)
+    if let Some(hidden) = config.get("hidden_size").and_then(Value::as_u64) {
+        return Ok(hidden as usize);
+    }
+
+    // T5 models use d_model instead of hidden_size
+    if let Some(d_model) = config.get("d_model").and_then(Value::as_u64) {
+        return Ok(d_model as usize);
+    }
+
+    Err(std::io::Error::other("Hidden size not found").into())
 }
 
 #[inline]
@@ -89,12 +117,43 @@ mod tests {
     }
 
     #[test]
+    fn test_get_max_input_length_t5() {
+        // T5 model with model_type - should return default 512
+        let t5_config = r#"{"model_type": "t5", "d_model": 768}"#;
+        assert_eq!(get_max_input_length(t5_config).unwrap(), 512);
+
+        // T5 model with relative_attention_max_distance
+        let t5_config_with_relative =
+            r#"{"model_type": "t5", "d_model": 768, "relative_attention_max_distance": 128}"#;
+        assert_eq!(get_max_input_length(t5_config_with_relative).unwrap(), 512);
+
+        // n_positions fallback
+        let n_positions_config = r#"{"n_positions": 1024}"#;
+        assert_eq!(get_max_input_length(n_positions_config).unwrap(), 1024);
+    }
+
+    #[test]
     fn test_get_hidden_size() {
         let config = r#"{"hidden_size": 768}"#;
         assert_eq!(get_hidden_size(config).unwrap(), 768);
 
         let invalid_config = r#"{"some_other_field": 768}"#;
         assert!(get_hidden_size(invalid_config).is_err());
+    }
+
+    #[test]
+    fn test_get_hidden_size_t5() {
+        // T5 model uses d_model instead of hidden_size
+        let t5_config = r#"{"model_type": "t5", "d_model": 1536}"#;
+        assert_eq!(get_hidden_size(t5_config).unwrap(), 1536);
+
+        // FRIDA-like config
+        let frida_config = r#"{"architectures": ["T5EncoderModel"], "model_type": "t5", "d_model": 1536, "d_ff": 4096}"#;
+        assert_eq!(get_hidden_size(frida_config).unwrap(), 1536);
+
+        // Standard hidden_size should still work
+        let bert_config = r#"{"model_type": "bert", "hidden_size": 768}"#;
+        assert_eq!(get_hidden_size(bert_config).unwrap(), 768);
     }
 
     #[test]
