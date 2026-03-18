@@ -604,7 +604,10 @@ mod tests {
         // We don't expect this to succeed without network/files, but the parameter should be accepted
         if result.is_err() {
             // Expected - no network or cached files
-            println!("build_model_info failed as expected without network: {:?}", result.err());
+            println!(
+                "build_model_info failed as expected without network: {:?}",
+                result.err()
+            );
         }
     }
 
@@ -626,5 +629,77 @@ mod tests {
         let result = build_model_info(cache_path, model_id, "main", None);
         // Result depends on whether model is gated and network availability
         println!("Gated model test result: {:?}", result.is_ok());
+    }
+
+    #[test]
+    fn test_frida_embedding_properties() {
+        // Integration test for T5 encoder model (ai-forever/FRIDA)
+        // This tests the T5EmbeddingModel implementation
+        let model_id = "ai-forever/FRIDA";
+        let cache_path = test_cache_path();
+
+        let result = LocalModel::new(model_id, cache_path.clone(), false, None);
+        let local_model = match result {
+            Ok(m) => m,
+            Err(e) => {
+                // Skip test if model not cached or network unavailable
+                println!("FRIDA test skipped: {}", e);
+                return;
+            }
+        };
+
+        // Verify T5 model properties
+        // FRIDA has d_model=1536 (hidden size)
+        assert_eq!(
+            local_model.get_hidden_size(),
+            1536,
+            "FRIDA should have 1536 hidden size"
+        );
+
+        // Test embedding generation
+        let test_text = &["This is a test sentence for FRIDA embedding model."];
+        let embeddings = local_model
+            .predict(test_text)
+            .expect("FRIDA model should generate embeddings");
+
+        assert_eq!(embeddings.len(), 1, "Should return one embedding");
+        check_embedding_properties(&embeddings[0], local_model.get_hidden_size());
+    }
+
+    #[test]
+    fn test_google_embeddinggemma_with_token() {
+        // Integration test for gated Gemma model (google/embeddinggemma-300m)
+        // This test requires HF_TOKEN environment variable for gated model access
+        let model_id = "google/embeddinggemma-300m";
+        let cache_path = test_cache_path();
+
+        // Try to get HF token from environment
+        let hf_token = std::env::var("HF_TOKEN").ok();
+
+        let result = LocalModel::new(model_id, cache_path.clone(), false, hf_token.as_deref());
+
+        let local_model = match result {
+            Ok(m) => m,
+            Err(e) => {
+                // Skip test if token not provided or model access denied
+                println!("Google embeddinggemma test skipped: {}", e);
+                return;
+            }
+        };
+
+        // Verify model loaded successfully
+        assert!(
+            local_model.get_hidden_size() > 0,
+            "Model should have valid hidden size"
+        );
+
+        // Test embedding generation
+        let test_text = &["This is a test sentence for Google embeddinggemma model."];
+        let embeddings = local_model
+            .predict(test_text)
+            .expect("Google embeddinggemma should generate embeddings");
+
+        assert_eq!(embeddings.len(), 1, "Should return one embedding");
+        check_embedding_properties(&embeddings[0], local_model.get_hidden_size());
     }
 }
