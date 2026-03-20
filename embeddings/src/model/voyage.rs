@@ -47,14 +47,9 @@ impl VoyageModel {
         // Real validation happens via actual API request in validate_api_key()
         validate_api_key_basic(api_key)
             .map_err(|_| LibError::RemoteInvalidAPIKey { status: None })?;
-        let timeout_duration = match api_timeout {
-            Some(secs) => Some(std::time::Duration::from_secs(secs)),
-            None => None, // Unlimited (no timeout)
-        };
+        let timeout_duration = api_timeout.map(std::time::Duration::from_secs);
         Ok(Self {
-            client: Client::builder()
-                .timeout(timeout_duration)
-                .build()?,
+            client: Client::builder().timeout(timeout_duration).build()?,
             model,
             api_key: api_key.to_string(),
             api_url: api_url.map(|s| s.to_string()),

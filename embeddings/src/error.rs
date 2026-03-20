@@ -14,15 +14,21 @@ pub enum LibError {
     ModelMaxInputLenGetFailed,
     ModelLoadFailed,
     DeviceCudaInitFailed,
-    RemoteUnsupportedModel { status: Option<u16> },
-    RemoteInvalidAPIKey { status: Option<u16> },
+    RemoteUnsupportedModel {
+        status: Option<u16>,
+    },
+    RemoteInvalidAPIKey {
+        status: Option<u16>,
+    },
     RemoteRequestSendFailed,
     RemoteResponseParseFailed,
     /// Model requires HF token but none was provided
     ModelRequiresToken,
     /// Invalid or expired HF token
     HuggingFaceTokenInvalid,
-    RemoteHttpError { status: u16 },
+    RemoteHttpError {
+        status: u16,
+    },
 }
 
 // Implement std::error::Error for LibError
