@@ -44,7 +44,7 @@ impl TextModelWrapper {
         api_key_len: usize,
         api_url_ptr: *const c_char,
         api_url_len: usize,
-        api_timeout: i32, // 0 means use default (10 seconds), positive value is timeout in seconds
+        api_timeout: i32, // 0 = unlimited, >0 = timeout in seconds
         use_gpu: bool,
     ) -> TextModelResult {
         let name = unsafe {
@@ -85,9 +85,9 @@ impl TextModelWrapper {
                 Some(api_url.to_string())
             },
             api_timeout: if api_timeout > 0 {
-                Some(api_timeout as u64)
+                Some(api_timeout as u64) // Specific timeout
             } else {
-                None // Use default (10 seconds)
+                None // Unlimited (no timeout)
             },
             use_gpu: Some(use_gpu),
         };

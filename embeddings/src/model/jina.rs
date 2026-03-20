@@ -56,10 +56,13 @@ impl JinaModel {
         // Real validation happens via actual API request in validate_api_key()
         validate_api_key_basic(api_key)
             .map_err(|_| LibError::RemoteInvalidAPIKey { status: None })?;
-        let timeout_secs = api_timeout.unwrap_or(10); // Default 10 seconds
+        let timeout_duration = match api_timeout {
+            Some(secs) => Some(std::time::Duration::from_secs(secs)),
+            None => None, // Unlimited (no timeout)
+        };
         Ok(Self {
             client: Client::builder()
-                .timeout(std::time::Duration::from_secs(timeout_secs))
+                .timeout(timeout_duration)
                 .build()?,
             model,
             api_key: api_key.to_string(),

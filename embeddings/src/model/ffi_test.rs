@@ -27,6 +27,7 @@ mod tests {
         let model_name = to_c_string(model_id);
         let cache_path = to_c_string("");
         let api_key = to_c_string("");
+        let api_url = to_c_string("");
 
         let result = TextModelWrapper::load_model(
             model_name.as_ptr(),
@@ -35,6 +36,9 @@ mod tests {
             cache_path.as_bytes().len(),
             api_key.as_ptr(),
             api_key.as_bytes().len(),
+            api_url.as_ptr(),
+            api_url.as_bytes().len(),
+            0, // Unlimited timeout
             false,
         );
 
