@@ -928,15 +928,18 @@ impl LocalModel {
         F: Fn(&[Vec<u32>]) -> Result<Vec<Vec<f32>>, Box<dyn Error>>,
     {
         let stride = max_input_len / 10;
+
+        // Batch tokenization — uses rayon parallelism internally when
+        // TOKENIZERS_PARALLELISM=true (set below on first call)
+        let encodings = tokenizer
+            .encode_batch(texts.to_vec(), true)
+            .map_err(|_| LibError::ModelTokenizerEncodeFailed)?;
+
         let mut all_chunks: Vec<Vec<u32>> = Vec::new();
         let mut text_chunk_ranges: Vec<(usize, usize)> = Vec::with_capacity(texts.len());
 
-        for text in texts.iter() {
-            let tokens = tokenizer
-                .encode(*text, true)
-                .map_err(|_| LibError::ModelTokenizerEncodeFailed)?
-                .get_ids()
-                .to_vec();
+        for encoding in &encodings {
+            let tokens = encoding.get_ids().to_vec();
             let chunks = chunk_input_tokens(&tokens, max_input_len, stride);
             let start = all_chunks.len();
             let count = chunks.len();
