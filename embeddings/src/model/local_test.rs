@@ -315,6 +315,7 @@ mod tests {
             tokenizer_path: PathBuf::from("/tmp/tokenizer.json"),
             weights_paths: vec![],
             gguf_path: Some(PathBuf::from("/tmp/model.gguf")),
+            onnx_path: None,
         };
 
         assert!(info.gguf_path.is_some());
@@ -701,5 +702,110 @@ mod tests {
 
         assert_eq!(embeddings.len(), 1, "Should return one embedding");
         check_embedding_properties(&embeddings[0], local_model.get_hidden_size());
+    }
+
+    #[test]
+    fn test_onnx_model_info_detection() {
+        use crate::model::local::LocalModelInfo;
+
+        let info = LocalModelInfo {
+            config_path: PathBuf::from("/tmp/config.json"),
+            tokenizer_path: PathBuf::from("/tmp/tokenizer.json"),
+            weights_paths: vec![],
+            gguf_path: None,
+            onnx_path: Some(PathBuf::from("/tmp/model.onnx")),
+        };
+
+        assert!(info.onnx_path.is_some());
+        assert!(info.gguf_path.is_none());
+        assert!(info.weights_paths.is_empty());
+    }
+
+    #[test]
+    fn test_onnx_all_minilm_l12_v2() {
+        let model_id = "onnx-models/all-MiniLM-L12-v2-onnx";
+        let cache_path = test_cache_path();
+
+        let result = LocalModel::new(model_id, cache_path.clone(), false, None);
+        let local_model = match result {
+            Ok(m) => m,
+            Err(e) => {
+                println!("ONNX test skipped: {}", e);
+                return;
+            }
+        };
+
+        assert_eq!(local_model.get_hidden_size(), 384);
+
+        let test_text = &["This is a test sentence for ONNX embedding model."];
+        let embeddings = local_model
+            .predict(test_text)
+            .expect("ONNX model should generate embeddings");
+
+        assert_eq!(embeddings.len(), 1);
+        check_embedding_properties(&embeddings[0], local_model.get_hidden_size());
+    }
+
+    #[test]
+    fn test_onnx_embedding_consistency() {
+        let model_id = "onnx-models/all-MiniLM-L12-v2-onnx";
+        let cache_path = test_cache_path();
+
+        let result = LocalModel::new(model_id, cache_path, false, None);
+        let local_model = match result {
+            Ok(m) => m,
+            Err(e) => {
+                println!("ONNX consistency test skipped: {}", e);
+                return;
+            }
+        };
+
+        let sentence = &["This is a test sentence."];
+        let embedding1 = local_model.predict(sentence).unwrap();
+        let embedding2 = local_model.predict(sentence).unwrap();
+
+        for (e1, e2) in embedding1[0].iter().zip(embedding2[0].iter()) {
+            assert_abs_diff_eq!(e1, e2, epsilon = 1e-6);
+        }
+    }
+
+    #[test]
+    fn test_onnx_batch_embeddings() {
+        let model_id = "onnx-models/all-MiniLM-L12-v2-onnx";
+        let cache_path = test_cache_path();
+
+        let result = LocalModel::new(model_id, cache_path, false, None);
+        let local_model = match result {
+            Ok(m) => m,
+            Err(e) => {
+                println!("ONNX batch test skipped: {}", e);
+                return;
+            }
+        };
+
+        let test_texts = &[
+            "First test sentence.",
+            "Second test sentence with different content.",
+            "Third sentence for batch processing.",
+        ];
+
+        let embeddings = local_model.predict(test_texts).unwrap();
+        assert_eq!(embeddings.len(), test_texts.len());
+
+        for embedding in &embeddings {
+            check_embedding_properties(embedding, local_model.get_hidden_size());
+        }
+
+        // Different texts should produce different embeddings
+        let mut differences = 0;
+        for (a, b) in embeddings[0].iter().zip(embeddings[1].iter()) {
+            if (*a - *b).abs() > 1e-6 {
+                differences += 1;
+            }
+        }
+        assert!(
+            differences > 100,
+            "Embeddings should be different for different texts"
+        );
     }
 }
