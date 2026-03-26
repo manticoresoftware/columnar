@@ -152,13 +152,25 @@ jobs:
       - name: Prepare build args
         id: params
         run: |
+          # Enable platform-specific BLAS acceleration:
+          # - macOS: Apple Accelerate framework (always available)
+          # - Linux/Windows x86_64: Intel MKL (downloaded at build time)
+          # - Linux aarch64: no extra BLAS (gemm crate uses NEON via runtime detection)
+          features=""
+          if [[ "${{ inputs.distr }}" == "macos" ]]; then
+            features="--features accelerate"
+          elif [[ "${{ inputs.arch }}" == "x86_64" ]]; then
+            features="--features mkl"
+          fi
+
           args=(
-            "--target" 
-            "${{ steps.vars.outputs.target }}" 
+            "--target"
+            "${{ steps.vars.outputs.target }}"
             "--lib"
-            "--release" 
-            "--manifest-path" 
+            "--release"
+            "--manifest-path"
             "./embeddings/Cargo.toml"
+            ${features}
           )
           echo "args=${args[@]}" >> $GITHUB_OUTPUT
 
