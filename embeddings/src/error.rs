@@ -14,14 +14,21 @@ pub enum LibError {
     ModelMaxInputLenGetFailed,
     ModelLoadFailed,
     DeviceCudaInitFailed,
-    RemoteUnsupportedModel,
-    RemoteInvalidAPIKey,
+    RemoteUnsupportedModel {
+        status: Option<u16>,
+    },
+    RemoteInvalidAPIKey {
+        status: Option<u16>,
+    },
     RemoteRequestSendFailed,
     RemoteResponseParseFailed,
     /// Model requires HF token but none was provided
     ModelRequiresToken,
     /// Invalid or expired HF token
     HuggingFaceTokenInvalid,
+    RemoteHttpError {
+        status: u16,
+    },
 }
 
 // Implement std::error::Error for LibError
@@ -53,8 +60,24 @@ impl std::fmt::Display for LibError {
                 write!(f, "Failed to get model max input length")
             }
             LibError::DeviceCudaInitFailed => write!(f, "Failed to initialize CUDA device"),
-            LibError::RemoteUnsupportedModel => write!(f, "Unsupported remote model given"),
-            LibError::RemoteInvalidAPIKey => write!(f, "Invalid API key for remote model"),
+            LibError::RemoteUnsupportedModel { status } => {
+                if let Some(s) = status {
+                    write!(f, "Unsupported remote model given (HTTP status code {})", s)
+                } else {
+                    write!(f, "Unsupported remote model given")
+                }
+            }
+            LibError::RemoteInvalidAPIKey { status } => {
+                if let Some(s) = status {
+                    write!(
+                        f,
+                        "Invalid API key for remote model (HTTP status code {})",
+                        s
+                    )
+                } else {
+                    write!(f, "Invalid API key for remote model")
+                }
+            }
             LibError::RemoteRequestSendFailed => {
                 write!(f, "Failed to send request to remote model")
             }
@@ -66,6 +89,9 @@ impl std::fmt::Display for LibError {
             }
             LibError::HuggingFaceTokenInvalid => {
                 write!(f, "Invalid or expired HuggingFace token")
+            }
+            LibError::RemoteHttpError { status } => {
+                write!(f, "HTTP error from remote model: status code {}", status)
             }
         }
     }

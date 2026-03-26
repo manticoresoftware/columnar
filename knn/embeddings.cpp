@@ -177,7 +177,14 @@ bool EmbeddingsLib_c::Load ( std::string & sError )
 
 std::string ToKey ( const ModelSettings_t & tSettings )
 {
-	return tSettings.m_sModelName + tSettings.m_sCachePath + tSettings.m_sAPIKey + std::to_string ( tSettings.m_bUseGPU );
+	std::string sKey;
+	sKey += tSettings.m_sModelName;
+	sKey += tSettings.m_sCachePath;
+	sKey += tSettings.m_sAPIKey;
+	sKey += tSettings.m_sAPIUrl;
+	sKey += std::to_string ( tSettings.m_iAPITimeout );
+	sKey += std::to_string ( tSettings.m_bUseGPU ? 1 : 0 );
+	return sKey;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -209,13 +216,37 @@ bool TextToEmbeddings_c::Initialize ( std::shared_ptr<LoadedLib_c> pLib, std::st
 
 	auto * pFuncs = m_pLib->GetLibFuncs();
 	assert(pFuncs);
-
-	TextModelResult tResult = pFuncs->load_model ( m_tSettings.m_sModelName.c_str(), m_tSettings.m_sModelName.length(), m_tSettings.m_sCachePath.c_str(), m_tSettings.m_sCachePath.length(), m_tSettings.m_sAPIKey.c_str(), m_tSettings.m_sAPIKey.length(), m_tSettings.m_bUseGPU );
+	
+	TextModelResult tResult = pFuncs->load_model ( m_tSettings.m_sModelName.c_str(), m_tSettings.m_sModelName.length(), m_tSettings.m_sCachePath.c_str(), m_tSettings.m_sCachePath.length(), m_tSettings.m_sAPIKey.c_str(), m_tSettings.m_sAPIKey.length(), m_tSettings.m_sAPIUrl.c_str(), m_tSettings.m_sAPIUrl.length(), m_tSettings.m_iAPITimeout, m_tSettings.m_bUseGPU );
 	if ( tResult.m_szError )
 	{
 		sError = tResult.m_szError;
 		pFuncs->free_model_result(tResult);
 		return false;
+	}
+
+	// Validate API key by making a real API request (for remote models)
+	// This ensures the API key is valid before allowing table creation/alter
+	// The validate_api_key function makes a minimal test request to verify the key works
+	// Note: We validate before setting m_pModel to avoid leaving a dangling pointer on validation failure
+	if ( tResult.m_pModel && pFuncs->validate_api_key && pFuncs->free_string )
+	{
+		// Pass the address of the model pointer directly (same pattern as make_vect_embeddings and get_hidden_size)
+		// TextModelWrapper is void*, so &tResult.m_pModel gives us void** which matches const TextModelWrapper*
+		char * szValidationError = pFuncs->validate_api_key ( reinterpret_cast<const TextModelWrapper *>(&tResult.m_pModel) );
+		
+		if ( szValidationError )
+		{
+			sError = szValidationError;
+
+			// free_string() is required: validate_api_key() returns a Rust-allocated CString
+			// via CString::into_raw(). After copying the error message, we must free the
+			// Rust-allocated memory to avoid a memory leak. This follows the standard Rust FFI
+			// pattern for returning owned strings to C/C++.
+			pFuncs->free_string(szValidationError);
+			pFuncs->free_model_result(tResult);
+			return false;
+		}
 	}
 
 	m_pModel = tResult.m_pModel;
@@ -280,7 +311,7 @@ knn::EmbeddingsLib_i * LoadEmbeddingsLib ( const std::string & sLibPath, std::st
 	if ( !pLib->Load(sError) )
 		return nullptr;
 
-	const int SUPPORTED_EMBEDDINGS_LIB_VER = 2;
+	const int SUPPORTED_EMBEDDINGS_LIB_VER = 3;
 	if ( pLib->GetVersion()!=SUPPORTED_EMBEDDINGS_LIB_VER )
 	{
 		sError = util::FormatStr ( "Unsupported embeddings library version %d (expected %d)", pLib->GetVersion(), SUPPORTED_EMBEDDINGS_LIB_VER );

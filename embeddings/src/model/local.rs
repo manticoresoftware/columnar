@@ -889,6 +889,11 @@ impl TextModel for LocalModel {
             LocalModel::Quantized(m) => m.max_input_len,
         }
     }
+
+    fn validate_api_key(&self) -> Result<(), Box<dyn std::error::Error>> {
+        // Local models don't use API keys, so validation is always successful
+        Ok(())
+    }
 }
 
 #[cfg(test)]

@@ -59,6 +59,8 @@ struct ModelSettings_t
 	std::string m_sModelName;
 	std::string m_sCachePath;
 	std::string m_sAPIKey;
+	std::string m_sAPIUrl;
+	int			m_iAPITimeout = 10; // 0 = unlimited, >0 = timeout in seconds (default: 10)
 	bool		m_bUseGPU = false;
 };
 
