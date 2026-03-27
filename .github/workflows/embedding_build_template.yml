@@ -187,10 +187,10 @@ jobs:
             -v $(pwd):/src \
             -w /src \
             -u root \
-            --entrypoint bash \
-            "${docker_image}" \
             -e GIT_COMMIT_ID="${{ steps.git_meta.outputs.commit }}" \
             -e GIT_TIMESTAMP_ID="${{ steps.git_meta.outputs.timestamp }}" \
+            --entrypoint bash \
+            "${docker_image}" \
             -c "apt-get update -y && apt-get install -y gcc g++ && ${extra} cargo build ${{ steps.params.outputs.args }}"
           sudo chown -hR $(id -u):$(id -g) ${{ steps.vars.outputs.lib_dir }}
 
