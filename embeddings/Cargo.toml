@@ -17,6 +17,7 @@ rayon = "1.10.0"
 candle-core = "0.9.2"
 candle-nn = "0.9.2"
 candle-transformers = "0.9.2"
+candle-onnx = "0.9.2"
 
 [build-dependencies]
 cbindgen = "0.26.0"
@@ -39,7 +40,9 @@ approx = "0.5.1"
 # candle-core = { path = "../../candle/candle-core" }
 # candle-nn =  { path = "../../candle/candle-nn" }
 # candle-transformers =  { path = "../../candle/candle-transformers" }
+# candle-onnx = { path = "../../candle/candle-onnx" }
 
-candle-core = { git = "https://github.com/manticoresoftware/candle.git", rev = "196118024c1377f5fd132ca0db038d16901cd71f" }
-candle-nn = { git = "https://github.com/manticoresoftware/candle.git", rev = "196118024c1377f5fd132ca0db038d16901cd71f" }
-candle-transformers = { git = "https://github.com/manticoresoftware/candle.git", rev = "196118024c1377f5fd132ca0db038d16901cd71f" }
+candle-core = { git = "https://github.com/manticoresoftware/candle.git", rev = "0051854b382cc83e2bbea3f1ce6ac6488c655695" }
+candle-nn = { git = "https://github.com/manticoresoftware/candle.git", rev = "0051854b382cc83e2bbea3f1ce6ac6488c655695" }
+candle-transformers = { git = "https://github.com/manticoresoftware/candle.git", rev = "0051854b382cc83e2bbea3f1ce6ac6488c655695" }
+candle-onnx = { git = "https://github.com/manticoresoftware/candle.git", rev = "0051854b382cc83e2bbea3f1ce6ac6488c655695" }

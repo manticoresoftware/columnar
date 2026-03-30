@@ -30,6 +30,7 @@ use std::io::BufReader;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 use tokenizers::Tokenizer;
+
 /// Model architecture type - determines pooling strategy
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ModelArch {
@@ -74,6 +75,8 @@ pub struct LocalModelInfo {
     pub weights_paths: Vec<PathBuf>,
     /// Path to GGUF file if using quantized model
     pub gguf_path: Option<PathBuf>,
+    /// Path to ONNX file if using ONNX model
+    pub onnx_path: Option<PathBuf>,
 }
 
 fn model_download_lock(model_id: &str) -> Arc<Mutex<()>> {
@@ -176,46 +179,54 @@ pub fn build_model_info(
     // Try common GGUF filename patterns
     let gguf_path = try_find_gguf_file(&api);
 
-    let weights_paths = if gguf_path.is_some() {
-        // GGUF model - no safetensors needed
-        vec![]
+    let (weights_paths, onnx_path) = if gguf_path.is_some() {
+        // GGUF model - no safetensors/ONNX needed
+        (vec![], None)
     } else {
-        // Fall back to safetensors
+        // Try safetensors first, then ONNX as fallback
         match api.get("model.safetensors") {
-            Ok(path) => vec![path],
+            Ok(path) => (vec![path], None),
             Err(_) => {
-                // Support sharded safetensors via model.safetensors.index.json
-                let index_path = api
-                    .get("model.safetensors.index.json")
-                    .map_err(|_| LibError::ModelWeightsFetchFailed)?;
-                let index_contents = std::fs::read_to_string(&index_path)
-                    .map_err(|_| LibError::ModelWeightsFetchFailed)?;
-                let index_json: Value = serde_json::from_str(&index_contents)
-                    .map_err(|_| LibError::ModelWeightsFetchFailed)?;
-                let weight_map = index_json
-                    .get("weight_map")
-                    .and_then(Value::as_object)
-                    .ok_or(LibError::ModelWeightsFetchFailed)?;
+                // Try sharded safetensors via model.safetensors.index.json
+                match api.get("model.safetensors.index.json") {
+                    Ok(index_path) => {
+                        let index_contents = std::fs::read_to_string(&index_path)
+                            .map_err(|_| LibError::ModelWeightsFetchFailed)?;
+                        let index_json: Value = serde_json::from_str(&index_contents)
+                            .map_err(|_| LibError::ModelWeightsFetchFailed)?;
+                        let weight_map = index_json
+                            .get("weight_map")
+                            .and_then(Value::as_object)
+                            .ok_or(LibError::ModelWeightsFetchFailed)?;
 
-                let mut shards: Vec<String> = weight_map
-                    .values()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                    .collect();
-                shards.sort();
-                shards.dedup();
+                        let mut shards: Vec<String> = weight_map
+                            .values()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect();
+                        shards.sort();
+                        shards.dedup();
 
-                if shards.is_empty() {
-                    return Err(Box::new(LibError::ModelWeightsFetchFailed));
+                        if shards.is_empty() {
+                            return Err(Box::new(LibError::ModelWeightsFetchFailed));
+                        }
+
+                        let mut paths = Vec::with_capacity(shards.len());
+                        for shard in shards {
+                            let p = api
+                                .get(&shard)
+                                .map_err(|_| LibError::ModelWeightsFetchFailed)?;
+                            paths.push(p);
+                        }
+                        (paths, None)
+                    }
+                    Err(_) => {
+                        // No safetensors — try ONNX as fallback
+                        match try_find_onnx_file(&api) {
+                            Some(onnx_path) => (vec![], Some(onnx_path)),
+                            None => return Err(Box::new(LibError::ModelWeightsFetchFailed)),
+                        }
+                    }
                 }
-
-                let mut paths = Vec::with_capacity(shards.len());
-                for shard in shards {
-                    let p = api
-                        .get(&shard)
-                        .map_err(|_| LibError::ModelWeightsFetchFailed)?;
-                    paths.push(p);
-                }
-                paths
             }
         }
     };
@@ -225,6 +236,7 @@ pub fn build_model_info(
         tokenizer_path,
         weights_paths,
         gguf_path,
+        onnx_path,
     })
 }
 
@@ -273,6 +285,14 @@ fn try_find_gguf_file(api: &hf_hub::api::sync::ApiRepo) -> Option<PathBuf> {
 
     // Download the preferred GGUF file
     api.get(&gguf_files[0]).ok()
+}
+
+/// Try to find an ONNX model file in the repository
+/// Looks for model.onnx at root or in onnx/ subdirectory
+fn try_find_onnx_file(api: &hf_hub::api::sync::ApiRepo) -> Option<PathBuf> {
+    api.get("model.onnx")
+        .ok()
+        .or_else(|| api.get("onnx/model.onnx").ok())
 }
 
 /// Load tokenizer with fallback for BPE format
@@ -659,12 +679,100 @@ impl QuantizedEmbeddingModel {
     }
 }
 
+/// ONNX embedding model using candle-onnx
+pub struct OnnxEmbeddingModel {
+    model: candle_onnx::onnx::ModelProto,
+    tokenizer: Tokenizer,
+    max_input_len: usize,
+    hidden_size: usize,
+    device: Device,
+}
+
+impl OnnxEmbeddingModel {
+    pub fn new(
+        onnx_path: PathBuf,
+        model_info: LocalModelInfo,
+        use_gpu: bool,
+    ) -> Result<Self, Box<dyn Error>> {
+        let device = if use_gpu {
+            Device::new_cuda(0).map_err(|_| LibError::DeviceCudaInitFailed)?
+        } else {
+            Device::Cpu
+        };
+
+        let config = std::fs::read_to_string(&model_info.config_path)
+            .map_err(|_| LibError::ModelConfigReadFailed)?;
+        let max_input_len =
+            get_max_input_length(&config).map_err(|_| LibError::ModelMaxInputLenGetFailed)?;
+        let hidden_size =
+            get_hidden_size(&config).map_err(|_| LibError::ModelHiddenSizeGetFailed)?;
+
+        let mut tokenizer = load_tokenizer(&model_info.tokenizer_path)?;
+        tokenizer.with_padding(None);
+        let _ = tokenizer.with_truncation(None);
+
+        let model =
+            candle_onnx::read_file(&onnx_path).map_err(|_| LibError::ModelWeightsLoadFailed)?;
+
+        Ok(Self {
+            model,
+            tokenizer,
+            max_input_len,
+            hidden_size,
+            device,
+        })
+    }
+
+    /// Run ONNX inference for a single chunk.
+    /// Handles both full-pipeline ONNX (output [batch, hidden_size]) and
+    /// transformer-only ONNX (output [batch, seq_len, hidden_size]).
+    pub fn forward(&self, token_ids: &Tensor) -> Result<Tensor, Box<dyn Error>> {
+        let seq_len = token_ids.dims()[1];
+
+        let input_ids_i64 = token_ids.to_dtype(DType::I64)?;
+        let attention_mask = Tensor::ones(token_ids.dims(), DType::I64, &self.device)?;
+        let token_type_ids = Tensor::zeros(token_ids.dims(), DType::I64, &self.device)?;
+
+        let mut inputs = HashMap::new();
+        inputs.insert("input_ids".to_string(), input_ids_i64);
+        inputs.insert("attention_mask".to_string(), attention_mask);
+        inputs.insert("token_type_ids".to_string(), token_type_ids);
+
+        let outputs = candle_onnx::simple_eval(&self.model, inputs)
+            .map_err(|_| LibError::OnnxModelEvalFailed)?;
+
+        // Try common output names, fall back to first output
+        let output = outputs
+            .get("last_hidden_state")
+            .or_else(|| outputs.get("token_embeddings"))
+            .or_else(|| outputs.get("sentence_embedding"))
+            .or_else(|| outputs.values().next())
+            .ok_or(LibError::OnnxModelEvalFailed)?;
+
+        let result = match output.rank() {
+            2 => {
+                // [batch, hidden_size] — already pooled (full pipeline ONNX)
+                output.to_dtype(DType::F32)?
+            }
+            3 => {
+                // [batch, seq_len, hidden_size] — need mean pooling
+                let summed = output.sum(1)?.to_dtype(DType::F32)?;
+                let divisor = Tensor::new(seq_len as f32, &self.device)?;
+                summed.broadcast_div(&divisor)?
+            }
+            _ => return Err(Box::new(LibError::OnnxModelEvalFailed)),
+        };
+        Ok(result)
+    }
+}
+
 /// Unified local embedding model
 pub enum LocalModel {
     Bert(BertEmbeddingModel),
     T5(T5EmbeddingModel),
     Causal(CausalEmbeddingModel),
     Quantized(QuantizedEmbeddingModel),
+    Onnx(OnnxEmbeddingModel),
 }
 
 impl LocalModel {
@@ -689,6 +797,12 @@ impl LocalModel {
                 use_gpu,
             )?;
             return Ok(LocalModel::Quantized(model));
+        }
+
+        // Check if this is an ONNX model
+        if let Some(onnx_path) = model_info.onnx_path.clone() {
+            let model = OnnxEmbeddingModel::new(onnx_path, model_info, use_gpu)?;
+            return Ok(LocalModel::Onnx(model));
         }
 
         match arch {
@@ -723,6 +837,7 @@ impl TextModel for LocalModel {
             LocalModel::T5(m) => (m.device.clone(), m.max_input_len),
             LocalModel::Causal(m) => (m.device.clone(), m.max_input_len),
             LocalModel::Quantized(m) => (m.device.clone(), m.max_input_len),
+            LocalModel::Onnx(m) => (m.device.clone(), m.max_input_len),
         };
 
         let mut all_results: Vec<Vec<f32>> = Vec::new();
@@ -748,6 +863,12 @@ impl TextModel for LocalModel {
                     .get_ids()
                     .to_vec(),
                 LocalModel::Quantized(m) => m
+                    .tokenizer
+                    .encode(*text, true)
+                    .map_err(|_| LibError::ModelTokenizerEncodeFailed)?
+                    .get_ids()
+                    .to_vec(),
+                LocalModel::Onnx(m) => m
                     .tokenizer
                     .encode(*text, true)
                     .map_err(|_| LibError::ModelTokenizerEncodeFailed)?
@@ -845,6 +966,7 @@ impl TextModel for LocalModel {
                             divided.to_dtype(DType::F32)?
                         }
                     },
+                    LocalModel::Onnx(m) => m.forward(&token_ids)?,
                 };
 
                 if let Ok(e_j) = embeddings.get(0) {
@@ -878,6 +1000,7 @@ impl TextModel for LocalModel {
             LocalModel::T5(m) => m.hidden_size,
             LocalModel::Causal(m) => m.hidden_size,
             LocalModel::Quantized(m) => m.hidden_size,
+            LocalModel::Onnx(m) => m.hidden_size,
         }
     }
 
@@ -887,6 +1010,7 @@ impl TextModel for LocalModel {
             LocalModel::T5(m) => m.max_input_len,
             LocalModel::Causal(m) => m.max_input_len,
             LocalModel::Quantized(m) => m.max_input_len,
+            LocalModel::Onnx(m) => m.max_input_len,
         }
     }
 
