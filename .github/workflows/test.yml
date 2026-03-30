@@ -643,6 +643,17 @@ jobs:
             'apt-get remove -y manticore-columnar-lib || true && \
              dpkg -i --force-confnew /build/manticore-columnar-lib*.deb && \
              apt-get install -f -y'
+
+          # Debug: check installed libraries and their dependencies
+          docker exec temp bash -c \
+            'echo "=== Installed MCL files ===" && \
+             dpkg -L manticore-columnar-lib && \
+             echo "=== Embeddings lib dependencies ===" && \
+             find / -name "lib_manticore_knn_embeddings*" 2>/dev/null && \
+             for f in $(find / -name "lib_manticore_knn_embeddings*" 2>/dev/null); do ldd "$f" 2>&1; done && \
+             echo "=== KNN lib dependencies ===" && \
+             find / -name "lib_manticore_knn.*" 2>/dev/null && \
+             for f in $(find / -name "lib_manticore_knn.*" 2>/dev/null); do ldd "$f" 2>&1; done'
           
           # Commit the modified test-kit images
           docker commit temp ${{ steps.vars.outputs.image }}
