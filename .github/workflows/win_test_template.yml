@@ -86,6 +86,8 @@ jobs:
         with:
           name: build_windows_Debug_x64
           path: .
+      - name: Remove ZSTD # zstd version mismatch between Linux and Windows causes different cache version hashes, making cross-OS caches unfindable
+        run: rm C:\tools\zstd\zstd.exe
       - name: Check out Windows bundle cache
         uses: actions/cache@v4
         with:
@@ -95,8 +97,6 @@ jobs:
           enableCrossOsArchive: true
           key: win_bundle_${{ steps.branch.outputs.branch_name }}
           restore-keys: win_bundle_master
-      - name: Remove ZSTD # since it wasn't used to save the cache and if we don't remove it here the cache won't be found. TODO: install zstd in our images, so we don't have to do these hacks
-        run: rm C:\tools\zstd\zstd.exe
       - name: Check out main cache
         uses: actions/cache@v4
         with:
