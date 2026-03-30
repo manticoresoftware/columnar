@@ -26,7 +26,7 @@
 namespace knn
 {
 
-static const int LIB_VERSION = 13;
+static const int LIB_VERSION = 12;
 static const uint32_t STORAGE_VERSION = 3;
 
 enum class HNSWSimilarity_e
