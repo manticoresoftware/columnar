@@ -32,6 +32,9 @@ jobs:
           components: clippy, rustfmt
           override: true
 
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+
       - name: Cache cargo registry
         uses: actions/cache@v3
         with:
@@ -141,6 +144,10 @@ jobs:
           toolchain: stable
           target: ${{ steps.vars.outputs.target }}
           override: true
+
+      - name: Install protoc
+        if: ${{ inputs.distr != 'linux' }}
+        uses: arduino/setup-protoc@v3
 
       - name: Prepare build args
         id: params
