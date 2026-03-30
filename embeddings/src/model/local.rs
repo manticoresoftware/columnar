@@ -31,7 +31,6 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 use tokenizers::Tokenizer;
 
-use candle_onnx;
 /// Maximum batch size for batched inference (BERT, ONNX).
 /// Balances throughput vs padding waste. Matches Typesense's default.
 const BATCH_SIZE: usize = 8;
@@ -391,9 +390,9 @@ impl BertEmbeddingModel {
             for chunk in batch {
                 let real_len = chunk.len();
                 flat_ids.extend_from_slice(chunk);
-                flat_ids.extend(std::iter::repeat(0u32).take(max_len - real_len));
-                flat_mask.extend(std::iter::repeat(1.0f32).take(real_len));
-                flat_mask.extend(std::iter::repeat(0.0f32).take(max_len - real_len));
+                flat_ids.extend(std::iter::repeat_n(0u32, max_len - real_len));
+                flat_mask.extend(std::iter::repeat_n(1.0f32, real_len));
+                flat_mask.extend(std::iter::repeat_n(0.0f32, max_len - real_len));
             }
 
             let token_ids = Tensor::from_vec(flat_ids, (batch_size, max_len), &self.device)?;
@@ -792,10 +791,10 @@ impl OnnxEmbeddingModel {
                 for &id in chunk.iter() {
                     flat_ids.push(id as i64);
                 }
-                flat_ids.extend(std::iter::repeat(0i64).take(max_len - real_len));
-                flat_mask.extend(std::iter::repeat(1i64).take(real_len));
-                flat_mask.extend(std::iter::repeat(0i64).take(max_len - real_len));
-                flat_type_ids.extend(std::iter::repeat(0i64).take(max_len));
+                flat_ids.extend(std::iter::repeat_n(0i64, max_len - real_len));
+                flat_mask.extend(std::iter::repeat_n(1i64, real_len));
+                flat_mask.extend(std::iter::repeat_n(0i64, max_len - real_len));
+                flat_type_ids.extend(std::iter::repeat_n(0i64, max_len));
             }
 
             let input_ids = Tensor::from_vec(flat_ids, (batch_size, max_len), &self.device)?;
