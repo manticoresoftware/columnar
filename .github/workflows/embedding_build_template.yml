@@ -149,6 +149,22 @@ jobs:
         if: ${{ inputs.distr != 'linux' }}
         uses: arduino/setup-protoc@v3
 
+      - name: Extract git metadata
+        id: git_meta
+        run: |
+          git config --global --add safe.directory "$(pwd)"
+
+          commit="$(git log -1 --format=%h)"
+          timestamp="$(git log -1 --date=format-local:%y%m%d%H --format=%cd)"
+
+          if [[ -z "${commit}" || -z "${timestamp}" ]]; then
+            echo "Failed to extract git metadata for embeddings versioning"
+            exit 1
+          fi
+
+          echo "commit=${commit}" >> "$GITHUB_OUTPUT"
+          echo "timestamp=${timestamp}" >> "$GITHUB_OUTPUT"
+
       - name: Prepare build args
         id: params
         run: |
@@ -178,6 +194,8 @@ jobs:
             -v $(pwd):/src \
             -w /src \
             -u root \
+            -e GIT_COMMIT_ID="${{ steps.git_meta.outputs.commit }}" \
+            -e GIT_TIMESTAMP_ID="${{ steps.git_meta.outputs.timestamp }}" \
             --entrypoint bash \
             "${docker_image}" \
             -c "apt-get update -y && apt-get install -y gcc g++ && ${extra} cargo build ${{ steps.params.outputs.args }}"
@@ -189,6 +207,9 @@ jobs:
         run: |
           rustup target add ${{ steps.vars.outputs.target }}
           cargo build ${{ steps.params.outputs.args }}
+        env:
+          GIT_COMMIT_ID: ${{ steps.git_meta.outputs.commit }}
+          GIT_TIMESTAMP_ID: ${{ steps.git_meta.outputs.timestamp }}
 
       - run: | 
           mkdir build
