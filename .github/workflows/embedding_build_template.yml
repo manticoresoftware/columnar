@@ -23,7 +23,7 @@ jobs:
         shell: bash
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Setup Rust toolchain
         uses: actions-rs/toolchain@v1
@@ -36,16 +36,29 @@ jobs:
         uses: arduino/setup-protoc@v3
 
       - name: Cache cargo registry
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            ./embeddings/target
-            ./embeddings/.cache/manticore
-          key: quality-check-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('embeddings/Cargo.lock') }}
+          restore-keys: cargo-registry-${{ runner.os }}-
+
+      - name: Cache cargo build target
+        uses: actions/cache@v4
+        with:
+          path: ./embeddings/target
+          key: cargo-target-${{ runner.os }}-${{ hashFiles('embeddings/Cargo.lock') }}-${{ hashFiles('embeddings/src/**/*.rs') }}
           restore-keys: |
-            quality-check-${{ runner.os }}-cargo-
+            cargo-target-${{ runner.os }}-${{ hashFiles('embeddings/Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-
+
+      - name: Cache ML test models
+        uses: actions/cache@v4
+        with:
+          path: ./embeddings/.cache/manticore
+          key: ml-models-${{ runner.os }}-${{ hashFiles('embeddings/src/model/local_test.rs') }}
+          restore-keys: ml-models-${{ runner.os }}-
 
       - name: Run Clippy (strict mode)
         run: cargo clippy --lib --manifest-path ./embeddings/Cargo.toml -- -D warnings
@@ -86,6 +99,13 @@ jobs:
           VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
           JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
           RUST_BACKTRACE: 1
+
+      - name: Clean build target bloat
+        if: always()
+        run: |
+          rm -rf ./embeddings/target/debug/incremental
+          rm -rf ./embeddings/target/debug/.fingerprint
+          find ./embeddings/target/debug -name "*.d" -delete 2>/dev/null || true
 
       - name: Quality check summary
         run: |
@@ -139,7 +159,7 @@ jobs:
           lib_dir="./embeddings/target/${target}/release"
           echo "lib_dir=${lib_dir}" >> $GITHUB_OUTPUT
 
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           toolchain: stable
           target: ${{ steps.vars.outputs.target }}
@@ -190,6 +210,16 @@ jobs:
           )
           echo "args=${args[@]}" >> $GITHUB_OUTPUT
 
+      - name: Cache cargo registry for Docker build
+        if: ${{ inputs.distr == 'linux' }}
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cargo-cache/registry
+            .cargo-cache/git
+          key: emb-build-cargo-${{ runner.os }}-${{ inputs.arch }}-${{ hashFiles('embeddings/Cargo.lock') }}
+          restore-keys: emb-build-cargo-${{ runner.os }}-${{ inputs.arch }}-
+
       - name: Build for Linux
         if: ${{ inputs.distr == 'linux' }}
         run: |
@@ -204,14 +234,17 @@ jobs:
 
           docker run --rm  \
             -v $(pwd):/src \
+            -v $(pwd)/.cargo-cache:/cargo-cache \
             -w /src \
             -u root \
+            -e CARGO_HOME=/cargo-cache \
             -e GIT_COMMIT_ID="${{ steps.git_meta.outputs.commit }}" \
             -e GIT_TIMESTAMP_ID="${{ steps.git_meta.outputs.timestamp }}" \
             --entrypoint bash \
             "${docker_image}" \
             -c "apt-get update -y && apt-get install -y gcc g++ protobuf-compiler && ${extra} cargo build ${{ steps.params.outputs.args }}"
           sudo chown -hR $(id -u):$(id -g) ${{ steps.vars.outputs.lib_dir }}
+          sudo chown -hR $(id -u):$(id -g) .cargo-cache
 
 
       - name: Build native 

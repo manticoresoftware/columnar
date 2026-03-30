@@ -38,9 +38,9 @@ jobs:
       NO_BUILD: 1
     steps:
       - name: Checkout repository # We have to checkout to access .github/workflows/ in further steps
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}         
+          token: ${{ secrets.GITHUB_TOKEN }}
       - name: Print Manticore Locator
         shell: pwsh
         run: |
@@ -94,6 +94,7 @@ jobs:
             boost_1_75_0
           enableCrossOsArchive: true
           key: win_bundle_${{ steps.branch.outputs.branch_name }}
+          restore-keys: win_bundle_master
       - name: Remove ZSTD # since it wasn't used to save the cache and if we don't remove it here the cache won't be found. TODO: install zstd in our images, so we don't have to do these hacks
         run: rm C:\tools\zstd\zstd.exe
       - name: Check out main cache
@@ -102,12 +103,14 @@ jobs:
           path: cache
           enableCrossOsArchive: true
           key: build_windows_x64_${{ steps.branch.outputs.branch_name }}
+          restore-keys: build_windows_x64_master
       - name: Check out deps cache
         uses: actions/cache@v4
         with:
           path: build/_deps/cache
           enableCrossOsArchive: true
           key: build_windows_x64_deps_${{ steps.branch.outputs.branch_name }}
+          restore-keys: build_windows_x64_deps_master
       - run: mv build/_deps/cache/windows-amd64/* cache/windows-amd64/
       - name: Copy libraries close to the binaries
         run: |

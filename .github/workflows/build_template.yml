@@ -94,7 +94,7 @@ jobs:
         RPM_PACKAGE_VERSION: ${{ inputs.rpm_package_version }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           set-safe-directory: true
@@ -144,6 +144,8 @@ jobs:
           path: cache
           enableCrossOsArchive: true
           key: ${{ inputs.cache_key }}_${{ steps.branch.outputs.branch_name }}
+          restore-keys: |
+            ${{ inputs.cache_key }}_master
 
       - name: Check out deps cache before building
         uses: actions/cache@v4
@@ -151,6 +153,8 @@ jobs:
           path: build/_deps/cache
           enableCrossOsArchive: true
           key: ${{ inputs.cache_key }}_deps_${{ steps.branch.outputs.branch_name }}
+          restore-keys: |
+            ${{ inputs.cache_key }}_deps_master
 
       - name: 🚀 Build
         run: ${{ inputs.cmake_command }}

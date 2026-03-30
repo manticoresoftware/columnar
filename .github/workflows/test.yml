@@ -116,6 +116,7 @@ jobs:
             boost_1_75_0
           enableCrossOsArchive: true
           key: win_bundle_${{ steps.branch.outputs.branch_name }}
+          restore-keys: win_bundle_master
           lookup-only: true
       - name: Extract Windows bundle from Windows sysroot
         if: steps.cache.outputs.cache-hit != 'true'
@@ -236,7 +237,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Download test report artifact 1_54
@@ -362,7 +363,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Download test report artifact 1_54
@@ -478,7 +479,7 @@ jobs:
       image: manticoresearch/ubertests_ctest:3263_mar_2024
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Download test report artifact 1_86
@@ -570,13 +571,13 @@ jobs:
       image: ${{ steps.vars.outputs.image }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           fetch-tags: true
 
       - name: Checkout daemon repository for branch detection
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           repository: manticoresoftware/manticoresearch
           path: manticoresearch
