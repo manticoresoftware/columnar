@@ -98,10 +98,10 @@ jobs:
         if: steps.bundle_cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          wget -q https://repo.manticoresearch.com/repository/sysroots/roots_nov22/sysroot_windows_x64.tar.xz
+          curl -sL -o sysroot_windows_x64.tar.xz https://repo.manticoresearch.com/repository/sysroots/roots_nov22/sysroot_windows_x64.tar.xz
           tar -xf sysroot_windows_x64.tar.xz
           mv diskc/winbundle bundle
-          wget -q https://repo.manticoresearch.com/repository/ci/boost_1_75_0.tgz
+          curl -sL -o boost_1_75_0.tgz https://repo.manticoresearch.com/repository/ci/boost_1_75_0.tgz
           tar -xf boost_1_75_0.tgz
       - name: Remove ZSTD # cross-OS build/deps caches saved on Linux without zstd; must match compression method
         run: rm C:\tools\zstd\zstd.exe
