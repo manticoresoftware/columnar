@@ -728,27 +728,20 @@ impl QuantizedEmbeddingModel {
     }
 }
 
-/// ONNX embedding model using candle-onnx
+/// ONNX embedding model using ORT (onnxruntime) for optimized inference.
 pub struct OnnxEmbeddingModel {
-    model: candle_onnx::onnx::ModelProto,
+    session: Mutex<ort::session::Session>,
     tokenizer: Tokenizer,
     max_input_len: usize,
     hidden_size: usize,
-    device: Device,
 }
 
 impl OnnxEmbeddingModel {
     pub fn new(
         onnx_path: PathBuf,
         model_info: LocalModelInfo,
-        use_gpu: bool,
+        _use_gpu: bool,
     ) -> Result<Self, Box<dyn Error>> {
-        let device = if use_gpu {
-            Device::new_cuda(0).map_err(|_| LibError::DeviceCudaInitFailed)?
-        } else {
-            Device::Cpu
-        };
-
         let config = std::fs::read_to_string(&model_info.config_path)
             .map_err(|_| LibError::ModelConfigReadFailed)?;
         let max_input_len =
@@ -760,21 +753,27 @@ impl OnnxEmbeddingModel {
         tokenizer.with_padding(None);
         let _ = tokenizer.with_truncation(None);
 
-        let model =
-            candle_onnx::read_file(&onnx_path).map_err(|_| LibError::ModelWeightsLoadFailed)?;
+        let session = ort::session::Session::builder()
+            .map_err(|_| LibError::OnnxModelEvalFailed)?
+            .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Level3)
+            .map_err(|_| LibError::OnnxModelEvalFailed)?
+            .with_intra_threads(4)
+            .map_err(|_| LibError::OnnxModelEvalFailed)?
+            .commit_from_file(&onnx_path)
+            .map_err(|_| LibError::ModelWeightsLoadFailed)?;
 
         Ok(Self {
-            model,
+            session: Mutex::new(session),
             tokenizer,
             max_input_len,
             hidden_size,
-            device,
         })
     }
 
-    /// Batched forward pass for ONNX model.
+    /// Batched forward pass for ONNX model via ORT.
     fn predict_chunks(&self, chunks: &[Vec<u32>]) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
         let mut all_embeddings = Vec::with_capacity(chunks.len());
+        let mut session = self.session.lock().unwrap();
 
         for batch in chunks.chunks(BATCH_SIZE) {
             let batch_size = batch.len();
@@ -795,52 +794,62 @@ impl OnnxEmbeddingModel {
                 flat_type_ids.extend(std::iter::repeat_n(0i64, max_len));
             }
 
-            let input_ids = Tensor::from_vec(flat_ids, (batch_size, max_len), &self.device)?;
-            let attention_mask = Tensor::from_vec(flat_mask, (batch_size, max_len), &self.device)?;
+            let input_ids = ort::value::Tensor::from_array((vec![batch_size, max_len], flat_ids))
+                .map_err(|_| LibError::OnnxModelEvalFailed)?;
+            let attention_mask =
+                ort::value::Tensor::from_array((vec![batch_size, max_len], flat_mask.clone()))
+                    .map_err(|_| LibError::OnnxModelEvalFailed)?;
             let token_type_ids =
-                Tensor::from_vec(flat_type_ids, (batch_size, max_len), &self.device)?;
+                ort::value::Tensor::from_array((vec![batch_size, max_len], flat_type_ids))
+                    .map_err(|_| LibError::OnnxModelEvalFailed)?;
 
-            let mut inputs = HashMap::new();
-            inputs.insert("input_ids".to_string(), input_ids);
-            inputs.insert("attention_mask".to_string(), attention_mask.clone());
-            inputs.insert("token_type_ids".to_string(), token_type_ids);
-
-            let outputs = candle_onnx::simple_eval(&self.model, inputs)
+            let outputs = session
+                .run(ort::inputs![
+                    "input_ids" => input_ids,
+                    "attention_mask" => attention_mask,
+                    "token_type_ids" => token_type_ids,
+                ])
                 .map_err(|_| LibError::OnnxModelEvalFailed)?;
 
-            let output = outputs
-                .get("last_hidden_state")
-                .or_else(|| outputs.get("token_embeddings"))
-                .or_else(|| outputs.get("sentence_embedding"))
-                .or_else(|| outputs.values().next())
-                .ok_or(LibError::OnnxModelEvalFailed)?;
+            let (shape, data) = outputs[0]
+                .try_extract_tensor::<f32>()
+                .map_err(|_| LibError::OnnxModelEvalFailed)?;
 
-            match output.rank() {
-                2 => {
-                    // [batch, hidden] — already pooled
-                    let result = output.to_dtype(DType::F32)?;
-                    for i in 0..batch_size {
-                        let mut emb_vec: Vec<f32> = result.get(i)?.to_vec1::<f32>()?;
-                        normalize(&mut emb_vec);
-                        all_embeddings.push(emb_vec);
-                    }
+            let ndim = shape.len();
+            if ndim == 2 {
+                // [batch, hidden] — already pooled
+                let hidden_dim = shape[1] as usize;
+                for i in 0..batch_size {
+                    let start = i * hidden_dim;
+                    let mut emb = data[start..start + hidden_dim].to_vec();
+                    normalize(&mut emb);
+                    all_embeddings.push(emb);
                 }
-                3 => {
-                    // [batch, max_len, hidden] — masked mean pooling
-                    let attn_f32 = attention_mask.to_dtype(DType::F32)?;
-                    let mask_expanded = attn_f32.unsqueeze(2)?;
-                    let masked = output.broadcast_mul(&mask_expanded)?;
-                    let summed = masked.sum(1)?.to_dtype(DType::F32)?;
-                    let token_counts = attn_f32.sum(1)?.unsqueeze(1)?;
-                    let mean_emb = summed.broadcast_div(&token_counts)?;
-
-                    for i in 0..batch_size {
-                        let mut emb_vec: Vec<f32> = mean_emb.get(i)?.to_vec1::<f32>()?;
-                        normalize(&mut emb_vec);
-                        all_embeddings.push(emb_vec);
+            } else if ndim == 3 {
+                // [batch, seq_len, hidden] — masked mean pooling
+                let seq_len = shape[1] as usize;
+                let hidden_dim = shape[2] as usize;
+                for i in 0..batch_size {
+                    let mut emb = vec![0.0f32; hidden_dim];
+                    let mut count = 0.0f32;
+                    for j in 0..seq_len {
+                        let mask_val = flat_mask[i * max_len + j] as f32;
+                        if mask_val > 0.0 {
+                            let offset = (i * seq_len + j) * hidden_dim;
+                            for k in 0..hidden_dim {
+                                emb[k] += data[offset + k];
+                            }
+                            count += 1.0;
+                        }
                     }
+                    if count > 0.0 {
+                        emb.iter_mut().for_each(|v| *v /= count);
+                    }
+                    normalize(&mut emb);
+                    all_embeddings.push(emb);
                 }
-                _ => return Err(Box::new(LibError::OnnxModelEvalFailed)),
+            } else {
+                return Err(Box::new(LibError::OnnxModelEvalFailed));
             }
         }
 
