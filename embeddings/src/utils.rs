@@ -54,53 +54,13 @@ pub fn normalize(v: &mut [f32]) {
     }
 }
 
-pub fn chunk_input_tokens(tokens: &[u32], max_seq_len: usize, stride: usize) -> Vec<Vec<u32>> {
+/// Truncate tokens to model's max sequence length (same behavior as Typesense).
+pub fn truncate_tokens(tokens: &[u32], max_seq_len: usize) -> Vec<u32> {
     if tokens.len() <= max_seq_len {
-        return vec![tokens.to_vec()];
+        tokens.to_vec()
+    } else {
+        tokens[..max_seq_len].to_vec()
     }
-
-    let mut chunks = Vec::new();
-    let mut start = 0;
-    let len = tokens.len();
-
-    while start < len {
-        let end = std::cmp::min(start + max_seq_len, len);
-        chunks.push(tokens[start..end].to_vec());
-
-        if end == len {
-            break;
-        }
-
-        start += stride;
-    }
-
-    chunks
-}
-
-pub fn get_mean_vector(results: &[Vec<f32>]) -> Vec<f32> {
-    if results.is_empty() {
-        return Vec::new();
-    }
-
-    let num_cols = results[0].len();
-    let mut mean_vector = vec![0.0; num_cols];
-
-    let mut weight_sum = 0.0;
-
-    for (i, row) in results.iter().enumerate() {
-        let weight = if i == 0 { 1.2 } else { 1.0 }; // Adjust the weight for the first chunk here
-        weight_sum += weight;
-
-        for (j, val) in row.iter().enumerate() {
-            mean_vector[j] += weight * val;
-        }
-    }
-
-    for val in &mut mean_vector {
-        *val /= weight_sum;
-    }
-
-    mean_vector
 }
 
 #[cfg(test)]
@@ -169,91 +129,16 @@ mod tests {
     }
 
     #[test]
-    fn test_chunk_input_tokens() {
+    fn test_truncate_tokens() {
         let tokens = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        let max_seq_len = 4;
-        let stride = 2;
+        assert_eq!(truncate_tokens(&tokens, 4), vec![1, 2, 3, 4]);
+        assert_eq!(truncate_tokens(&tokens, 10), tokens);
+        assert_eq!(truncate_tokens(&tokens, 20), tokens);
 
-        let chunks = chunk_input_tokens(&tokens, max_seq_len, stride);
-        assert_eq!(
-            chunks,
-            vec![
-                vec![1, 2, 3, 4],
-                vec![3, 4, 5, 6],
-                vec![5, 6, 7, 8],
-                vec![7, 8, 9, 10]
-            ]
-        );
-
-        // Test when input is shorter than max_seq_len
         let short_tokens = vec![1, 2, 3];
-        let short_chunks = chunk_input_tokens(&short_tokens, max_seq_len, stride);
-        assert_eq!(short_chunks, vec![vec![1, 2, 3]]);
-    }
+        assert_eq!(truncate_tokens(&short_tokens, 4), vec![1, 2, 3]);
 
-    #[test]
-    fn test_get_mean_vector() {
-        let results = vec![
-            vec![1.0, 2.0, 3.0],
-            vec![4.0, 5.0, 6.0],
-            vec![7.0, 8.0, 9.0],
-        ];
-
-        let mean_vector = get_mean_vector(&results);
-        assert_eq!(mean_vector.len(), 3);
-
-        // Calculate expected values
-        let weight_sum = 1.2 + 1.0 + 1.0;
-        let expected = [
-            (1.2 * 1.0 + 1.0 * 4.0 + 1.0 * 7.0) / weight_sum,
-            (1.2 * 2.0 + 1.0 * 5.0 + 1.0 * 8.0) / weight_sum,
-            (1.2 * 3.0 + 1.0 * 6.0 + 1.0 * 9.0) / weight_sum,
-        ];
-
-        for (i, &val) in mean_vector.iter().enumerate() {
-            assert!(
-                (val - expected[i]).abs() < 1e-6,
-                "Mismatch at index {}: expected {}, got {}",
-                i,
-                expected[i],
-                val
-            );
-        }
-
-        // Test with empty input
-        let empty_results: Vec<Vec<f32>> = vec![];
-        assert_eq!(get_mean_vector(&empty_results), Vec::<f32>::new());
-
-        // Test with single vector
-        let single_result = vec![vec![1.0, 2.0, 3.0]];
-        let single_mean = get_mean_vector(&single_result);
-        assert_eq!(single_mean, vec![1.0, 2.0, 3.0]);
-
-        // Test with multiple vectors
-        let multiple_results = vec![
-            vec![1.0, 2.0, 3.0],
-            vec![4.0, 5.0, 6.0],
-            vec![7.0, 8.0, 9.0],
-            vec![10.0, 11.0, 12.0],
-        ];
-        let multiple_mean = get_mean_vector(&multiple_results);
-
-        // Calculate expected values for multiple vectors
-        let weight_sum = 1.2 + 1.0 + 1.0 + 1.0;
-        let expected = [
-            (1.2 * 1.0 + 1.0 * 4.0 + 1.0 * 7.0 + 1.0 * 10.0) / weight_sum,
-            (1.2 * 2.0 + 1.0 * 5.0 + 1.0 * 8.0 + 1.0 * 11.0) / weight_sum,
-            (1.2 * 3.0 + 1.0 * 6.0 + 1.0 * 9.0 + 1.0 * 12.0) / weight_sum,
-        ];
-
-        for (i, &val) in multiple_mean.iter().enumerate() {
-            assert!(
-                (val - expected[i]).abs() < 1e-6,
-                "Mismatch at index {}: expected {}, got {}",
-                i,
-                expected[i],
-                val
-            );
-        }
+        let empty: Vec<u32> = vec![];
+        assert_eq!(truncate_tokens(&empty, 4), Vec::<u32>::new());
     }
 }

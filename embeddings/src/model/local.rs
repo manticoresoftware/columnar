@@ -1,8 +1,6 @@
 use super::TextModel;
 use crate::error::LibError;
-use crate::utils::{
-    chunk_input_tokens, get_hidden_size, get_max_input_length, get_mean_vector, normalize,
-};
+use crate::utils::{get_hidden_size, get_max_input_length, normalize, truncate_tokens};
 use candle_core::quantized::gguf_file;
 use candle_core::{DType, Device, IndexOp, Tensor};
 use candle_nn::VarBuilder;
@@ -915,7 +913,7 @@ impl LocalModel {
 }
 
 impl LocalModel {
-    /// Batched predict pipeline: tokenize → chunk → batch forward → reassemble.
+    /// Batched predict pipeline: tokenize → truncate → batch forward.
     /// Used for BERT and ONNX models that support batch_size > 1.
     fn predict_batched<F>(
         tokenizer: &Tokenizer,
@@ -926,37 +924,18 @@ impl LocalModel {
     where
         F: Fn(&[Vec<u32>]) -> Result<Vec<Vec<f32>>, Box<dyn Error>>,
     {
-        let stride = max_input_len / 10;
-
         // Batch tokenization — uses rayon parallelism internally when
         // TOKENIZERS_PARALLELISM=true (set below on first call)
         let encodings = tokenizer
             .encode_batch(texts.to_vec(), true)
             .map_err(|_| LibError::ModelTokenizerEncodeFailed)?;
 
-        let mut all_chunks: Vec<Vec<u32>> = Vec::new();
-        let mut text_chunk_ranges: Vec<(usize, usize)> = Vec::with_capacity(texts.len());
+        let truncated: Vec<Vec<u32>> = encodings
+            .iter()
+            .map(|enc| truncate_tokens(enc.get_ids(), max_input_len))
+            .collect();
 
-        for encoding in &encodings {
-            let tokens = encoding.get_ids().to_vec();
-            let chunks = chunk_input_tokens(&tokens, max_input_len, stride);
-            let start = all_chunks.len();
-            let count = chunks.len();
-            all_chunks.extend(chunks);
-            text_chunk_ranges.push((start, count));
-        }
-
-        let chunk_embeddings = predict_chunks_fn(&all_chunks)?;
-
-        let mut all_results: Vec<Vec<f32>> = Vec::with_capacity(texts.len());
-        for &(start, count) in &text_chunk_ranges {
-            let chunk_embs = &chunk_embeddings[start..start + count];
-            if chunk_embs.is_empty() {
-                return Err(Box::new(LibError::ModelLoadFailed));
-            }
-            let mean_vector = get_mean_vector(chunk_embs);
-            all_results.push(mean_vector);
-        }
+        let all_results = predict_chunks_fn(&truncated)?;
 
         if all_results.is_empty() || all_results.len() != texts.len() {
             return Err(Box::new(LibError::ModelLoadFailed));
@@ -1015,11 +994,10 @@ impl TextModel for LocalModel {
                 _ => unreachable!(),
             };
 
-            let chunks = chunk_input_tokens(&tokens, max_input_len, max_input_len / 10);
-            let mut results: Vec<Vec<f32>> = Vec::new();
+            let tokens = truncate_tokens(&tokens, max_input_len);
 
-            for chunk in chunks.iter() {
-                let token_ids = Tensor::new(&chunk[..], &device)?.unsqueeze(0)?;
+            {
+                let token_ids = Tensor::new(&tokens[..], &device)?.unsqueeze(0)?;
                 let embeddings = match self {
                     LocalModel::T5(m) => {
                         let mut model = m.model.lock().unwrap();
@@ -1095,16 +1073,11 @@ impl TextModel for LocalModel {
                         .map_err(|e| -> Box<dyn Error> { Box::new(e) })?;
                     let mut emb = emb_vec;
                     normalize(&mut emb);
-                    results.push(emb);
+                    all_results.push(emb);
+                } else {
+                    return Err(Box::new(LibError::ModelLoadFailed));
                 }
             }
-
-            if results.is_empty() {
-                return Err(Box::new(LibError::ModelLoadFailed));
-            }
-
-            let mean_vector = get_mean_vector(&results);
-            all_results.push(mean_vector);
         }
 
         if all_results.is_empty() || all_results.len() != texts.len() {
