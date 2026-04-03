@@ -1,6 +1,23 @@
 use anyhow::Result;
 use serde_json::Value;
 
+/// Upper bound on bytes per token for BPE tokenizers.
+/// Most tokenizers average 3–5 bytes/token; 8 covers worst-case (CJK, emoji).
+const BYTES_PER_TOKEN_UPPER_BOUND: usize = 8;
+
+/// Pre-truncate text to avoid running BPE on excessively long input.
+/// Cuts at a valid UTF-8 char boundary with a safe byte margin.
+/// `truncate_tokens` remains the final guarantee on token count.
+#[inline]
+pub fn pre_truncate_text(text: &str, max_seq_len: usize) -> &str {
+    let byte_limit = max_seq_len.saturating_mul(BYTES_PER_TOKEN_UPPER_BOUND);
+    if text.len() <= byte_limit {
+        text
+    } else {
+        &text[..text.floor_char_boundary(byte_limit)]
+    }
+}
+
 /// Get maximum input length for sequence for the current model
 /// Supports multiple config field names for different model architectures
 pub fn get_max_input_length(contents: &str) -> Result<usize> {
@@ -51,15 +68,6 @@ pub fn normalize(v: &mut [f32]) {
     let length: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
     if length > 0.0 {
         v.iter_mut().for_each(|x| *x /= length);
-    }
-}
-
-/// Truncate tokens to model's max sequence length (same behavior as Typesense).
-pub fn truncate_tokens(tokens: &[u32], max_seq_len: usize) -> Vec<u32> {
-    if tokens.len() <= max_seq_len {
-        tokens.to_vec()
-    } else {
-        tokens[..max_seq_len].to_vec()
     }
 }
 
@@ -129,16 +137,28 @@ mod tests {
     }
 
     #[test]
-    fn test_truncate_tokens() {
-        let tokens = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        assert_eq!(truncate_tokens(&tokens, 4), vec![1, 2, 3, 4]);
-        assert_eq!(truncate_tokens(&tokens, 10), tokens);
-        assert_eq!(truncate_tokens(&tokens, 20), tokens);
+    fn test_pre_truncate_text_short_noop() {
+        assert_eq!(pre_truncate_text("hello", 512), "hello");
+    }
 
-        let short_tokens = vec![1, 2, 3];
-        assert_eq!(truncate_tokens(&short_tokens, 4), vec![1, 2, 3]);
+    #[test]
+    fn test_pre_truncate_text_long_ascii() {
+        let long = "a".repeat(10_000);
+        let result = pre_truncate_text(&long, 512);
+        assert_eq!(result.len(), 512 * BYTES_PER_TOKEN_UPPER_BOUND);
+    }
 
-        let empty: Vec<u32> = vec![];
-        assert_eq!(truncate_tokens(&empty, 4), Vec::<u32>::new());
+    #[test]
+    fn test_pre_truncate_text_multibyte() {
+        // 4-byte emoji repeated — must cut at char boundary
+        let emojis = "🦀".repeat(2000);
+        let result = pre_truncate_text(&emojis, 512);
+        assert!(result.len() <= 512 * BYTES_PER_TOKEN_UPPER_BOUND);
+        assert!(result.is_char_boundary(result.len()));
+    }
+
+    #[test]
+    fn test_pre_truncate_text_empty() {
+        assert_eq!(pre_truncate_text("", 512), "");
     }
 }

@@ -100,26 +100,25 @@ mod tests {
     }
 
     #[test]
-    fn test_truncate_tokens_longer_than_max() {
-        let tokens = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        assert_eq!(truncate_tokens(&tokens, 4), vec![1, 2, 3, 4]);
+    fn test_pre_truncate_text_noop_for_short() {
+        let text = "short text";
+        assert_eq!(pre_truncate_text(text, 512), text);
     }
 
     #[test]
-    fn test_truncate_tokens_shorter_than_max() {
-        let tokens = vec![1, 2, 3];
-        assert_eq!(truncate_tokens(&tokens, 4), vec![1, 2, 3]);
+    fn test_pre_truncate_text_cuts_long() {
+        let long = "x".repeat(100_000);
+        let result = pre_truncate_text(&long, 128);
+        assert_eq!(result.len(), 128 * 8);
     }
 
     #[test]
-    fn test_truncate_tokens_exact_length() {
-        let tokens = vec![1, 2, 3, 4];
-        assert_eq!(truncate_tokens(&tokens, 4), vec![1, 2, 3, 4]);
-    }
-
-    #[test]
-    fn test_truncate_tokens_empty() {
-        let empty: Vec<u32> = vec![];
-        assert_eq!(truncate_tokens(&empty, 4), Vec::<u32>::new());
+    fn test_pre_truncate_text_respects_char_boundary() {
+        // 2-byte chars (Cyrillic)
+        let cyrillic = "Б".repeat(5000);
+        let result = pre_truncate_text(&cyrillic, 256);
+        assert!(result.len() <= 256 * 8);
+        // Must be valid UTF-8 (wouldn't compile otherwise, but ensure no panic)
+        assert!(result.len() % 2 == 0); // Б is 2 bytes
     }
 }

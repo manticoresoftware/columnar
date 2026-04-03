@@ -1,6 +1,6 @@
 use super::TextModel;
 use crate::error::LibError;
-use crate::utils::{get_hidden_size, get_max_input_length, normalize, truncate_tokens};
+use crate::utils::{get_hidden_size, get_max_input_length, normalize, pre_truncate_text};
 use candle_core::quantized::gguf_file;
 use candle_core::{DType, Device, IndexOp, Tensor};
 use candle_nn::VarBuilder;
@@ -933,20 +933,31 @@ impl LocalModel {
     where
         F: Fn(&[Vec<u32>]) -> Result<Vec<Vec<f32>>, Box<dyn Error>>,
     {
+        let count = texts.len();
+
+        // Pre-truncate text to avoid running BPE on excessively long input
+        let texts: Vec<&str> = texts
+            .iter()
+            .map(|t| pre_truncate_text(t, max_input_len))
+            .collect();
+
         // Batch tokenization — uses rayon parallelism internally when
         // TOKENIZERS_PARALLELISM=true (set below on first call)
         let encodings = tokenizer
-            .encode_batch(texts.to_vec(), true)
+            .encode_batch(texts, true)
             .map_err(|_| LibError::ModelTokenizerEncodeFailed)?;
 
         let truncated: Vec<Vec<u32>> = encodings
             .iter()
-            .map(|enc| truncate_tokens(enc.get_ids(), max_input_len))
+            .map(|enc| {
+                let ids = enc.get_ids();
+                ids[..ids.len().min(max_input_len)].to_vec()
+            })
             .collect();
 
         let all_results = predict_chunks_fn(&truncated)?;
 
-        if all_results.is_empty() || all_results.len() != texts.len() {
+        if all_results.is_empty() || all_results.len() != count {
             return Err(Box::new(LibError::ModelLoadFailed));
         }
         Ok(all_results)
@@ -981,29 +992,31 @@ impl TextModel for LocalModel {
         let mut all_results: Vec<Vec<f32>> = Vec::new();
 
         for text in texts.iter() {
-            let tokens = match self {
+            // Pre-truncate text to avoid running BPE on excessively long input
+            let text = pre_truncate_text(text, max_input_len);
+            let mut tokens = match self {
                 LocalModel::T5(m) => m
                     .tokenizer
-                    .encode(*text, true)
+                    .encode(text, true)
                     .map_err(|_| LibError::ModelTokenizerEncodeFailed)?
                     .get_ids()
                     .to_vec(),
                 LocalModel::Causal(m) => m
                     .tokenizer
-                    .encode(*text, true)
+                    .encode(text, true)
                     .map_err(|_| LibError::ModelTokenizerEncodeFailed)?
                     .get_ids()
                     .to_vec(),
                 LocalModel::Quantized(m) => m
                     .tokenizer
-                    .encode(*text, true)
+                    .encode(text, true)
                     .map_err(|_| LibError::ModelTokenizerEncodeFailed)?
                     .get_ids()
                     .to_vec(),
                 _ => unreachable!(),
             };
 
-            let tokens = truncate_tokens(&tokens, max_input_len);
+            tokens.truncate(max_input_len);
 
             {
                 let token_ids = Tensor::new(&tokens[..], &device)?.unsqueeze(0)?;
