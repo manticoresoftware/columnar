@@ -160,6 +160,9 @@ jobs:
           echo "lib_dir=${lib_dir}" >> $GITHUB_OUTPUT
 
       - uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           target: ${{ steps.vars.outputs.target }}
