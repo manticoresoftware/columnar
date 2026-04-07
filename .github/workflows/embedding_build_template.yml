@@ -251,7 +251,21 @@ jobs:
           sudo chown -hR $(id -u):$(id -g) .cargo-cache
 
 
-      - name: Build native 
+      - name: Download ONNX Runtime static library
+        if: ${{ inputs.distr == 'macos' }}
+        run: |
+          ort_version="1.24.2"
+          if [[ "${{ inputs.arch }}" == "aarch64" ]]; then
+            ort_arch="arm64"
+          else
+            ort_arch="x86_64"
+          fi
+          ort_name="onnxruntime-osx-${ort_arch}-static_lib-${ort_version}"
+          curl -sL "https://github.com/csukuangfj/onnxruntime-libs/releases/download/v${ort_version}/${ort_name}.zip" -o /tmp/ort.zip
+          unzip -q /tmp/ort.zip -d /tmp/ort
+          echo "ORT_LIB_LOCATION=/tmp/ort/${ort_name}/lib" >> $GITHUB_ENV
+
+      - name: Build native
         if: ${{ inputs.distr == 'windows' || inputs.distr == 'macos' }}
         run: |
           rustup target add ${{ steps.vars.outputs.target }}
