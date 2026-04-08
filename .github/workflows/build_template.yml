@@ -49,7 +49,7 @@ on:
       artifact_list:
         required: false
         type: string
-        default: "build/columnar/lib_manticore_columnar_avx2.so build/columnar/lib_manticore_columnar.so build/secondary/lib_manticore_secondary_avx2.so build/secondary/lib_manticore_secondary.so build/knn/lib_manticore_knn.so build/knn/lib_manticore_knn_avx2.so build/_deps/manticore-build/src/searchd build/_deps/manticore-build/src/indexer build/_deps/manticore-build/src/indextool build/_deps/manticore-build/config/*.c build/_deps/manticore-build/config/*.h"
+        default: "build/columnar/lib_manticore_columnar_avx2.so build/columnar/lib_manticore_columnar_avx512.so build/columnar/lib_manticore_columnar.so build/secondary/lib_manticore_secondary_avx2.so build/secondary/lib_manticore_secondary_avx512.so build/secondary/lib_manticore_secondary.so build/knn/lib_manticore_knn.so build/knn/lib_manticore_knn_avx2.so build/knn/lib_manticore_knn_avx512.so build/_deps/manticore-build/src/searchd build/_deps/manticore-build/src/indexer build/_deps/manticore-build/src/indextool build/_deps/manticore-build/config/*.c build/_deps/manticore-build/config/*.h"
       HOMEBREW_PREFIX:
         required: false
         type: string
@@ -159,22 +159,44 @@ jobs:
       - name: 🚀 Build
         run: ${{ inputs.cmake_command }}
 
-      - name: Move AVX2-optimized libraries
+      - name: Move AVX2/AVX-512-optimized libraries
         if: success() && inputs.skip_avx2_move != true
         run: |
           if [ -d build/avx2/share/manticore/modules ]; then
-            echo "Move linux based libs"
+            echo "Move linux based AVX2 libs"
             mv build/avx2/share/manticore/modules/lib_manticore_columnar_avx2.so build/columnar/
             mv build/avx2/share/manticore/modules/lib_manticore_secondary_avx2.so build/secondary/
+            mv build/avx2/share/manticore/modules/lib_manticore_knn_avx2.so build/knn/
             ls build/columnar/
             ls build/secondary/
+            ls build/knn/
+          fi
+          if [ -d build/avx512/share/manticore/modules ]; then
+            echo "Move linux based AVX-512 libs"
+            mv build/avx512/share/manticore/modules/lib_manticore_columnar_avx512.so build/columnar/
+            mv build/avx512/share/manticore/modules/lib_manticore_secondary_avx512.so build/secondary/
+            mv build/avx512/share/manticore/modules/lib_manticore_knn_avx512.so build/knn/
+            ls build/columnar/
+            ls build/secondary/
+            ls build/knn/
           fi
           if [ -d build/avx2/share/modules ]; then
-            echo "Move windows based libs"
+            echo "Move windows based AVX2 libs"
             mv build/avx2/share/modules/lib_manticore_columnar_avx2.dll build/columnar/Debug/
             mv build/avx2/share/modules/lib_manticore_secondary_avx2.dll build/secondary/Debug/
+            mv build/avx2/share/modules/lib_manticore_knn_avx2.dll build/knn/Debug/
             ls build/columnar/Debug/
             ls build/secondary/Debug/
+            ls build/knn/Debug/
+          fi
+          if [ -d build/avx512/share/modules ]; then
+            echo "Move windows based AVX-512 libs"
+            mv build/avx512/share/modules/lib_manticore_columnar_avx512.dll build/columnar/Debug/
+            mv build/avx512/share/modules/lib_manticore_secondary_avx512.dll build/secondary/Debug/
+            mv build/avx512/share/modules/lib_manticore_knn_avx512.dll build/knn/Debug/
+            ls build/columnar/Debug/
+            ls build/secondary/Debug/
+            ls build/knn/Debug/
           fi
 
       - name: Set artifact name
