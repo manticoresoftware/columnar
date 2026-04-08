@@ -160,11 +160,14 @@ class Distance_c : public Distance_i, public HNSWDist_c
 public:
 			Distance_c ( const knn::IndexSettings_t & tSettings );
 
-	float	CalcDist ( const util::Span_T<float> & dPoint1, const util::Span_T<float> & dPoint2 ) const override;
+	float		CalcDist ( const util::Span_T<float> & dPoint1, const util::Span_T<float> & dPoint2 ) const override;
+	DistFunc_fn	GetDistFunc() const override		{ return m_fnDistFunc; }
+	void *		GetDistFuncParam() const override	{ return m_pDistFuncParam; }
 
 private:
-	hnswlib::DISTFUNC<float>	m_fnDistFunc;
-	void *						m_pDistFuncParam = nullptr;
+	hnswlib::DISTFUNC<float> m_fnDistFunc;
+	void *				m_pDistFuncParam = nullptr;
+	DistFuncId_e		m_eDistFuncId = DistFuncId_e::NONE;
 };
 
 
@@ -173,6 +176,7 @@ Distance_c::Distance_c ( const knn::IndexSettings_t & tSettings )
 {
 	m_fnDistFunc = m_pSpace->get_dist_func();
 	m_pDistFuncParam = m_pSpace->get_dist_func_param();
+	m_eDistFuncId = m_pSpace->GetDistFuncId();
 }
 
 
@@ -207,6 +211,7 @@ private:
 	std::string											m_sName;
 	std::unique_ptr<hnswlib::HierarchicalNSW<float>>	m_pAlg;
 	std::unique_ptr<ScalarQuantizer_i>					m_pQuantizer;
+	DistFuncId_e										m_eDistFuncId = DistFuncId_e::NONE;
 };
 
 
@@ -216,19 +221,125 @@ HNSWIndex_c::HNSWIndex_c ( const std::string & sName, int64_t iNumElements, cons
 	, m_pQuantizer ( pQuantizer )
 {
 	m_pSpace->SetQuantizationSettings(*pQuantizer);
+	m_eDistFuncId = m_pSpace->GetDistFuncId();
 	m_pAlg = std::make_unique<hnswlib::HierarchicalNSW<float>>( m_pSpace.get(), iNumElements, tSettings.m_iHNSWM, tSettings.m_iHNSWEFConstruction );
 }
 
 
-template<typename T>
-static void ExtractResults ( T && tPQ, std::vector<DocDist_t> & dResults )
+static void ExtractResults ( std::vector<std::pair<float, hnswlib::labeltype>> && dRaw, std::vector<DocDist_t> & dResults )
 {
 	dResults.resize(0);
-	dResults.reserve ( tPQ.size() );
-	while ( !tPQ.empty() )
+	dResults.reserve ( dRaw.size() );
+	for ( auto & tRes : dRaw )
+		dResults.push_back ( { (uint32_t)tRes.second, tRes.first } );
+}
+
+template<float (*DIST_FN)(const void *, const void *, size_t, size_t, const void *)>
+class DistFnDispatch_c
+{
+public:
+	static float Eval ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam )
 	{
-		dResults.push_back ( { (uint32_t)tPQ.top().second, (float)tPQ.top().first } );
-		tPQ.pop();
+		return DIST_FN ( pVect1, pVect2, uRowID1, uRowID2, pParam );
+	}
+
+	static void Eval2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+	{
+		fDistA = DIST_FN ( pVect1, pVect2A, uRowID1, uRowID2A, pParam );
+		fDistB = DIST_FN ( pVect1, pVect2B, uRowID1, uRowID2B, pParam );
+	}
+};
+
+using IPBinaryGenericDistFn_c = DistFnDispatch_c<&IPBinaryFloatDistanceGeneric>;
+class IPFloatDistFn_c : public DistFnDispatch_c<&IPFloatDistance>
+{
+public:
+	static void Eval2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+	{
+		IPFloatDistanceBatch2 ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
+	}
+};
+
+class IPBinarySIMD16DistFn_c : public DistFnDispatch_c<&IPBinaryFloatDistanceSIMD16>
+{
+public:
+	static void Eval2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+	{
+		IPBinaryFloatDistanceSIMD16Batch2 ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
+	}
+};
+
+class IPBinarySIMD16ResidualsDistFn_c : public DistFnDispatch_c<&IPBinaryFloatDistanceSIMD16Residuals>
+{
+public:
+	static void Eval2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+	{
+		IPBinaryFloatDistanceSIMD16ResidualsBatch2 ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
+	}
+};
+
+using L2BinaryGenericDistFn_c = DistFnDispatch_c<&L2BinaryFloatDistanceGeneric>;
+class L2FloatDistFn_c : public DistFnDispatch_c<&L2FloatDistance>
+{
+public:
+	static void Eval2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+	{
+		L2FloatDistanceBatch2 ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
+	}
+};
+
+class L2BinarySIMD16DistFn_c : public DistFnDispatch_c<&L2BinaryFloatDistanceSIMD16>
+{
+public:
+	static void Eval2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+	{
+		L2BinaryFloatDistanceSIMD16Batch2 ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
+	}
+};
+
+class L2BinarySIMD16ResidualsDistFn_c : public DistFnDispatch_c<&L2BinaryFloatDistanceSIMD16Residuals>
+{
+public:
+	static void Eval2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+	{
+		L2BinaryFloatDistanceSIMD16ResidualsBatch2 ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
+	}
+};
+
+template <typename DistFn = void>
+static void RunSearchPath ( const hnswlib::HierarchicalNSW<float> & tAlg, std::vector<DocDist_t> & dResults, const void * pData, int64_t iResults, HNSWFilterWrapper_c * pFilter, size_t * pSearchEf, int iSearchPath )
+{
+	switch ( iSearchPath )
+	{
+	case 0:
+	case 1:
+		ExtractResults ( tAlg.template searchKnn<hnswlib::NoopTerminationState, false, DistFn> ( pData, iResults, pFilter, pSearchEf ), dResults );
+		break;
+
+	case 2:
+		ExtractResults ( tAlg.template searchKnn<TerminationQuantile_c, false, DistFn> ( pData, iResults, pFilter, pSearchEf ), dResults );
+		break;
+
+	case 3:
+		ExtractResults ( tAlg.template searchKnn<TerminationQuantileL2_c, false, DistFn> ( pData, iResults, pFilter, pSearchEf ), dResults );
+		break;
+
+	case 4:
+	case 5:
+		ExtractResults ( tAlg.template searchKnn<hnswlib::NoopTerminationState, true, DistFn> ( pData, iResults, pFilter, pSearchEf ), dResults );
+		break;
+
+	case 6:
+		ExtractResults ( tAlg.template searchKnn<TerminationQuantile_c, true, DistFn> ( pData, iResults, pFilter, pSearchEf ), dResults );
+		break;
+
+	case 7:
+		ExtractResults ( tAlg.template searchKnn<TerminationQuantileL2_c, true, DistFn> ( pData, iResults, pFilter, pSearchEf ), dResults );
+		break;
+
+	default:
+		assert ( 0 );
+		break;
 	}
 }
 
@@ -262,36 +373,46 @@ void HNSWIndex_c::Search ( std::vector<DocDist_t> & dResults, const Span_T<float
 	bool bL2 = m_eSimilarity==HNSWSimilarity_e::L2;
 	int iSearchPath = bCollectMetrics*4 + bQuantile*2 + bL2;
 
-	switch ( iSearchPath )
+	switch ( m_eDistFuncId )
 	{
-	case 0:
-	case 1:
-		ExtractResults ( m_pAlg->searchKnn<hnswlib::NoopTerminationState, false> ( pData, iResults, pFilterWrapper.get(), &iSearchEf ), dResults );
+	case DistFuncId_e::NONE:
+		RunSearchPath<> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath );
 		break;
 
-	case 2:
-		ExtractResults ( m_pAlg->searchKnn<TerminationQuantile_c, false> ( pData, iResults, pFilterWrapper.get(), &iSearchEf ), dResults );
+	case DistFuncId_e::IP_FLOAT32:
+		RunSearchPath<IPFloatDistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath );
 		break;
 
-	case 3:
-		ExtractResults ( m_pAlg->searchKnn<TerminationQuantileL2_c, false> ( pData, iResults, pFilterWrapper.get(), &iSearchEf ), dResults );
+	case DistFuncId_e::IP_BINARY_GENERIC:
+		RunSearchPath<IPBinaryGenericDistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath );
 		break;
 
-	case 4:
-	case 5:
-		ExtractResults ( m_pAlg->searchKnn<hnswlib::NoopTerminationState, true> ( pData, iResults, pFilterWrapper.get(), &iSearchEf ), dResults );
+	case DistFuncId_e::IP_BINARY_SIMD16:
+		RunSearchPath<IPBinarySIMD16DistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath );
 		break;
 
-	case 6:
-		ExtractResults ( m_pAlg->searchKnn<TerminationQuantile_c, true> ( pData, iResults, pFilterWrapper.get(), &iSearchEf ), dResults );
+	case DistFuncId_e::IP_BINARY_SIMD16_RESIDUALS:
+		RunSearchPath<IPBinarySIMD16ResidualsDistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath );
 		break;
 
-	case 7:
-		ExtractResults ( m_pAlg->searchKnn<TerminationQuantileL2_c, true> ( pData, iResults, pFilterWrapper.get(), &iSearchEf ), dResults );
+	case DistFuncId_e::L2_FLOAT32:
+		RunSearchPath<L2FloatDistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath );
+		break;
+
+	case DistFuncId_e::L2_BINARY_GENERIC:
+		RunSearchPath<L2BinaryGenericDistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath );
+		break;
+
+	case DistFuncId_e::L2_BINARY_SIMD16:
+		RunSearchPath<L2BinarySIMD16DistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath );
+		break;
+
+	case DistFuncId_e::L2_BINARY_SIMD16_RESIDUALS:
+		RunSearchPath<L2BinarySIMD16ResidualsDistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath );
 		break;
 
 	default:
-		assert(0);
+		assert ( 0 );
 		break;
 	}
 
