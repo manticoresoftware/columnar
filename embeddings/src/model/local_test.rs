@@ -808,4 +808,71 @@ mod tests {
             "Embeddings should be different for different texts"
         );
     }
+
+    #[test]
+    fn test_onnx_vs_safetensors_speed() {
+        use std::time::Instant;
+
+        let cache_path = test_cache_path();
+        let sentences = &[
+            "This is a test sentence for benchmarking.",
+            "Another sentence to measure inference speed.",
+            "The quick brown fox jumps over the lazy dog.",
+        ];
+        let iterations = 5;
+
+        // Safetensors (BertModel)
+        let st = match LocalModel::new(
+            "sentence-transformers/all-MiniLM-L12-v2",
+            cache_path.clone(),
+            false,
+            None,
+        ) {
+            Ok(m) => m,
+            Err(e) => {
+                println!("Safetensors model skipped: {}", e);
+                return;
+            }
+        };
+
+        // ONNX
+        let onnx = match LocalModel::new(
+            "onnx-models/all-MiniLM-L12-v2-onnx",
+            cache_path,
+            false,
+            None,
+        ) {
+            Ok(m) => m,
+            Err(e) => {
+                println!("ONNX model skipped: {}", e);
+                return;
+            }
+        };
+
+        // Warmup
+        let _ = st.predict(sentences).unwrap();
+        let _ = onnx.predict(sentences).unwrap();
+
+        // Safetensors timing
+        let start = Instant::now();
+        for _ in 0..iterations {
+            let _ = st.predict(sentences).unwrap();
+        }
+        let st_ms = start.elapsed().as_millis() as f64 / iterations as f64;
+
+        // ONNX timing
+        let start = Instant::now();
+        for _ in 0..iterations {
+            let _ = onnx.predict(sentences).unwrap();
+        }
+        let onnx_ms = start.elapsed().as_millis() as f64 / iterations as f64;
+
+        println!(
+            "\n=== MiniLM-L12-v2: ONNX vs Safetensors ({iterations} iters, {} texts) ===",
+            sentences.len()
+        );
+        println!("Safetensors (BertModel): {st_ms:.0}ms/iter");
+        println!("ONNX (candle-onnx):      {onnx_ms:.0}ms/iter");
+        println!("Ratio: ONNX is {:.2}x vs safetensors", onnx_ms / st_ms);
+    }
 }

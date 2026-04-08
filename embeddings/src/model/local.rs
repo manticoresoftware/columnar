@@ -1,8 +1,6 @@
 use super::TextModel;
 use crate::error::LibError;
-use crate::utils::{
-    chunk_input_tokens, get_hidden_size, get_max_input_length, get_mean_vector, normalize,
-};
+use crate::utils::{get_hidden_size, get_max_input_length, normalize, pre_truncate_text};
 use candle_core::quantized::gguf_file;
 use candle_core::{DType, Device, IndexOp, Tensor};
 use candle_nn::VarBuilder;
@@ -30,6 +28,10 @@ use std::io::BufReader;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 use tokenizers::Tokenizer;
+
+/// Maximum batch size for batched inference (BERT, ONNX).
+/// Balances throughput vs padding waste. Matches Typesense's default.
+const BATCH_SIZE: usize = 8;
 
 /// Model architecture type - determines pooling strategy
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -370,6 +372,53 @@ impl BertEmbeddingModel {
             device,
         })
     }
+
+    /// Batched forward pass for multiple token sequences.
+    /// Groups chunks into batches, pads to uniform length, runs one forward per batch.
+    fn predict_chunks(&self, chunks: &[Vec<u32>]) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
+        let mut all_embeddings = Vec::with_capacity(chunks.len());
+
+        for batch in chunks.chunks(BATCH_SIZE) {
+            let batch_size = batch.len();
+            let max_len = batch.iter().map(|c| c.len()).max().unwrap_or(0);
+
+            let mut flat_ids: Vec<u32> = Vec::with_capacity(batch_size * max_len);
+            let mut flat_mask: Vec<f32> = Vec::with_capacity(batch_size * max_len);
+
+            for chunk in batch {
+                let real_len = chunk.len();
+                flat_ids.extend_from_slice(chunk);
+                flat_ids.extend(std::iter::repeat_n(0u32, max_len - real_len));
+                flat_mask.extend(std::iter::repeat_n(1.0f32, real_len));
+                flat_mask.extend(std::iter::repeat_n(0.0f32, max_len - real_len));
+            }
+
+            let token_ids = Tensor::from_vec(flat_ids, (batch_size, max_len), &self.device)?;
+            let attention_mask =
+                Tensor::from_vec(flat_mask.clone(), (batch_size, max_len), &self.device)?;
+            let token_type_ids = token_ids.zeros_like()?;
+
+            let emb = self
+                .model
+                .forward(&token_ids, &token_type_ids, Some(&attention_mask))?;
+            // emb: [batch_size, max_len, hidden_size]
+
+            // Attention-mask-aware mean pooling: sum(emb * mask) / sum(mask)
+            let mask_expanded = attention_mask.unsqueeze(2)?; // [batch, max_len, 1]
+            let masked_emb = emb.broadcast_mul(&mask_expanded)?;
+            let summed = masked_emb.sum(1)?.to_dtype(DType::F32)?; // [batch, hidden]
+            let token_counts = attention_mask.sum(1)?.unsqueeze(1)?; // [batch, 1]
+            let mean_emb = summed.broadcast_div(&token_counts)?;
+
+            for i in 0..batch_size {
+                let mut emb_vec: Vec<f32> = mean_emb.get(i)?.to_vec1::<f32>()?;
+                normalize(&mut emb_vec);
+                all_embeddings.push(emb_vec);
+            }
+        }
+
+        Ok(all_embeddings)
+    }
 }
 
 /// T5-style local embedding model (encoder-only)
@@ -679,27 +728,20 @@ impl QuantizedEmbeddingModel {
     }
 }
 
-/// ONNX embedding model using candle-onnx
+/// ONNX embedding model using ORT (onnxruntime) for optimized inference.
 pub struct OnnxEmbeddingModel {
-    model: candle_onnx::onnx::ModelProto,
+    session: Mutex<ort::session::Session>,
     tokenizer: Tokenizer,
     max_input_len: usize,
     hidden_size: usize,
-    device: Device,
 }
 
 impl OnnxEmbeddingModel {
     pub fn new(
         onnx_path: PathBuf,
         model_info: LocalModelInfo,
-        use_gpu: bool,
+        _use_gpu: bool,
     ) -> Result<Self, Box<dyn Error>> {
-        let device = if use_gpu {
-            Device::new_cuda(0).map_err(|_| LibError::DeviceCudaInitFailed)?
-        } else {
-            Device::Cpu
-        };
-
         let config = std::fs::read_to_string(&model_info.config_path)
             .map_err(|_| LibError::ModelConfigReadFailed)?;
         let max_input_len =
@@ -711,58 +753,107 @@ impl OnnxEmbeddingModel {
         tokenizer.with_padding(None);
         let _ = tokenizer.with_truncation(None);
 
-        let model =
-            candle_onnx::read_file(&onnx_path).map_err(|_| LibError::ModelWeightsLoadFailed)?;
+        let session = ort::session::Session::builder()
+            .map_err(|_| LibError::OnnxModelEvalFailed)?
+            .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Level3)
+            .map_err(|_| LibError::OnnxModelEvalFailed)?
+            .with_intra_threads(4)
+            .map_err(|_| LibError::OnnxModelEvalFailed)?
+            .commit_from_file(&onnx_path)
+            .map_err(|_| LibError::ModelWeightsLoadFailed)?;
 
         Ok(Self {
-            model,
+            session: Mutex::new(session),
             tokenizer,
             max_input_len,
             hidden_size,
-            device,
         })
     }
 
-    /// Run ONNX inference for a single chunk.
-    /// Handles both full-pipeline ONNX (output [batch, hidden_size]) and
-    /// transformer-only ONNX (output [batch, seq_len, hidden_size]).
-    pub fn forward(&self, token_ids: &Tensor) -> Result<Tensor, Box<dyn Error>> {
-        let seq_len = token_ids.dims()[1];
+    /// Batched forward pass for ONNX model via ORT.
+    fn predict_chunks(&self, chunks: &[Vec<u32>]) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
+        let mut all_embeddings = Vec::with_capacity(chunks.len());
+        let mut session = self.session.lock().unwrap();
 
-        let input_ids_i64 = token_ids.to_dtype(DType::I64)?;
-        let attention_mask = Tensor::ones(token_ids.dims(), DType::I64, &self.device)?;
-        let token_type_ids = Tensor::zeros(token_ids.dims(), DType::I64, &self.device)?;
+        for batch in chunks.chunks(BATCH_SIZE) {
+            let batch_size = batch.len();
+            let max_len = batch.iter().map(|c| c.len()).max().unwrap_or(0);
 
-        let mut inputs = HashMap::new();
-        inputs.insert("input_ids".to_string(), input_ids_i64);
-        inputs.insert("attention_mask".to_string(), attention_mask);
-        inputs.insert("token_type_ids".to_string(), token_type_ids);
+            let mut flat_ids: Vec<i64> = Vec::with_capacity(batch_size * max_len);
+            let mut flat_mask: Vec<i64> = Vec::with_capacity(batch_size * max_len);
+            let mut flat_type_ids: Vec<i64> = Vec::with_capacity(batch_size * max_len);
 
-        let outputs = candle_onnx::simple_eval(&self.model, inputs)
-            .map_err(|_| LibError::OnnxModelEvalFailed)?;
-
-        // Try common output names, fall back to first output
-        let output = outputs
-            .get("last_hidden_state")
-            .or_else(|| outputs.get("token_embeddings"))
-            .or_else(|| outputs.get("sentence_embedding"))
-            .or_else(|| outputs.values().next())
-            .ok_or(LibError::OnnxModelEvalFailed)?;
-
-        let result = match output.rank() {
-            2 => {
-                // [batch, hidden_size] — already pooled (full pipeline ONNX)
-                output.to_dtype(DType::F32)?
+            for chunk in batch {
+                let real_len = chunk.len();
+                for &id in chunk.iter() {
+                    flat_ids.push(id as i64);
+                }
+                flat_ids.extend(std::iter::repeat_n(0i64, max_len - real_len));
+                flat_mask.extend(std::iter::repeat_n(1i64, real_len));
+                flat_mask.extend(std::iter::repeat_n(0i64, max_len - real_len));
+                flat_type_ids.extend(std::iter::repeat_n(0i64, max_len));
             }
-            3 => {
-                // [batch, seq_len, hidden_size] — need mean pooling
-                let summed = output.sum(1)?.to_dtype(DType::F32)?;
-                let divisor = Tensor::new(seq_len as f32, &self.device)?;
-                summed.broadcast_div(&divisor)?
+
+            let input_ids = ort::value::Tensor::from_array((vec![batch_size, max_len], flat_ids))
+                .map_err(|_| LibError::OnnxModelEvalFailed)?;
+            let attention_mask =
+                ort::value::Tensor::from_array((vec![batch_size, max_len], flat_mask.clone()))
+                    .map_err(|_| LibError::OnnxModelEvalFailed)?;
+            let token_type_ids =
+                ort::value::Tensor::from_array((vec![batch_size, max_len], flat_type_ids))
+                    .map_err(|_| LibError::OnnxModelEvalFailed)?;
+
+            let outputs = session
+                .run(ort::inputs![
+                    "input_ids" => input_ids,
+                    "attention_mask" => attention_mask,
+                    "token_type_ids" => token_type_ids,
+                ])
+                .map_err(|_| LibError::OnnxModelEvalFailed)?;
+
+            let (shape, data) = outputs[0]
+                .try_extract_tensor::<f32>()
+                .map_err(|_| LibError::OnnxModelEvalFailed)?;
+
+            let ndim = shape.len();
+            if ndim == 2 {
+                // [batch, hidden] — already pooled
+                let hidden_dim = shape[1] as usize;
+                for i in 0..batch_size {
+                    let start = i * hidden_dim;
+                    let mut emb = data[start..start + hidden_dim].to_vec();
+                    normalize(&mut emb);
+                    all_embeddings.push(emb);
+                }
+            } else if ndim == 3 {
+                // [batch, seq_len, hidden] — masked mean pooling
+                let seq_len = shape[1] as usize;
+                let hidden_dim = shape[2] as usize;
+                for i in 0..batch_size {
+                    let mut emb = vec![0.0f32; hidden_dim];
+                    let mut count = 0.0f32;
+                    for j in 0..seq_len {
+                        let mask_val = flat_mask[i * max_len + j] as f32;
+                        if mask_val > 0.0 {
+                            let offset = (i * seq_len + j) * hidden_dim;
+                            for k in 0..hidden_dim {
+                                emb[k] += data[offset + k];
+                            }
+                            count += 1.0;
+                        }
+                    }
+                    if count > 0.0 {
+                        emb.iter_mut().for_each(|v| *v /= count);
+                    }
+                    normalize(&mut emb);
+                    all_embeddings.push(emb);
+                }
+            } else {
+                return Err(Box::new(LibError::OnnxModelEvalFailed));
             }
-            _ => return Err(Box::new(LibError::OnnxModelEvalFailed)),
-        };
-        Ok(result)
+        }
+
+        Ok(all_embeddings)
     }
 }
 
@@ -830,77 +921,112 @@ impl LocalModel {
     }
 }
 
+impl LocalModel {
+    /// Batched predict pipeline: tokenize → truncate → batch forward.
+    /// Used for BERT and ONNX models that support batch_size > 1.
+    fn predict_batched<F>(
+        tokenizer: &Tokenizer,
+        max_input_len: usize,
+        texts: &[&str],
+        predict_chunks_fn: F,
+    ) -> Result<Vec<Vec<f32>>, Box<dyn Error>>
+    where
+        F: Fn(&[Vec<u32>]) -> Result<Vec<Vec<f32>>, Box<dyn Error>>,
+    {
+        let count = texts.len();
+
+        // Pre-truncate text to avoid running BPE on excessively long input
+        let texts: Vec<&str> = texts
+            .iter()
+            .map(|t| pre_truncate_text(t, max_input_len))
+            .collect();
+
+        // Batch tokenization — uses rayon parallelism internally when
+        // TOKENIZERS_PARALLELISM=true (set below on first call)
+        let encodings = tokenizer
+            .encode_batch(texts, true)
+            .map_err(|_| LibError::ModelTokenizerEncodeFailed)?;
+
+        let truncated: Vec<Vec<u32>> = encodings
+            .iter()
+            .map(|enc| {
+                let ids = enc.get_ids();
+                ids[..ids.len().min(max_input_len)].to_vec()
+            })
+            .collect();
+
+        let all_results = predict_chunks_fn(&truncated)?;
+
+        if all_results.is_empty() || all_results.len() != count {
+            return Err(Box::new(LibError::ModelLoadFailed));
+        }
+        Ok(all_results)
+    }
+}
+
 impl TextModel for LocalModel {
     fn predict(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
+        // BERT and ONNX: batched path (batch_size up to BATCH_SIZE per forward pass)
+        match self {
+            LocalModel::Bert(m) => {
+                return Self::predict_batched(&m.tokenizer, m.max_input_len, texts, |chunks| {
+                    m.predict_chunks(chunks)
+                });
+            }
+            LocalModel::Onnx(m) => {
+                return Self::predict_batched(&m.tokenizer, m.max_input_len, texts, |chunks| {
+                    m.predict_chunks(chunks)
+                });
+            }
+            _ => {} // fall through to sequential path
+        }
+
+        // Sequential path for T5, Causal, Quantized (these use KV caches / mutexes)
         let (device, max_input_len) = match self {
-            LocalModel::Bert(m) => (m.device.clone(), m.max_input_len),
             LocalModel::T5(m) => (m.device.clone(), m.max_input_len),
             LocalModel::Causal(m) => (m.device.clone(), m.max_input_len),
             LocalModel::Quantized(m) => (m.device.clone(), m.max_input_len),
-            LocalModel::Onnx(m) => (m.device.clone(), m.max_input_len),
+            _ => unreachable!(),
         };
 
         let mut all_results: Vec<Vec<f32>> = Vec::new();
 
         for text in texts.iter() {
-            let tokens = match self {
-                LocalModel::Bert(m) => m
-                    .tokenizer
-                    .encode(*text, true)
-                    .map_err(|_| LibError::ModelTokenizerEncodeFailed)?
-                    .get_ids()
-                    .to_vec(),
+            // Pre-truncate text to avoid running BPE on excessively long input
+            let text = pre_truncate_text(text, max_input_len);
+            let mut tokens = match self {
                 LocalModel::T5(m) => m
                     .tokenizer
-                    .encode(*text, true)
+                    .encode(text, true)
                     .map_err(|_| LibError::ModelTokenizerEncodeFailed)?
                     .get_ids()
                     .to_vec(),
                 LocalModel::Causal(m) => m
                     .tokenizer
-                    .encode(*text, true)
+                    .encode(text, true)
                     .map_err(|_| LibError::ModelTokenizerEncodeFailed)?
                     .get_ids()
                     .to_vec(),
                 LocalModel::Quantized(m) => m
                     .tokenizer
-                    .encode(*text, true)
+                    .encode(text, true)
                     .map_err(|_| LibError::ModelTokenizerEncodeFailed)?
                     .get_ids()
                     .to_vec(),
-                LocalModel::Onnx(m) => m
-                    .tokenizer
-                    .encode(*text, true)
-                    .map_err(|_| LibError::ModelTokenizerEncodeFailed)?
-                    .get_ids()
-                    .to_vec(),
+                _ => unreachable!(),
             };
 
-            let chunks = chunk_input_tokens(&tokens, max_input_len, max_input_len / 10);
-            let mut results: Vec<Vec<f32>> = Vec::new();
+            tokens.truncate(max_input_len);
 
-            for chunk in chunks.iter() {
-                let token_ids = Tensor::new(&chunk[..], &device)?.unsqueeze(0)?;
+            {
+                let token_ids = Tensor::new(&tokens[..], &device)?.unsqueeze(0)?;
                 let embeddings = match self {
-                    LocalModel::Bert(m) => {
-                        let token_type_ids = token_ids.zeros_like()?;
-                        let emb = m.model.forward(&token_ids, &token_type_ids, None)?;
-                        let seq_len = token_ids.dims()[1];
-                        let summed = emb.sum(1)?.to_dtype(DType::F32)?;
-                        let divisor = Tensor::new(seq_len as f32, &device)?;
-                        let divided = summed.broadcast_div(&divisor)?;
-                        divided.to_dtype(DType::F32)?
-                    }
                     LocalModel::T5(m) => {
-                        // T5 encoder: use CLS pooling (first token)
                         let mut model = m.model.lock().unwrap();
                         let emb = model.forward(&token_ids)?;
-                        // emb shape: [batch, seq_len, hidden_size]
-                        // CLS pooling: take first token embedding
-                        // Keep batch dimension for consistency with other models
-                        let cls_emb = emb.i(0)?; // [seq_len, hidden_size]
-                        let first_token = cls_emb.i(0)?; // [hidden_size]
-                        first_token.unsqueeze(0)?.to_dtype(DType::F32)? // [1, hidden_size]
+                        let cls_emb = emb.i(0)?;
+                        let first_token = cls_emb.i(0)?;
+                        first_token.unsqueeze(0)?.to_dtype(DType::F32)?
                     }
                     LocalModel::Causal(m) => match &m.kind {
                         CausalEmbeddingKind::Qwen { model, config } => {
@@ -909,8 +1035,7 @@ impl TextModel for LocalModel {
                             let (_, n_tokens, _) = emb.dims3()?;
                             let summed = emb.sum(1)?.to_dtype(DType::F32)?;
                             let divisor = Tensor::new(n_tokens as f32, &device)?;
-                            let divided = summed.broadcast_div(&divisor)?;
-                            divided.to_dtype(DType::F32)?
+                            summed.broadcast_div(&divisor)?
                         }
                         CausalEmbeddingKind::Llama {
                             model,
@@ -922,8 +1047,7 @@ impl TextModel for LocalModel {
                             let (_, n_tokens, _) = emb.dims3()?;
                             let summed = emb.sum(1)?.to_dtype(DType::F32)?;
                             let divisor = Tensor::new(n_tokens as f32, &device)?;
-                            let divided = summed.broadcast_div(&divisor)?;
-                            divided.to_dtype(DType::F32)?
+                            summed.broadcast_div(&divisor)?
                         }
                         CausalEmbeddingKind::Mistral { model, config } => {
                             let mut cache = MistralCache::new(config.num_hidden_layers);
@@ -932,8 +1056,7 @@ impl TextModel for LocalModel {
                             let (_, n_tokens, _) = emb.dims3()?;
                             let summed = emb.sum(1)?.to_dtype(DType::F32)?;
                             let divisor = Tensor::new(n_tokens as f32, &device)?;
-                            let divided = summed.broadcast_div(&divisor)?;
-                            divided.to_dtype(DType::F32)?
+                            summed.broadcast_div(&divisor)?
                         }
                         CausalEmbeddingKind::Gemma { model, config } => {
                             let mut cache = GemmaCache::new(config.num_hidden_layers);
@@ -942,8 +1065,7 @@ impl TextModel for LocalModel {
                             let (_, n_tokens, _) = emb.dims3()?;
                             let summed = emb.sum(1)?.to_dtype(DType::F32)?;
                             let divisor = Tensor::new(n_tokens as f32, &device)?;
-                            let divided = summed.broadcast_div(&divisor)?;
-                            divided.to_dtype(DType::F32)?
+                            summed.broadcast_div(&divisor)?
                         }
                     },
                     LocalModel::Quantized(m) => match &m.model {
@@ -953,8 +1075,7 @@ impl TextModel for LocalModel {
                             let (_, n_tokens, _) = emb.dims3()?;
                             let summed = emb.sum(1)?.to_dtype(DType::F32)?;
                             let divisor = Tensor::new(n_tokens as f32, &device)?;
-                            let divided = summed.broadcast_div(&divisor)?;
-                            divided.to_dtype(DType::F32)?
+                            summed.broadcast_div(&divisor)?
                         }
                         QuantizedModelKind::Llama { model } => {
                             let mut model = model.lock().unwrap();
@@ -962,11 +1083,10 @@ impl TextModel for LocalModel {
                             let (_, n_tokens, _) = emb.dims3()?;
                             let summed = emb.sum(1)?.to_dtype(DType::F32)?;
                             let divisor = Tensor::new(n_tokens as f32, &device)?;
-                            let divided = summed.broadcast_div(&divisor)?;
-                            divided.to_dtype(DType::F32)?
+                            summed.broadcast_div(&divisor)?
                         }
                     },
-                    LocalModel::Onnx(m) => m.forward(&token_ids)?,
+                    _ => unreachable!(),
                 };
 
                 if let Ok(e_j) = embeddings.get(0) {
@@ -975,16 +1095,11 @@ impl TextModel for LocalModel {
                         .map_err(|e| -> Box<dyn Error> { Box::new(e) })?;
                     let mut emb = emb_vec;
                     normalize(&mut emb);
-                    results.push(emb);
+                    all_results.push(emb);
+                } else {
+                    return Err(Box::new(LibError::ModelLoadFailed));
                 }
             }
-
-            if results.is_empty() {
-                return Err(Box::new(LibError::ModelLoadFailed));
-            }
-
-            let mean_vector = get_mean_vector(&results);
-            all_results.push(mean_vector);
         }
 
         if all_results.is_empty() || all_results.len() != texts.len() {

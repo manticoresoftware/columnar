@@ -100,165 +100,25 @@ mod tests {
     }
 
     #[test]
-    fn test_chunk_input_tokens_basic() {
-        let tokens = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        let max_seq_len = 4;
-        let stride = 2;
-
-        let chunks = chunk_input_tokens(&tokens, max_seq_len, stride);
-        assert_eq!(
-            chunks,
-            vec![
-                vec![1, 2, 3, 4],
-                vec![3, 4, 5, 6],
-                vec![5, 6, 7, 8],
-                vec![7, 8, 9, 10]
-            ]
-        );
+    fn test_pre_truncate_text_noop_for_short() {
+        let text = "short text";
+        assert_eq!(pre_truncate_text(text, 512), text);
     }
 
     #[test]
-    fn test_chunk_input_tokens_short_input() {
-        let short_tokens = vec![1, 2, 3];
-        let max_seq_len = 4;
-        let stride = 2;
-
-        let short_chunks = chunk_input_tokens(&short_tokens, max_seq_len, stride);
-        assert_eq!(short_chunks, vec![vec![1, 2, 3]]);
+    fn test_pre_truncate_text_cuts_long() {
+        let long = "x".repeat(100_000);
+        let result = pre_truncate_text(&long, 128);
+        assert_eq!(result.len(), 128 * 8);
     }
 
     #[test]
-    fn test_chunk_input_tokens_exact_length() {
-        let tokens = vec![1, 2, 3, 4];
-        let max_seq_len = 4;
-        let stride = 2;
-
-        let chunks = chunk_input_tokens(&tokens, max_seq_len, stride);
-        assert_eq!(chunks, vec![vec![1, 2, 3, 4]]);
-    }
-
-    #[test]
-    fn test_chunk_input_tokens_no_overlap() {
-        let tokens = vec![1, 2, 3, 4, 5, 6, 7, 8];
-        let max_seq_len = 4;
-        let stride = 4; // No overlap
-
-        let chunks = chunk_input_tokens(&tokens, max_seq_len, stride);
-        assert_eq!(chunks, vec![vec![1, 2, 3, 4], vec![5, 6, 7, 8]]);
-    }
-
-    #[test]
-    fn test_chunk_input_tokens_large_stride() {
-        let tokens = vec![1, 2, 3, 4, 5, 6];
-        let max_seq_len = 3;
-        let stride = 5; // Stride larger than max_seq_len
-
-        let chunks = chunk_input_tokens(&tokens, max_seq_len, stride);
-        assert_eq!(
-            chunks,
-            vec![
-                vec![1, 2, 3],
-                vec![6] // Only one element left
-            ]
-        );
-    }
-
-    #[test]
-    fn test_chunk_input_tokens_empty_input() {
-        let empty_tokens: Vec<u32> = vec![];
-        let max_seq_len = 4;
-        let stride = 2;
-
-        let chunks = chunk_input_tokens(&empty_tokens, max_seq_len, stride);
-        assert_eq!(chunks, vec![Vec::<u32>::new()]);
-    }
-
-    #[test]
-    fn test_get_mean_vector_basic() {
-        let results = vec![
-            vec![1.0, 2.0, 3.0],
-            vec![4.0, 5.0, 6.0],
-            vec![7.0, 8.0, 9.0],
-        ];
-
-        let mean_vector = get_mean_vector(&results);
-        assert_eq!(mean_vector.len(), 3);
-
-        // Calculate expected values with first chunk weighted 1.2, others 1.0
-        let weight_sum = 1.2 + 1.0 + 1.0;
-        let expected = [
-            (1.2 * 1.0 + 1.0 * 4.0 + 1.0 * 7.0) / weight_sum,
-            (1.2 * 2.0 + 1.0 * 5.0 + 1.0 * 8.0) / weight_sum,
-            (1.2 * 3.0 + 1.0 * 6.0 + 1.0 * 9.0) / weight_sum,
-        ];
-
-        for (i, &val) in mean_vector.iter().enumerate() {
-            assert_abs_diff_eq!(val, expected[i], epsilon = 1e-6);
-        }
-    }
-
-    #[test]
-    fn test_get_mean_vector_empty_input() {
-        let empty_results: Vec<Vec<f32>> = vec![];
-        assert_eq!(get_mean_vector(&empty_results), Vec::<f32>::new());
-    }
-
-    #[test]
-    fn test_get_mean_vector_single_vector() {
-        let single_result = vec![vec![1.0, 2.0, 3.0]];
-        let single_mean = get_mean_vector(&single_result);
-        assert_eq!(single_mean, vec![1.0, 2.0, 3.0]);
-    }
-
-    #[test]
-    fn test_get_mean_vector_two_vectors() {
-        let two_results = vec![vec![2.0, 4.0], vec![4.0, 8.0]];
-        let mean = get_mean_vector(&two_results);
-
-        // First vector weight: 1.2, second: 1.0
-        let weight_sum = 1.2 + 1.0;
-        let expected = [
-            (1.2 * 2.0 + 1.0 * 4.0) / weight_sum,
-            (1.2 * 4.0 + 1.0 * 8.0) / weight_sum,
-        ];
-
-        for (i, &val) in mean.iter().enumerate() {
-            assert_abs_diff_eq!(val, expected[i], epsilon = 1e-6);
-        }
-    }
-
-    #[test]
-    fn test_get_mean_vector_zero_vectors() {
-        let zero_results = vec![vec![0.0, 0.0], vec![0.0, 0.0], vec![0.0, 0.0]];
-        let mean = get_mean_vector(&zero_results);
-        assert_eq!(mean, vec![0.0, 0.0]);
-    }
-
-    #[test]
-    fn test_get_mean_vector_negative_values() {
-        let results = vec![vec![-1.0, 2.0], vec![3.0, -4.0]];
-        let mean = get_mean_vector(&results);
-
-        let weight_sum = 1.2 + 1.0;
-        let expected = [
-            (-1.2 + 1.0 * 3.0) / weight_sum,
-            (1.2 * 2.0 + 1.0 * -4.0) / weight_sum,
-        ];
-
-        for (i, &val) in mean.iter().enumerate() {
-            assert_abs_diff_eq!(val, expected[i], epsilon = 1e-6);
-        }
-    }
-
-    #[test]
-    fn test_get_mean_vector_large_dataset() {
-        let results: Vec<Vec<f32>> = (0..100).map(|i| vec![i as f32, (i * 2) as f32]).collect();
-
-        let mean = get_mean_vector(&results);
-        assert_eq!(mean.len(), 2);
-
-        // Verify the mean is reasonable
-        assert!(mean[0] > 0.0 && mean[0] < 100.0);
-        assert!(mean[1] > 0.0 && mean[1] < 200.0);
+    fn test_pre_truncate_text_respects_char_boundary() {
+        // 2-byte chars (Cyrillic)
+        let cyrillic = "Б".repeat(5000);
+        let result = pre_truncate_text(&cyrillic, 256);
+        assert!(result.len() <= 256 * 8);
+        // Must be valid UTF-8 (wouldn't compile otherwise, but ensure no panic)
+        assert!(result.len() % 2 == 0); // Б is 2 bytes
     }
 }

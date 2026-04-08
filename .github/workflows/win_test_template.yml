@@ -38,9 +38,9 @@ jobs:
       NO_BUILD: 1
     steps:
       - name: Checkout repository # We have to checkout to access .github/workflows/ in further steps
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}         
+          token: ${{ secrets.GITHUB_TOKEN }}
       - name: Print Manticore Locator
         shell: pwsh
         run: |
@@ -86,15 +86,24 @@ jobs:
         with:
           name: build_windows_Debug_x64
           path: .
-      - name: Check out Windows bundle cache
+      - name: Cache Windows bundle
+        id: bundle_cache
         uses: actions/cache@v4
         with:
           path: |
             bundle
             boost_1_75_0
-          enableCrossOsArchive: true
-          key: win_bundle_${{ steps.branch.outputs.branch_name }}
-      - name: Remove ZSTD # since it wasn't used to save the cache and if we don't remove it here the cache won't be found. TODO: install zstd in our images, so we don't have to do these hacks
+          key: win_bundle_v1
+      - name: Download bundle if cache missed
+        if: steps.bundle_cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          curl -sL -o sysroot_windows_x64.tar.xz https://repo.manticoresearch.com/repository/sysroots/roots_nov22/sysroot_windows_x64.tar.xz
+          tar -xf sysroot_windows_x64.tar.xz diskc/winbundle
+          mv diskc/winbundle bundle
+          curl -sL -o boost_1_75_0.tgz https://repo.manticoresearch.com/repository/ci/boost_1_75_0.tgz
+          tar -xf boost_1_75_0.tgz
+      - name: Remove ZSTD # cross-OS build/deps caches saved on Linux without zstd; must match compression method
         run: rm C:\tools\zstd\zstd.exe
       - name: Check out main cache
         uses: actions/cache@v4
@@ -102,12 +111,14 @@ jobs:
           path: cache
           enableCrossOsArchive: true
           key: build_windows_x64_${{ steps.branch.outputs.branch_name }}
+          restore-keys: build_windows_x64_master
       - name: Check out deps cache
         uses: actions/cache@v4
         with:
           path: build/_deps/cache
           enableCrossOsArchive: true
           key: build_windows_x64_deps_${{ steps.branch.outputs.branch_name }}
+          restore-keys: build_windows_x64_deps_master
       - run: mv build/_deps/cache/windows-amd64/* cache/windows-amd64/
       - name: Copy libraries close to the binaries
         run: |
