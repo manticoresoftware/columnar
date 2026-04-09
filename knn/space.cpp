@@ -1118,7 +1118,16 @@ static FORCE_INLINE float L2BinaryFloatDistanceFromHammingDist ( const Binary4Bi
 	fDist = std::fma ( fPopCntCoeff, tFactors4Bit.m_fMin, fDist );			// + fPopCntCoeff * fMin
 	fDist = std::fma ( 1.0f, fFmaTerm, fDist );								// + main term
 
-	float fProjectionDist = std::sqrt ( fCentroidDistToMagnitude2Ratio*fCentroidDistToMagnitude2Ratio - fDistanceToCentroid2Sqr );
+	// (d/m)^2 - d^2 = d^2 * (1 - m^2) / m^2.
+	// This algebraic form avoids catastrophic cancellation between two nearly-equal
+	// large floats when the vector magnitude is close to 1: (1 - m*m) is exactly 0
+	// when m == 1, regardless of FP contraction/rounding. The naive form
+	// (fCentroidDistToMagnitude2Ratio*fCentroidDistToMagnitude2Ratio - fDistanceToCentroid2Sqr)
+	// can drift to ~1e-7 with AVX2 codegen, producing a spurious 1e-4 error-bound bias.
+	float fOneMinusMagSqr = std::fma ( -tFactors1Bit.m_fVectorMagnitude, tFactors1Bit.m_fVectorMagnitude, 1.0f );
+	float fInvMagSqr = 1.0f / ( tFactors1Bit.m_fVectorMagnitude * tFactors1Bit.m_fVectorMagnitude );
+	float fProjectionDiff = fDistanceToCentroid2Sqr * fOneMinusMagSqr * fInvMagSqr;
+	float fProjectionDist = fProjectionDiff>0.0f ? std::sqrt(fProjectionDiff) : 0.0f;
 	float fError = 2.0f*tBinaryParam.m_fMaxError*fProjectionDist;
 	float fErrorBound = fError*std::sqrt(tFactors4Bit.m_fDistanceToCentroidSq);
 	if ( std::isfinite(fErrorBound) )
