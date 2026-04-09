@@ -34,6 +34,8 @@ jobs:
 
       - name: Install protoc
         uses: arduino/setup-protoc@v3
+        with:
+          version: '29.3'
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -171,6 +173,8 @@ jobs:
       - name: Install protoc
         if: ${{ inputs.distr != 'linux' }}
         uses: arduino/setup-protoc@v3
+        with:
+          version: '29.3'
 
       - name: Extract git metadata
         id: git_meta
