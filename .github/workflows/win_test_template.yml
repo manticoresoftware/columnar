@@ -22,6 +22,10 @@ on:
         required: false
         type: boolean
         default: true
+      USE_AVX512:
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   test_windows:
@@ -160,9 +164,22 @@ jobs:
         if: ${{ inputs.USE_AVX2 == true }}
         run: |
           if (Test-Path -Path "D:\a\columnar\columnar\build\columnar\Debug\") {
-            Write-Host "Moving Windows-based libs"
+            Write-Host "Moving Windows-based AVX2 libs"
             Move-Item -Path "D:\a\columnar\columnar\build\columnar\Debug\lib_manticore_columnar_avx2.dll" -Destination "D:\a\columnar\columnar\build\columnar\Debug\lib_manticore_columnar.dll" -Force
             Move-Item -Path "D:\a\columnar\columnar\build\secondary\Debug\lib_manticore_secondary_avx2.dll" -Destination "D:\a\columnar\columnar\build\secondary\Debug\lib_manticore_secondary.dll" -Force
+            Move-Item -Path "D:\a\columnar\columnar\build\knn\Debug\lib_manticore_knn_avx2.dll" -Destination "D:\a\columnar\columnar\build\knn\Debug\lib_manticore_knn.dll" -Force
+          } else {
+            Write-Host "Directory D:\a\columnar\columnar\build\columnar\Debug\ does not exist"
+          }
+
+      - name: Replace standard libs to AVX-512
+        if: ${{ inputs.USE_AVX512 == true }}
+        run: |
+          if (Test-Path -Path "D:\a\columnar\columnar\build\columnar\Debug\") {
+            Write-Host "Moving Windows-based AVX-512 libs"
+            Move-Item -Path "D:\a\columnar\columnar\build\columnar\Debug\lib_manticore_columnar_avx512.dll" -Destination "D:\a\columnar\columnar\build\columnar\Debug\lib_manticore_columnar.dll" -Force
+            Move-Item -Path "D:\a\columnar\columnar\build\secondary\Debug\lib_manticore_secondary_avx512.dll" -Destination "D:\a\columnar\columnar\build\secondary\Debug\lib_manticore_secondary.dll" -Force
+            Move-Item -Path "D:\a\columnar\columnar\build\knn\Debug\lib_manticore_knn_avx512.dll" -Destination "D:\a\columnar\columnar\build\knn\Debug\lib_manticore_knn.dll" -Force
           } else {
             Write-Host "Directory D:\a\columnar\columnar\build\columnar\Debug\ does not exist"
           }

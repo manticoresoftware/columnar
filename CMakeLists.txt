@@ -44,6 +44,8 @@ if (EXTERNAL_PACK)
 	set ( BUILD_TESTING OFF )
 endif ()
 
+option ( USE_AVX512 "Use AVX-512 instruction set" OFF )
+
 set (EXTERNAL_OPTION "EXTERNAL_LIB")
 
 # check what we're build. api just packs headers and build nothing
@@ -210,7 +212,10 @@ if ( FLAGS )
 	target_compile_options ( columnar_root INTERFACE ${FLAGS} )
 endif()
 
-if ( USE_AVX2 )
+if ( USE_AVX512 )
+	target_compile_definitions ( columnar_root INTERFACE USE_AVX512 )
+	set ( lib_arch_suffix "_avx512" )
+elseif ( USE_AVX2 )
 	target_compile_definitions ( columnar_root INTERFACE USE_AVX2 )
 	set ( lib_arch_suffix "_avx2" )
 endif ()
@@ -242,17 +247,27 @@ if ((INSTALL_COLUMNAR OR INSTALL_SECONDARY OR INSTALL_KNN ) AND AMD AND NOT USE_
 endif()
 
 if (ADD_AVX_BUILDS)
-	message ( STATUS "Will build extra libraries with AVX2 support" )
+	message ( STATUS "Will build extra libraries with AVX2 and AVX-512 support" )
 	include ( ExternalProject )
-	set ( EXTERNAL_PREFIX "${CMAKE_CURRENT_BINARY_DIR}/avx2" ) # here build artefacts located
+	set ( EXTERNAL_PREFIX_AVX2 "${CMAKE_CURRENT_BINARY_DIR}/avx2" ) # here build artefacts located
 	ExternalProject_Add ( columnar_avx2
 			SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}"
 			PREFIX "${CMAKE_CURRENT_BINARY_DIR}/avx2"
-			CMAKE_ARGS -D${EXTERNAL_OPTION}=1 -DCMAKE_INSTALL_PREFIX=${EXTERNAL_PREFIX}
+			CMAKE_ARGS -D${EXTERNAL_OPTION}=1 -DUSE_AVX2=ON -DCMAKE_INSTALL_PREFIX=${EXTERNAL_PREFIX_AVX2}
 			CONFIGURE_HANDLED_BY_BUILD TRUE
 			TEST_COMMAND ""
 	)
-	set ( EXTERNAL_MODULES "${EXTERNAL_PREFIX}/share/${REL_MODULES_DIR}" )
+	set ( EXTERNAL_MODULES_AVX2 "${EXTERNAL_PREFIX_AVX2}/share/${REL_MODULES_DIR}" )
+
+	set ( EXTERNAL_PREFIX_AVX512 "${CMAKE_CURRENT_BINARY_DIR}/avx512" )
+	ExternalProject_Add ( columnar_avx512
+			SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}"
+			PREFIX "${CMAKE_CURRENT_BINARY_DIR}/avx512"
+			CMAKE_ARGS -D${EXTERNAL_OPTION}=1 -DUSE_AVX512=ON -DCMAKE_INSTALL_PREFIX=${EXTERNAL_PREFIX_AVX512}
+			CONFIGURE_HANDLED_BY_BUILD TRUE
+			TEST_COMMAND ""
+	)
+	set ( EXTERNAL_MODULES_AVX512 "${EXTERNAL_PREFIX_AVX512}/share/${REL_MODULES_DIR}" )
 endif ()
 
 if (INSTALL_COLUMNAR)
@@ -261,9 +276,14 @@ if (INSTALL_COLUMNAR)
 	install ( FILES "$<TARGET_FILE_DIR:columnar_lib>/lib_manticore_columnar${lib_arch_suffix}.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
 	if (ADD_AVX_BUILDS)
 		add_library ( columnar_lib_avx2 MODULE IMPORTED )
-		set_target_properties ( columnar_lib_avx2 PROPERTIES IMPORTED_LOCATION "${EXTERNAL_MODULES}/lib_manticore_columnar_avx2.${MODULE_EXT}" )
+		set_target_properties ( columnar_lib_avx2 PROPERTIES IMPORTED_LOCATION "${EXTERNAL_MODULES_AVX2}/lib_manticore_columnar_avx2.${MODULE_EXT}" )
 		install ( IMPORTED_RUNTIME_ARTIFACTS columnar_lib_avx2 RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT columnar )
-		install ( FILES "${EXTERNAL_MODULES}/lib_manticore_columnar_avx2.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
+		install ( FILES "${EXTERNAL_MODULES_AVX2}/lib_manticore_columnar_avx2.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
+
+		add_library ( columnar_lib_avx512 MODULE IMPORTED )
+		set_target_properties ( columnar_lib_avx512 PROPERTIES IMPORTED_LOCATION "${EXTERNAL_MODULES_AVX512}/lib_manticore_columnar_avx512.${MODULE_EXT}" )
+		install ( IMPORTED_RUNTIME_ARTIFACTS columnar_lib_avx512 RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT columnar )
+		install ( FILES "${EXTERNAL_MODULES_AVX512}/lib_manticore_columnar_avx512.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
 	endif ()
 endif()
 
@@ -273,9 +293,14 @@ if (INSTALL_SECONDARY)
 	install ( FILES "$<TARGET_FILE_DIR:secondary_index>/lib_manticore_secondary${lib_arch_suffix}.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
 	if (ADD_AVX_BUILDS)
 		add_library ( secondary_index_avx2 MODULE IMPORTED )
-		set_target_properties ( secondary_index_avx2 PROPERTIES IMPORTED_LOCATION "${EXTERNAL_MODULES}/lib_manticore_secondary_avx2.${MODULE_EXT}" )
+		set_target_properties ( secondary_index_avx2 PROPERTIES IMPORTED_LOCATION "${EXTERNAL_MODULES_AVX2}/lib_manticore_secondary_avx2.${MODULE_EXT}" )
 		install ( IMPORTED_RUNTIME_ARTIFACTS secondary_index_avx2 RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT secondary )
-		install ( FILES "${EXTERNAL_MODULES}/lib_manticore_secondary_avx2.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
+		install ( FILES "${EXTERNAL_MODULES_AVX2}/lib_manticore_secondary_avx2.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
+
+		add_library ( secondary_index_avx512 MODULE IMPORTED )
+		set_target_properties ( secondary_index_avx512 PROPERTIES IMPORTED_LOCATION "${EXTERNAL_MODULES_AVX512}/lib_manticore_secondary_avx512.${MODULE_EXT}" )
+		install ( IMPORTED_RUNTIME_ARTIFACTS secondary_index_avx512 RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT secondary )
+		install ( FILES "${EXTERNAL_MODULES_AVX512}/lib_manticore_secondary_avx512.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
 	endif ()
 endif ()
 
@@ -286,9 +311,14 @@ if (INSTALL_KNN)
 
 	if (ADD_AVX_BUILDS)
 		add_library ( knn_lib_avx2 MODULE IMPORTED )
-		set_target_properties ( knn_lib_avx2 PROPERTIES IMPORTED_LOCATION "${EXTERNAL_MODULES}/lib_manticore_knn_avx2.${MODULE_EXT}" )
+		set_target_properties ( knn_lib_avx2 PROPERTIES IMPORTED_LOCATION "${EXTERNAL_MODULES_AVX2}/lib_manticore_knn_avx2.${MODULE_EXT}" )
 		install ( IMPORTED_RUNTIME_ARTIFACTS knn_lib_avx2 RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT knn )
-		install ( FILES "${EXTERNAL_MODULES}/lib_manticore_knn_avx2.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
+		install ( FILES "${EXTERNAL_MODULES_AVX2}/lib_manticore_knn_avx2.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
+
+		add_library ( knn_lib_avx512 MODULE IMPORTED )
+		set_target_properties ( knn_lib_avx512 PROPERTIES IMPORTED_LOCATION "${EXTERNAL_MODULES_AVX512}/lib_manticore_knn_avx512.${MODULE_EXT}" )
+		install ( IMPORTED_RUNTIME_ARTIFACTS knn_lib_avx512 RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT knn )
+		install ( FILES "${EXTERNAL_MODULES_AVX512}/lib_manticore_knn_avx512.pdb" DESTINATION ${MODULES_DIR} COMPONENT dbgsymbols OPTIONAL )
 	endif ()
 
 	# Add component dependency - KNN depends on embeddings

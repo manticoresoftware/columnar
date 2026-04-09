@@ -43,6 +43,207 @@ static float DotProduct ( const std::vector<float> & tA, const std::vector<float
 	return fRes;
 }
 
+
+#if defined(USE_AVX2)
+static FORCE_INLINE float HSum256Ps ( __m256 v )
+{
+	alignas(32) float dBuffer[8];
+	_mm256_store_ps ( dBuffer, v );
+	return dBuffer[0] + dBuffer[1] + dBuffer[2] + dBuffer[3] + dBuffer[4] + dBuffer[5] + dBuffer[6] + dBuffer[7];
+}
+#endif
+
+
+float IPFloatDistance ( const void * pVect1, const void * pVect2, size_t, size_t, const void * pParam )
+{
+	const auto * pV1 = (const float *)pVect1;
+	const auto * pV2 = (const float *)pVect2;
+	size_t uDim = *(const size_t *)pParam;
+
+	float fDot = 0.0f;
+	size_t i = 0;
+
+#if defined(USE_AVX512)
+	__m512 vSum = _mm512_setzero_ps();
+	size_t uLimit = uDim & ~size_t(15);
+	for ( ; i < uLimit; i += 16 )
+	{
+		__m512 v1 = _mm512_loadu_ps ( pV1 + i );
+		__m512 v2 = _mm512_loadu_ps ( pV2 + i );
+		vSum = _mm512_fmadd_ps ( v1, v2, vSum );
+	}
+	fDot = _mm512_reduce_add_ps ( vSum );
+#elif defined(USE_AVX2)
+	__m256 vSum = _mm256_setzero_ps();
+	size_t uLimit = uDim & ~size_t(7);
+	for ( ; i < uLimit; i += 8 )
+	{
+		__m256 v1 = _mm256_loadu_ps ( pV1 + i );
+		__m256 v2 = _mm256_loadu_ps ( pV2 + i );
+		vSum = _mm256_add_ps ( vSum, _mm256_mul_ps ( v1, v2 ) );
+	}
+	fDot = HSum256Ps ( vSum );
+#endif
+
+	for ( size_t iTail = i; iTail < uDim; iTail++ )
+		fDot += pV1[iTail]*pV2[iTail];
+
+	return 1.0f - fDot;
+}
+
+
+void IPFloatDistanceBatch2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t, size_t, size_t, const void * pParam, float & fDistA, float & fDistB )
+{
+	const auto * pV1 = (const float *)pVect1;
+	const auto * pVA = (const float *)pVect2A;
+	const auto * pVB = (const float *)pVect2B;
+	size_t uDim = *(const size_t *)pParam;
+
+	float fDotA = 0.0f;
+	float fDotB = 0.0f;
+	size_t i = 0;
+
+#if defined(USE_AVX512)
+	__m512 vSumA = _mm512_setzero_ps();
+	__m512 vSumB = _mm512_setzero_ps();
+	size_t uLimit = uDim & ~size_t(15);
+	for ( ; i < uLimit; i += 16 )
+	{
+		__m512 v1 = _mm512_loadu_ps ( pV1 + i );
+		__m512 vA = _mm512_loadu_ps ( pVA + i );
+		__m512 vB = _mm512_loadu_ps ( pVB + i );
+		vSumA = _mm512_fmadd_ps ( v1, vA, vSumA );
+		vSumB = _mm512_fmadd_ps ( v1, vB, vSumB );
+	}
+	fDotA = _mm512_reduce_add_ps ( vSumA );
+	fDotB = _mm512_reduce_add_ps ( vSumB );
+#elif defined(USE_AVX2)
+	__m256 vSumA = _mm256_setzero_ps();
+	__m256 vSumB = _mm256_setzero_ps();
+	size_t uLimit = uDim & ~size_t(7);
+	for ( ; i < uLimit; i += 8 )
+	{
+		__m256 v1 = _mm256_loadu_ps ( pV1 + i );
+		__m256 vA = _mm256_loadu_ps ( pVA + i );
+		__m256 vB = _mm256_loadu_ps ( pVB + i );
+		vSumA = _mm256_add_ps ( vSumA, _mm256_mul_ps ( v1, vA ) );
+		vSumB = _mm256_add_ps ( vSumB, _mm256_mul_ps ( v1, vB ) );
+	}
+	fDotA = HSum256Ps ( vSumA );
+	fDotB = HSum256Ps ( vSumB );
+#endif
+
+	for ( size_t iTail = i; iTail < uDim; iTail++ )
+	{
+		fDotA += pV1[iTail]*pVA[iTail];
+		fDotB += pV1[iTail]*pVB[iTail];
+	}
+
+	fDistA = 1.0f - fDotA;
+	fDistB = 1.0f - fDotB;
+}
+
+
+float L2FloatDistance ( const void * pVect1, const void * pVect2, size_t, size_t, const void * pParam )
+{
+	const auto * pV1 = (const float *)pVect1;
+	const auto * pV2 = (const float *)pVect2;
+	size_t uDim = *(const size_t *)pParam;
+
+	float fDist = 0.0f;
+	size_t i = 0;
+
+#if defined(USE_AVX512)
+	__m512 vSum = _mm512_setzero_ps();
+	size_t uLimit = uDim & ~size_t(15);
+	for ( ; i < uLimit; i += 16 )
+	{
+		__m512 v1 = _mm512_loadu_ps ( pV1 + i );
+		__m512 v2 = _mm512_loadu_ps ( pV2 + i );
+		__m512 vDiff = _mm512_sub_ps ( v1, v2 );
+		vSum = _mm512_fmadd_ps ( vDiff, vDiff, vSum );
+	}
+	fDist = _mm512_reduce_add_ps ( vSum );
+#elif defined(USE_AVX2)
+	__m256 vSum = _mm256_setzero_ps();
+	size_t uLimit = uDim & ~size_t(7);
+	for ( ; i < uLimit; i += 8 )
+	{
+		__m256 v1 = _mm256_loadu_ps ( pV1 + i );
+		__m256 v2 = _mm256_loadu_ps ( pV2 + i );
+		__m256 vDiff = _mm256_sub_ps ( v1, v2 );
+		vSum = _mm256_add_ps ( vSum, _mm256_mul_ps ( vDiff, vDiff ) );
+	}
+	fDist = HSum256Ps ( vSum );
+#endif
+
+	for ( size_t iTail = i; iTail < uDim; iTail++ )
+	{
+		float fDiff = pV1[iTail] - pV2[iTail];
+		fDist += fDiff*fDiff;
+	}
+
+	return fDist;
+}
+
+
+void L2FloatDistanceBatch2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t, size_t, size_t, const void * pParam, float & fDistA, float & fDistB )
+{
+	const auto * pV1 = (const float *)pVect1;
+	const auto * pVA = (const float *)pVect2A;
+	const auto * pVB = (const float *)pVect2B;
+	size_t uDim = *(const size_t *)pParam;
+
+	float fSumA = 0.0f;
+	float fSumB = 0.0f;
+	size_t i = 0;
+
+#if defined(USE_AVX512)
+	__m512 vSumA = _mm512_setzero_ps();
+	__m512 vSumB = _mm512_setzero_ps();
+	size_t uLimit = uDim & ~size_t(15);
+	for ( ; i < uLimit; i += 16 )
+	{
+		__m512 v1 = _mm512_loadu_ps ( pV1 + i );
+		__m512 vA = _mm512_loadu_ps ( pVA + i );
+		__m512 vB = _mm512_loadu_ps ( pVB + i );
+		__m512 vDiffA = _mm512_sub_ps ( v1, vA );
+		__m512 vDiffB = _mm512_sub_ps ( v1, vB );
+		vSumA = _mm512_fmadd_ps ( vDiffA, vDiffA, vSumA );
+		vSumB = _mm512_fmadd_ps ( vDiffB, vDiffB, vSumB );
+	}
+	fSumA = _mm512_reduce_add_ps ( vSumA );
+	fSumB = _mm512_reduce_add_ps ( vSumB );
+#elif defined(USE_AVX2)
+	__m256 vSumA = _mm256_setzero_ps();
+	__m256 vSumB = _mm256_setzero_ps();
+	size_t uLimit = uDim & ~size_t(7);
+	for ( ; i < uLimit; i += 8 )
+	{
+		__m256 v1 = _mm256_loadu_ps ( pV1 + i );
+		__m256 vA = _mm256_loadu_ps ( pVA + i );
+		__m256 vB = _mm256_loadu_ps ( pVB + i );
+		__m256 vDiffA = _mm256_sub_ps ( v1, vA );
+		__m256 vDiffB = _mm256_sub_ps ( v1, vB );
+		vSumA = _mm256_add_ps ( vSumA, _mm256_mul_ps ( vDiffA, vDiffA ) );
+		vSumB = _mm256_add_ps ( vSumB, _mm256_mul_ps ( vDiffB, vDiffB ) );
+	}
+	fSumA = HSum256Ps ( vSumA );
+	fSumB = HSum256Ps ( vSumB );
+#endif
+
+	for ( size_t iTail = i; iTail < uDim; iTail++ )
+	{
+		float fDiffA = pV1[iTail] - pVA[iTail];
+		float fDiffB = pV1[iTail] - pVB[iTail];
+		fSumA += fDiffA*fDiffA;
+		fSumB += fDiffB*fDiffB;
+	}
+
+	fDistA = fSumA;
+	fDistB = fSumB;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 static FORCE_INLINE int L2Sqr8Bit ( const void * __restrict pVect1, const void * __restrict pVect2, size_t, size_t, const void * __restrict pQty )
@@ -451,38 +652,53 @@ static int64_t BinaryDotProduct ( const uint8_t * pVec4Bit, const uint8_t * pVec
 
 #if !defined(USE_SIMDE)
 
-#if defined(USE_AVX2)
-FORCE_INLINE int64_t PopCnt256 ( __m256i iValue )
+#if defined(USE_AVX2) || defined(USE_AVX512)
+FORCE_INLINE __m256i PopCnt256_epi8 ( __m256i iValue )
 {
-	__m128i iLo = _mm256_castsi256_si128 ( iValue );
-	__m128i iHi = _mm256_extracti128_si256 ( iValue, 1 );
-	
-	uint64_t iLo_Lo = _mm_extract_epi64 ( iLo, 0 );
-	uint64_t iLo_Hi = _mm_extract_epi64 ( iLo, 1 );
-	uint64_t iHi_Lo = _mm_extract_epi64 ( iHi, 0 );
-	uint64_t iHi_Hi = _mm_extract_epi64 ( iHi, 1 );
+	const __m256i iLowMask = _mm256_set1_epi8(0x0f);
+	const __m256i iLookup = _mm256_setr_epi8 (
+		0,1,1,2,1,2,2,3,1,2,2,3,2,3,3,4,
+		0,1,1,2,1,2,2,3,1,2,2,3,2,3,3,4 );
 
-	return _mm_popcnt_u64 ( iLo_Lo ) + 
-		   _mm_popcnt_u64 ( iLo_Hi ) + 
-		   _mm_popcnt_u64 ( iHi_Lo ) + 
-		   _mm_popcnt_u64 ( iHi_Hi );
+	__m256i iLo = _mm256_and_si256 ( iValue, iLowMask );
+	__m256i iHi = _mm256_and_si256 ( _mm256_srli_epi16 ( iValue, 4 ), iLowMask );
+	return _mm256_add_epi8 ( _mm256_shuffle_epi8 ( iLookup, iLo ), _mm256_shuffle_epi8 ( iLookup, iHi ) );
+}
+
+FORCE_INLINE int64_t HSum256 ( __m256i v )
+{
+	__m128i lo = _mm256_castsi256_si128(v);
+	__m128i hi = _mm256_extracti128_si256(v, 1);
+	__m128i sum = _mm_add_epi64(lo, hi);
+	return _mm_extract_epi64(sum, 0) + _mm_extract_epi64(sum, 1);
 }
 #endif
 
-#define BINARYDOTPRODUCT16_STEP(SUF, OFFS) \
-	__m256i iVec1Bit##SUF = _mm256_loadu_si256((__m256i*)(pVec1Bit0 + OFFS)); \
-	__m256i iVec4Bit0##SUF = _mm256_loadu_si256((__m256i*)(pVec4Bit0 + OFFS)); \
-	__m256i iVec4Bit1##SUF = _mm256_loadu_si256((__m256i*)(pVec4Bit1 + OFFS)); \
-	__m256i iVec4Bit2##SUF = _mm256_loadu_si256((__m256i*)(pVec4Bit2 + OFFS)); \
-	__m256i iVec4Bit3##SUF = _mm256_loadu_si256((__m256i*)(pVec4Bit3 + OFFS)); \
-	__m256i iAnd0##SUF = _mm256_and_si256(iVec4Bit0##SUF, iVec1Bit##SUF); \
-	__m256i iAnd1##SUF = _mm256_and_si256(iVec4Bit1##SUF, iVec1Bit##SUF); \
-	__m256i iAnd2##SUF = _mm256_and_si256(iVec4Bit2##SUF, iVec1Bit##SUF); \
-	__m256i iAnd3##SUF = _mm256_and_si256(iVec4Bit3##SUF, iVec1Bit##SUF); \
-	iPopCnt0 += PopCnt256(iAnd0##SUF); \
-	iPopCnt1 += PopCnt256(iAnd1##SUF); \
-	iPopCnt2 += PopCnt256(iAnd2##SUF); \
-	iPopCnt3 += PopCnt256(iAnd3##SUF);
+// AVX-512 VPOPCNTQ accumulate: AND query vec VEC with 4 doc planes iPlane0..3, popcnt, accumulate into A0..3
+#define BINARYDOTPRODUCT_AVX512_ACCUM(VEC, A0, A1, A2, A3) \
+	A0 = _mm512_add_epi64 ( A0, _mm512_popcnt_epi64 ( _mm512_and_si512 ( VEC, iPlane0 ) ) ); \
+	A1 = _mm512_add_epi64 ( A1, _mm512_popcnt_epi64 ( _mm512_and_si512 ( VEC, iPlane1 ) ) ); \
+	A2 = _mm512_add_epi64 ( A2, _mm512_popcnt_epi64 ( _mm512_and_si512 ( VEC, iPlane2 ) ) ); \
+	A3 = _mm512_add_epi64 ( A3, _mm512_popcnt_epi64 ( _mm512_and_si512 ( VEC, iPlane3 ) ) );
+
+// AVX2 SAD-popcount accumulate: AND query vec VEC with 4 doc planes iPlane0_s..3_s, popcnt, accumulate into A0..3 (uses iZero)
+#define BINARYDOTPRODUCT_AVX2_ACCUM(VEC, A0, A1, A2, A3) \
+	A0 = _mm256_add_epi64 ( A0, _mm256_sad_epu8 ( PopCnt256_epi8 ( _mm256_and_si256 ( VEC, iPlane0_s ) ), iZero ) ); \
+	A1 = _mm256_add_epi64 ( A1, _mm256_sad_epu8 ( PopCnt256_epi8 ( _mm256_and_si256 ( VEC, iPlane1_s ) ), iZero ) ); \
+	A2 = _mm256_add_epi64 ( A2, _mm256_sad_epu8 ( PopCnt256_epi8 ( _mm256_and_si256 ( VEC, iPlane2_s ) ), iZero ) ); \
+	A3 = _mm256_add_epi64 ( A3, _mm256_sad_epu8 ( PopCnt256_epi8 ( _mm256_and_si256 ( VEC, iPlane3_s ) ), iZero ) );
+
+// AVX2 32-byte step: load query + 4 doc planes, AND/popcnt/accumulate
+#define BINARYDOTPRODUCT16_STEP(OFFS) \
+	{ \
+		__m256i iVec1Bit_s = _mm256_loadu_si256((__m256i*)(pVec1Bit0 + OFFS)); \
+		__m256i iPlane0_s = _mm256_loadu_si256((__m256i*)(pVec4Bit0 + OFFS)); \
+		__m256i iPlane1_s = _mm256_loadu_si256((__m256i*)(pVec4Bit1 + OFFS)); \
+		__m256i iPlane2_s = _mm256_loadu_si256((__m256i*)(pVec4Bit2 + OFFS)); \
+		__m256i iPlane3_s = _mm256_loadu_si256((__m256i*)(pVec4Bit3 + OFFS)); \
+		const __m256i iZero = _mm256_setzero_si256(); \
+		BINARYDOTPRODUCT_AVX2_ACCUM ( iVec1Bit_s, vPopCnt0, vPopCnt1, vPopCnt2, vPopCnt3 ) \
+	}
 
 template <bool RESIDUALS>
 static int64_t BinaryDotProduct16 ( const uint8_t * pVec4Bit, const uint8_t * pVec1Bit, int iBytes )
@@ -491,9 +707,65 @@ static int64_t BinaryDotProduct16 ( const uint8_t * pVec4Bit, const uint8_t * pV
 	int64_t iPopCnt1 = 0;
 	int64_t iPopCnt2 = 0;
 	int64_t iPopCnt3 = 0;
-	int i = 0;
+	size_t i = 0;
 
-#if defined(USE_AVX2)
+#if defined(USE_AVX512)
+	__m512i vPopCnt512_0 = _mm512_setzero_si512();
+	__m512i vPopCnt512_1 = _mm512_setzero_si512();
+	__m512i vPopCnt512_2 = _mm512_setzero_si512();
+	__m512i vPopCnt512_3 = _mm512_setzero_si512();
+
+	size_t uLimit64 = iBytes & ~63;
+	for ( ; i < uLimit64; i += 64 )
+	{
+		__m512i iVec1Bit = _mm512_loadu_si512(pVec1Bit + i);
+
+		auto pVec4Bit0 = pVec4Bit + i;
+		__m512i iPlane0 = _mm512_loadu_si512(pVec4Bit0);
+		__m512i iPlane1 = _mm512_loadu_si512(pVec4Bit0 + iBytes);
+		__m512i iPlane2 = _mm512_loadu_si512(pVec4Bit0 + iBytes * 2);
+		__m512i iPlane3 = _mm512_loadu_si512(pVec4Bit0 + iBytes * 3);
+
+		BINARYDOTPRODUCT_AVX512_ACCUM ( iVec1Bit, vPopCnt512_0, vPopCnt512_1, vPopCnt512_2, vPopCnt512_3 )
+	}
+
+	iPopCnt0 = _mm512_reduce_add_epi64(vPopCnt512_0);
+	iPopCnt1 = _mm512_reduce_add_epi64(vPopCnt512_1);
+	iPopCnt2 = _mm512_reduce_add_epi64(vPopCnt512_2);
+	iPopCnt3 = _mm512_reduce_add_epi64(vPopCnt512_3);
+
+	// AVX2 remainder after AVX-512 (32-byte chunks)
+	{
+		__m256i vPopCnt0 = _mm256_setzero_si256();
+		__m256i vPopCnt1 = _mm256_setzero_si256();
+		__m256i vPopCnt2 = _mm256_setzero_si256();
+		__m256i vPopCnt3 = _mm256_setzero_si256();
+
+		size_t uLimit32 = iBytes & ~31;
+		for ( ; i < uLimit32; i += 32 )
+		{
+			auto pVec1Bit0 = pVec1Bit + i;
+
+			auto pVec4Bit0 = pVec4Bit + i;
+			auto pVec4Bit1 = pVec4Bit0 + iBytes;
+			auto pVec4Bit2 = pVec4Bit1 + iBytes;
+			auto pVec4Bit3 = pVec4Bit2 + iBytes;
+
+			BINARYDOTPRODUCT16_STEP(0);
+		}
+
+		iPopCnt0 += HSum256(vPopCnt0);
+		iPopCnt1 += HSum256(vPopCnt1);
+		iPopCnt2 += HSum256(vPopCnt2);
+		iPopCnt3 += HSum256(vPopCnt3);
+	}
+
+#elif defined(USE_AVX2)
+	__m256i vPopCnt0 = _mm256_setzero_si256();
+	__m256i vPopCnt1 = _mm256_setzero_si256();
+	__m256i vPopCnt2 = _mm256_setzero_si256();
+	__m256i vPopCnt3 = _mm256_setzero_si256();
+
 	size_t uLimit128 = iBytes & ~127;
 	for ( ; i < uLimit128; i += 128 )
 	{
@@ -504,10 +776,10 @@ static int64_t BinaryDotProduct16 ( const uint8_t * pVec4Bit, const uint8_t * pV
 		auto pVec4Bit2 = pVec4Bit1 + iBytes;
 		auto pVec4Bit3 = pVec4Bit2 + iBytes;
 
-		BINARYDOTPRODUCT16_STEP(0, 0);
-		BINARYDOTPRODUCT16_STEP(1, 32);
-		BINARYDOTPRODUCT16_STEP(2, 64);
-		BINARYDOTPRODUCT16_STEP(3, 96);
+		BINARYDOTPRODUCT16_STEP(0);
+		BINARYDOTPRODUCT16_STEP(32);
+		BINARYDOTPRODUCT16_STEP(64);
+		BINARYDOTPRODUCT16_STEP(96);
 	}
 
 	size_t uLimit64 = iBytes & ~63;
@@ -520,9 +792,14 @@ static int64_t BinaryDotProduct16 ( const uint8_t * pVec4Bit, const uint8_t * pV
 		auto pVec4Bit2 = pVec4Bit1 + iBytes;
 		auto pVec4Bit3 = pVec4Bit2 + iBytes;
 
-		BINARYDOTPRODUCT16_STEP(0, 0);
-		BINARYDOTPRODUCT16_STEP(1, 32);
+		BINARYDOTPRODUCT16_STEP(0);
+		BINARYDOTPRODUCT16_STEP(32);
 	}
+
+	iPopCnt0 = HSum256(vPopCnt0);
+	iPopCnt1 = HSum256(vPopCnt1);
+	iPopCnt2 = HSum256(vPopCnt2);
+	iPopCnt3 = HSum256(vPopCnt3);
 #endif
 
 	size_t uLimit16 = iBytes & ~15;
@@ -581,41 +858,213 @@ static int64_t BinaryDotProduct16 ( const uint8_t * pVec4Bit, const uint8_t * pV
 
 	return iPopCnt0 + ( iPopCnt1 << 1 ) + ( iPopCnt2 << 2 ) + ( iPopCnt3 << 3 );
 }
+
+template <bool RESIDUALS>
+static void BinaryDotProductBatch2 ( const uint8_t * pVec4Bit, const uint8_t * pVec1BitA, const uint8_t * pVec1BitB, int iBytes, int64_t & iResultA, int64_t & iResultB )
+{
+	int64_t iPopCntA0 = 0, iPopCntA1 = 0, iPopCntA2 = 0, iPopCntA3 = 0;
+	int64_t iPopCntB0 = 0, iPopCntB1 = 0, iPopCntB2 = 0, iPopCntB3 = 0;
+	size_t i = 0;
+
+#if defined(USE_AVX512)
+	__m512i vPopCntA0 = _mm512_setzero_si512();
+	__m512i vPopCntA1 = _mm512_setzero_si512();
+	__m512i vPopCntA2 = _mm512_setzero_si512();
+	__m512i vPopCntA3 = _mm512_setzero_si512();
+	__m512i vPopCntB0 = _mm512_setzero_si512();
+	__m512i vPopCntB1 = _mm512_setzero_si512();
+	__m512i vPopCntB2 = _mm512_setzero_si512();
+	__m512i vPopCntB3 = _mm512_setzero_si512();
+
+	size_t uLimit64 = iBytes & ~63;
+	for ( ; i < uLimit64; i += 64 )
+	{
+		__m512i iVec1BitA = _mm512_loadu_si512 ( pVec1BitA + i );
+		__m512i iVec1BitB = _mm512_loadu_si512 ( pVec1BitB + i );
+
+		auto pVec4Bit0 = pVec4Bit + i;
+		__m512i iPlane0 = _mm512_loadu_si512 ( pVec4Bit0 );
+		__m512i iPlane1 = _mm512_loadu_si512 ( pVec4Bit0 + iBytes );
+		__m512i iPlane2 = _mm512_loadu_si512 ( pVec4Bit0 + iBytes * 2 );
+		__m512i iPlane3 = _mm512_loadu_si512 ( pVec4Bit0 + iBytes * 3 );
+
+		BINARYDOTPRODUCT_AVX512_ACCUM ( iVec1BitA, vPopCntA0, vPopCntA1, vPopCntA2, vPopCntA3 )
+		BINARYDOTPRODUCT_AVX512_ACCUM ( iVec1BitB, vPopCntB0, vPopCntB1, vPopCntB2, vPopCntB3 )
+	}
+
+	iPopCntA0 = _mm512_reduce_add_epi64 ( vPopCntA0 );
+	iPopCntA1 = _mm512_reduce_add_epi64 ( vPopCntA1 );
+	iPopCntA2 = _mm512_reduce_add_epi64 ( vPopCntA2 );
+	iPopCntA3 = _mm512_reduce_add_epi64 ( vPopCntA3 );
+	iPopCntB0 = _mm512_reduce_add_epi64 ( vPopCntB0 );
+	iPopCntB1 = _mm512_reduce_add_epi64 ( vPopCntB1 );
+	iPopCntB2 = _mm512_reduce_add_epi64 ( vPopCntB2 );
+	iPopCntB3 = _mm512_reduce_add_epi64 ( vPopCntB3 );
+
+	// AVX2 remainder after AVX-512 (32-byte chunks)
+	{
+		__m256i vPopCntA0 = _mm256_setzero_si256(), vPopCntA1 = _mm256_setzero_si256(), vPopCntA2 = _mm256_setzero_si256(), vPopCntA3 = _mm256_setzero_si256();
+		__m256i vPopCntB0 = _mm256_setzero_si256(), vPopCntB1 = _mm256_setzero_si256(), vPopCntB2 = _mm256_setzero_si256(), vPopCntB3 = _mm256_setzero_si256();
+
+		size_t uLimit32 = iBytes & ~31;
+		for ( ; i < uLimit32; i += 32 )
+		{
+			auto pVec4Bit0 = pVec4Bit + i;
+			auto pVec4Bit1 = pVec4Bit0 + iBytes;
+			auto pVec4Bit2 = pVec4Bit1 + iBytes;
+			auto pVec4Bit3 = pVec4Bit2 + iBytes;
+
+			__m256i iVec1BitA_s = _mm256_loadu_si256 ( (__m256i*)(pVec1BitA + i) );
+			__m256i iVec1BitB_s = _mm256_loadu_si256 ( (__m256i*)(pVec1BitB + i) );
+			__m256i iPlane0_s = _mm256_loadu_si256 ( (__m256i*)pVec4Bit0 );
+			__m256i iPlane1_s = _mm256_loadu_si256 ( (__m256i*)pVec4Bit1 );
+			__m256i iPlane2_s = _mm256_loadu_si256 ( (__m256i*)pVec4Bit2 );
+			__m256i iPlane3_s = _mm256_loadu_si256 ( (__m256i*)pVec4Bit3 );
+			const __m256i iZero = _mm256_setzero_si256();
+
+			BINARYDOTPRODUCT_AVX2_ACCUM ( iVec1BitA_s, vPopCntA0, vPopCntA1, vPopCntA2, vPopCntA3 )
+			BINARYDOTPRODUCT_AVX2_ACCUM ( iVec1BitB_s, vPopCntB0, vPopCntB1, vPopCntB2, vPopCntB3 )
+		}
+
+		iPopCntA0 += HSum256(vPopCntA0); iPopCntA1 += HSum256(vPopCntA1); iPopCntA2 += HSum256(vPopCntA2); iPopCntA3 += HSum256(vPopCntA3);
+		iPopCntB0 += HSum256(vPopCntB0); iPopCntB1 += HSum256(vPopCntB1); iPopCntB2 += HSum256(vPopCntB2); iPopCntB3 += HSum256(vPopCntB3);
+	}
+
+	#elif defined(USE_AVX2)
+		__m256i vPopCntA0 = _mm256_setzero_si256(), vPopCntA1 = _mm256_setzero_si256(), vPopCntA2 = _mm256_setzero_si256(), vPopCntA3 = _mm256_setzero_si256();
+		__m256i vPopCntB0 = _mm256_setzero_si256(), vPopCntB1 = _mm256_setzero_si256(), vPopCntB2 = _mm256_setzero_si256(), vPopCntB3 = _mm256_setzero_si256();
+		const __m256i iZero = _mm256_setzero_si256();
+		size_t uLimit128 = iBytes & ~127;
+		for ( ; i < uLimit128; i += 128 )
+		{
+			auto pVec4Bit0 = pVec4Bit + i;
+			auto pVec4Bit1 = pVec4Bit0 + iBytes;
+			auto pVec4Bit2 = pVec4Bit1 + iBytes;
+			auto pVec4Bit3 = pVec4Bit2 + iBytes;
+
+			for ( size_t uOff = 0; uOff < 128; uOff += 32 )
+			{
+				__m256i iVec1BitA_s = _mm256_loadu_si256 ( (__m256i*)(pVec1BitA + i + uOff) );
+				__m256i iVec1BitB_s = _mm256_loadu_si256 ( (__m256i*)(pVec1BitB + i + uOff) );
+				__m256i iPlane0_s = _mm256_loadu_si256 ( (__m256i*)(pVec4Bit0 + uOff) );
+				__m256i iPlane1_s = _mm256_loadu_si256 ( (__m256i*)(pVec4Bit1 + uOff) );
+				__m256i iPlane2_s = _mm256_loadu_si256 ( (__m256i*)(pVec4Bit2 + uOff) );
+				__m256i iPlane3_s = _mm256_loadu_si256 ( (__m256i*)(pVec4Bit3 + uOff) );
+
+				BINARYDOTPRODUCT_AVX2_ACCUM ( iVec1BitA_s, vPopCntA0, vPopCntA1, vPopCntA2, vPopCntA3 )
+				BINARYDOTPRODUCT_AVX2_ACCUM ( iVec1BitB_s, vPopCntB0, vPopCntB1, vPopCntB2, vPopCntB3 )
+			}
+		}
+
+		size_t uLimit64 = iBytes & ~63;
+		for ( ; i < uLimit64; i += 64 )
+		{
+			auto pVec4Bit0 = pVec4Bit + i;
+			auto pVec4Bit1 = pVec4Bit0 + iBytes;
+			auto pVec4Bit2 = pVec4Bit1 + iBytes;
+			auto pVec4Bit3 = pVec4Bit2 + iBytes;
+
+			for ( size_t uOff = 0; uOff < 64; uOff += 32 )
+			{
+				__m256i iVec1BitA_s = _mm256_loadu_si256 ( (__m256i*)(pVec1BitA + i + uOff) );
+				__m256i iVec1BitB_s = _mm256_loadu_si256 ( (__m256i*)(pVec1BitB + i + uOff) );
+				__m256i iPlane0_s = _mm256_loadu_si256 ( (__m256i*)(pVec4Bit0 + uOff) );
+				__m256i iPlane1_s = _mm256_loadu_si256 ( (__m256i*)(pVec4Bit1 + uOff) );
+				__m256i iPlane2_s = _mm256_loadu_si256 ( (__m256i*)(pVec4Bit2 + uOff) );
+				__m256i iPlane3_s = _mm256_loadu_si256 ( (__m256i*)(pVec4Bit3 + uOff) );
+
+				BINARYDOTPRODUCT_AVX2_ACCUM ( iVec1BitA_s, vPopCntA0, vPopCntA1, vPopCntA2, vPopCntA3 )
+				BINARYDOTPRODUCT_AVX2_ACCUM ( iVec1BitB_s, vPopCntB0, vPopCntB1, vPopCntB2, vPopCntB3 )
+			}
+		}
+
+		size_t uLimit32 = iBytes & ~31;
+		for ( ; i < uLimit32; i += 32 )
+		{
+			auto pVec4Bit0 = pVec4Bit + i;
+			auto pVec4Bit1 = pVec4Bit0 + iBytes;
+			auto pVec4Bit2 = pVec4Bit1 + iBytes;
+			auto pVec4Bit3 = pVec4Bit2 + iBytes;
+
+			__m256i iVec1BitA_s = _mm256_loadu_si256 ( (__m256i*)(pVec1BitA + i) );
+			__m256i iVec1BitB_s = _mm256_loadu_si256 ( (__m256i*)(pVec1BitB + i) );
+			__m256i iPlane0_s = _mm256_loadu_si256 ( (__m256i*)pVec4Bit0 );
+			__m256i iPlane1_s = _mm256_loadu_si256 ( (__m256i*)pVec4Bit1 );
+			__m256i iPlane2_s = _mm256_loadu_si256 ( (__m256i*)pVec4Bit2 );
+			__m256i iPlane3_s = _mm256_loadu_si256 ( (__m256i*)pVec4Bit3 );
+
+			BINARYDOTPRODUCT_AVX2_ACCUM ( iVec1BitA_s, vPopCntA0, vPopCntA1, vPopCntA2, vPopCntA3 )
+			BINARYDOTPRODUCT_AVX2_ACCUM ( iVec1BitB_s, vPopCntB0, vPopCntB1, vPopCntB2, vPopCntB3 )
+		}
+
+		iPopCntA0 = HSum256(vPopCntA0); iPopCntA1 = HSum256(vPopCntA1); iPopCntA2 = HSum256(vPopCntA2); iPopCntA3 = HSum256(vPopCntA3);
+		iPopCntB0 = HSum256(vPopCntB0); iPopCntB1 = HSum256(vPopCntB1); iPopCntB2 = HSum256(vPopCntB2); iPopCntB3 = HSum256(vPopCntB3);
+	#endif
+
+	size_t uLimit16 = iBytes & ~15;
+	for ( ; i < uLimit16; i += 16 )
+	{
+		auto pVec4Bit0 = pVec4Bit + i;
+		auto pVec4Bit1 = pVec4Bit0 + iBytes;
+		auto pVec4Bit2 = pVec4Bit1 + iBytes;
+		auto pVec4Bit3 = pVec4Bit2 + iBytes;
+
+		__m128i iVec1BitA = _mm_loadu_si128 ( (__m128i*)(pVec1BitA + i) );
+		__m128i iVec1BitB = _mm_loadu_si128 ( (__m128i*)(pVec1BitB + i) );
+		__m128i iVec4Bit0 = _mm_loadu_si128 ( (__m128i*)pVec4Bit0 );
+		__m128i iVec4Bit1 = _mm_loadu_si128 ( (__m128i*)pVec4Bit1 );
+		__m128i iVec4Bit2 = _mm_loadu_si128 ( (__m128i*)pVec4Bit2 );
+		__m128i iVec4Bit3 = _mm_loadu_si128 ( (__m128i*)pVec4Bit3 );
+
+		auto tPopCnt128 = [] ( __m128i iValue ) -> int64_t
+		{
+			uint64_t uLow = _mm_cvtsi128_si64(iValue);
+			uint64_t uHigh = _mm_cvtsi128_si64 ( _mm_srli_si128 ( iValue, 8 ) );
+			return _mm_popcnt_u64(uLow) + _mm_popcnt_u64(uHigh);
+		};
+
+		iPopCntA0 += tPopCnt128 ( _mm_and_si128 ( iVec1BitA, iVec4Bit0 ) );
+		iPopCntA1 += tPopCnt128 ( _mm_and_si128 ( iVec1BitA, iVec4Bit1 ) );
+		iPopCntA2 += tPopCnt128 ( _mm_and_si128 ( iVec1BitA, iVec4Bit2 ) );
+		iPopCntA3 += tPopCnt128 ( _mm_and_si128 ( iVec1BitA, iVec4Bit3 ) );
+		iPopCntB0 += tPopCnt128 ( _mm_and_si128 ( iVec1BitB, iVec4Bit0 ) );
+		iPopCntB1 += tPopCnt128 ( _mm_and_si128 ( iVec1BitB, iVec4Bit1 ) );
+		iPopCntB2 += tPopCnt128 ( _mm_and_si128 ( iVec1BitB, iVec4Bit2 ) );
+		iPopCntB3 += tPopCnt128 ( _mm_and_si128 ( iVec1BitB, iVec4Bit3 ) );
+	}
+
+	if constexpr ( RESIDUALS )
+	{
+		for ( ; i < iBytes; i++ )
+		{
+			uint8_t uValueA = pVec1BitA[i];
+			uint8_t uValueB = pVec1BitB[i];
+			auto pVec4Bit0 = pVec4Bit + i;
+			auto pVec4Bit1 = pVec4Bit0 + iBytes;
+			auto pVec4Bit2 = pVec4Bit1 + iBytes;
+			auto pVec4Bit3 = pVec4Bit2 + iBytes;
+
+			iPopCntA0 += _mm_popcnt_u32 ( ( uValueA & *pVec4Bit0 ) & 0xFF );
+			iPopCntA1 += _mm_popcnt_u32 ( ( uValueA & *pVec4Bit1 ) & 0xFF );
+			iPopCntA2 += _mm_popcnt_u32 ( ( uValueA & *pVec4Bit2 ) & 0xFF );
+			iPopCntA3 += _mm_popcnt_u32 ( ( uValueA & *pVec4Bit3 ) & 0xFF );
+			iPopCntB0 += _mm_popcnt_u32 ( ( uValueB & *pVec4Bit0 ) & 0xFF );
+			iPopCntB1 += _mm_popcnt_u32 ( ( uValueB & *pVec4Bit1 ) & 0xFF );
+			iPopCntB2 += _mm_popcnt_u32 ( ( uValueB & *pVec4Bit2 ) & 0xFF );
+			iPopCntB3 += _mm_popcnt_u32 ( ( uValueB & *pVec4Bit3 ) & 0xFF );
+		}
+	}
+
+	iResultA = iPopCntA0 + ( iPopCntA1 << 1 ) + ( iPopCntA2 << 2 ) + ( iPopCntA3 << 3 );
+	iResultB = iPopCntB0 + ( iPopCntB1 << 1 ) + ( iPopCntB2 << 2 ) + ( iPopCntB3 << 3 );
+}
 #endif
 
 // This binary distance calculation is derived from Elasticsearch's Java implementation
 // in org.elasticsearch.index.codec.vectors.es816.ES816BinaryFlatVectorsScorer
 // Permalink: https://github.com/elastic/elasticsearch/blob/1dd41ec2b683a7b7c9c16af404b842cf85cbd5bc/server/src/main/java/org/elasticsearch/index/codec/vectors/es816/ES816BinaryFlatVectorsScorer.java
-template<bool BUILD, int64_t (*DOTPRODUCT_FN)( const uint8_t * pVec4Bit, const uint8_t * pVec1Bit, int iBytes )>
-static float IPBinaryFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, size_t uRowID1, size_t uRowID2, const void * __restrict pParam )
+static FORCE_INLINE float IPBinaryFloatDistanceFromHammingDist ( const Binary4BitFactors_t & tFactors4Bit, const Binary1BitFactorsIP_t & tFactors1Bit, int64_t iHammingDist, const DistFuncParamBinary_t & tBinaryParam )
 {
-	auto tBinaryParam = *(const DistFuncParamBinary_t*)pParam;
-
-	auto pV1 = (const uint8_t *)pVect1;
-	auto pV2 = (const uint8_t *)pVect2;
-
-	// ignore uRowID2, pull uRowID1 from the pool
-	if constexpr (BUILD)
-	{
-		// we are getting 1-bit data as first argument, but we need 4-bit data
-		if ( uRowID1!=(size_t)-1 )
-		{	
-			// fetch 4-bit data from the pool
-			pV1 = tBinaryParam.m_fnFetcher(uRowID1);
-		}
-	}
-
-	assert ( uRowID2!=(size_t)-1 );
-
-	auto tFactors4Bit = *(Binary4BitFactors_t*)pV1;
-	pV1 += sizeof(Binary4BitFactors_t);
-
-	auto tFactors1Bit = *(Binary1BitFactorsIP_t*)pV2;
-	pV2 += sizeof(Binary1BitFactorsIP_t);
-	
-	int iBytes = ( tBinaryParam.m_uDim+7 ) >> 3;
-	int64_t iHammingDist = DOTPRODUCT_FN ( (const uint8_t*)pV1, (const uint8_t*)pV2, iBytes );
-
 	float fDist = 0.0f;
 	if ( tFactors1Bit.m_fVecMinusCentroidNorm==0.0f || tFactors1Bit.m_fQuality==0.0f )
 		fDist = tFactors1Bit.m_fVecDocCentroid + tFactors4Bit.m_fVecDotCentroid - tBinaryParam.m_fCentroidDotCentroid;
@@ -650,13 +1099,83 @@ static float IPBinaryFloatDistance ( const void * __restrict pVect1, const void 
 	return 1.0f - std::max ( ( 1.0f + fAdjustedDist ) / 2.0f, 0.0f );
 }
 
+
+static FORCE_INLINE float L2BinaryFloatDistanceFromHammingDist ( const Binary4BitFactors_t & tFactors4Bit, const Binary1BitFactorsL2_t & tFactors1Bit, int64_t iHammingDist, const DistFuncParamBinary_t & tBinaryParam )
+{
+	float fDistanceToCentroid2Sqr = tFactors1Bit.m_fDistanceToCentroid * tFactors1Bit.m_fDistanceToCentroid;
+	float fCentroidDistToMagnitude2Ratio = tFactors1Bit.m_fDistanceToCentroid / tFactors1Bit.m_fVectorMagnitude;
+	float fIPCoeff = -tBinaryParam.m_fDoubleInvSqrtDim * fCentroidDistToMagnitude2Ratio;
+	float fPopCntCoeff = std::fma ( 2.0f, tFactors1Bit.m_fPopCnt, -float(tBinaryParam.m_uDim) ); // 2*fPopCnt - uDim
+	fPopCntCoeff = fIPCoeff * fPopCntCoeff;
+
+	//float fDist = fDistanceToCentroid2Sqr + tFactors4Bit.m_fDistanceToCentroidSq + fPopCntCoeff * tFactors4Bit.m_fMin + ( iHammingDist*2 - tFactors4Bit.m_fQuantizedSum )*fIPCoeff*tFactors4Bit.m_fRange;
+
+	float fDoubleHammingMinusQuant = std::fma ( 2.0f, float(iHammingDist), -tFactors4Bit.m_fQuantizedSum );
+	float fFmaTerm = std::fma ( fIPCoeff * tFactors4Bit.m_fRange, fDoubleHammingMinusQuant, 0.0f );
+
+	float fDist = fDistanceToCentroid2Sqr;
+	fDist = std::fma ( 1.0f, tFactors4Bit.m_fDistanceToCentroidSq, fDist );	// + DistanceToCentroidSq
+	fDist = std::fma ( fPopCntCoeff, tFactors4Bit.m_fMin, fDist );			// + fPopCntCoeff * fMin
+	fDist = std::fma ( 1.0f, fFmaTerm, fDist );								// + main term
+
+	// (d/m)^2 - d^2 = d^2 * (1 - m^2) / m^2.
+	// This algebraic form avoids catastrophic cancellation between two nearly-equal
+	// large floats when the vector magnitude is close to 1: (1 - m*m) is exactly 0
+	// when m == 1, regardless of FP contraction/rounding. The naive form
+	// (fCentroidDistToMagnitude2Ratio*fCentroidDistToMagnitude2Ratio - fDistanceToCentroid2Sqr)
+	// can drift to ~1e-7 with AVX2 codegen, producing a spurious 1e-4 error-bound bias.
+	float fOneMinusMagSqr = std::fma ( -tFactors1Bit.m_fVectorMagnitude, tFactors1Bit.m_fVectorMagnitude, 1.0f );
+	float fInvMagSqr = 1.0f / ( tFactors1Bit.m_fVectorMagnitude * tFactors1Bit.m_fVectorMagnitude );
+	float fProjectionDiff = fDistanceToCentroid2Sqr * fOneMinusMagSqr * fInvMagSqr;
+	float fProjectionDist = fProjectionDiff>0.0f ? std::sqrt(fProjectionDiff) : 0.0f;
+	float fError = 2.0f*tBinaryParam.m_fMaxError*fProjectionDist;
+	float fErrorBound = fError*std::sqrt(tFactors4Bit.m_fDistanceToCentroidSq);
+	if ( std::isfinite(fErrorBound) )
+		fDist += fErrorBound;
+
+	return fDist;
+}
+
+
+template<bool BUILD, int64_t (*DOTPRODUCT_FN)( const uint8_t * pVec4Bit, const uint8_t * pVec1Bit, int iBytes )>
+static float IPBinaryFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, size_t uRowID1, size_t uRowID2, const void * __restrict pParam )
+{
+	const auto & tBinaryParam = *(const DistFuncParamBinary_t*)pParam;
+
+	auto pV1 = (const uint8_t *)pVect1;
+	auto pV2 = (const uint8_t *)pVect2;
+
+	// ignore uRowID2, pull uRowID1 from the pool
+	if constexpr (BUILD)
+	{
+		// we are getting 1-bit data as first argument, but we need 4-bit data
+		if ( uRowID1!=(size_t)-1 )
+		{	
+			// fetch 4-bit data from the pool
+			pV1 = tBinaryParam.m_fnFetcher(uRowID1);
+		}
+	}
+
+	assert ( uRowID2!=(size_t)-1 );
+
+	auto tFactors4Bit = *(Binary4BitFactors_t*)pV1;
+	pV1 += sizeof(Binary4BitFactors_t);
+
+	auto tFactors1Bit = *(Binary1BitFactorsIP_t*)pV2;
+	pV2 += sizeof(Binary1BitFactorsIP_t);
+	
+	int iBytes = ( tBinaryParam.m_uDim+7 ) >> 3;
+	int64_t iHammingDist = DOTPRODUCT_FN ( (const uint8_t*)pV1, (const uint8_t*)pV2, iBytes );
+	return IPBinaryFloatDistanceFromHammingDist ( tFactors4Bit, tFactors1Bit, iHammingDist, tBinaryParam );
+}
+
 // This binary distance calculation is derived from Elasticsearch's Java implementation
 // in org.elasticsearch.index.codec.vectors.es816.ES816BinaryFlatVectorsScorer
 // Permalink: https://github.com/elastic/elasticsearch/blob/1dd41ec2b683a7b7c9c16af404b842cf85cbd5bc/server/src/main/java/org/elasticsearch/index/codec/vectors/es816/ES816BinaryFlatVectorsScorer.java
 template<bool BUILD, int64_t (*DOTPRODUCT_FN)( const uint8_t * pVec4Bit, const uint8_t * pVec1Bit, int iBytes )>
 static float L2BinaryFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, size_t uRowID1, size_t uRowID2, const void * __restrict pParam )
 {
-	auto tBinaryParam = *(const DistFuncParamBinary_t*)pParam;
+	const auto & tBinaryParam = *(const DistFuncParamBinary_t*)pParam;
 
 	auto pV1 = (const uint8_t *)pVect1;
 	auto pV2 = (const uint8_t *)pVect2;
@@ -680,32 +1199,135 @@ static float L2BinaryFloatDistance ( const void * __restrict pVect1, const void 
 	auto tFactors1Bit = *(Binary1BitFactorsL2_t*)pV2;
 	pV2 += sizeof(Binary1BitFactorsL2_t);
 
-	float fDistanceToCentroid2Sqr = tFactors1Bit.m_fDistanceToCentroid * tFactors1Bit.m_fDistanceToCentroid;
-	float fCentroidDistToMagnitude2Ratio = tFactors1Bit.m_fDistanceToCentroid / tFactors1Bit.m_fVectorMagnitude;
-	float fIPCoeff = -tBinaryParam.m_fDoubleInvSqrtDim * fCentroidDistToMagnitude2Ratio;
-	float fPopCntCoeff = std::fma ( 2.0f, tFactors1Bit.m_fPopCnt, -float(tBinaryParam.m_uDim) ); // 2*fPopCnt - uDim
-	fPopCntCoeff = fIPCoeff * fPopCntCoeff;
-
 	int iBytes = ( tBinaryParam.m_uDim+7 ) >> 3;
 	int64_t iHammingDist = DOTPRODUCT_FN ( (const uint8_t*)pV1, (const uint8_t*)pV2, iBytes );
+	return L2BinaryFloatDistanceFromHammingDist ( tFactors4Bit, tFactors1Bit, iHammingDist, tBinaryParam );
+}
 
-	//float fDist = fDistanceToCentroid2Sqr + tFactors4Bit.m_fDistanceToCentroidSq + fPopCntCoeff * tFactors4Bit.m_fMin + ( iHammingDist*2 - tFactors4Bit.m_fQuantizedSum )*fIPCoeff*tFactors4Bit.m_fRange;
+///////////////////////////////////////////////////////////////////////////////
 
-	float fDoubleHammingMinusQuant = std::fma ( 2.0f, float(iHammingDist), -tFactors4Bit.m_fQuantizedSum );
-	float fFmaTerm = std::fma ( fIPCoeff * tFactors4Bit.m_fRange, fDoubleHammingMinusQuant, 0.0f ); // (iHammingDist*2 - tFactors4Bit.m_fQuantizedSum)*fIPCoeff*tFactors4Bit.m_fRange
+float IPBinaryFloatDistanceGeneric ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam )
+{
+	return IPBinaryFloatDistance<false,BinaryDotProduct> ( pVect1, pVect2, uRowID1, uRowID2, pParam );
+}
 
-	float fDist = fDistanceToCentroid2Sqr;
-	fDist = std::fma ( 1.0f, tFactors4Bit.m_fDistanceToCentroidSq, fDist );	// + DistanceToCentroidSq
-	fDist = std::fma ( fPopCntCoeff, tFactors4Bit.m_fMin, fDist );			// + fPopCntCoeff * fMin
-	fDist = std::fma ( 1.0f, fFmaTerm, fDist );								// + main term
+float IPBinaryFloatDistanceSIMD16 ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam )
+{
+	return IPBinaryFloatDistance<false,BinaryDotProduct16<false>> ( pVect1, pVect2, uRowID1, uRowID2, pParam );
+}
 
-	float fProjectionDist = std::sqrt ( fCentroidDistToMagnitude2Ratio*fCentroidDistToMagnitude2Ratio - fDistanceToCentroid2Sqr );
-	float fError = 2.0f*tBinaryParam.m_fMaxError*fProjectionDist;
-	float fErrorBound = fError*std::sqrt(tFactors4Bit.m_fDistanceToCentroidSq);
-	if ( std::isfinite(fErrorBound) )
-		fDist += fErrorBound;
+float IPBinaryFloatDistanceSIMD16Residuals ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam )
+{
+	return IPBinaryFloatDistance<false,BinaryDotProduct16<true>> ( pVect1, pVect2, uRowID1, uRowID2, pParam );
+}
 
-	return fDist;
+template <bool RESIDUALS>
+static void IPBinaryFloatDistanceBatch2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+{
+	const auto & tBinaryParam = *(const DistFuncParamBinary_t*)pParam;
+
+	auto pV1 = (const uint8_t *)pVect1;
+	auto pVA = (const uint8_t *)pVect2A;
+	auto pVB = (const uint8_t *)pVect2B;
+
+	assert ( uRowID2A!=(size_t)-1 );
+	assert ( uRowID2B!=(size_t)-1 );
+
+	auto tFactors4Bit = *(Binary4BitFactors_t*)pV1;
+	pV1 += sizeof(Binary4BitFactors_t);
+
+	auto tFactors1BitA = *(Binary1BitFactorsIP_t*)pVA;
+	pVA += sizeof(Binary1BitFactorsIP_t);
+	auto tFactors1BitB = *(Binary1BitFactorsIP_t*)pVB;
+	pVB += sizeof(Binary1BitFactorsIP_t);
+
+	int iBytes = ( tBinaryParam.m_uDim+7 ) >> 3;
+	int64_t iHammingDistA = 0, iHammingDistB = 0;
+	BinaryDotProductBatch2<RESIDUALS> ( pV1, pVA, pVB, iBytes, iHammingDistA, iHammingDistB );
+
+	fDistA = IPBinaryFloatDistanceFromHammingDist ( tFactors4Bit, tFactors1BitA, iHammingDistA, tBinaryParam );
+	fDistB = IPBinaryFloatDistanceFromHammingDist ( tFactors4Bit, tFactors1BitB, iHammingDistB, tBinaryParam );
+}
+
+void IPBinaryFloatDistanceSIMD16Batch2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+{
+	IPBinaryFloatDistanceBatch2<false> ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
+}
+
+void IPBinaryFloatDistanceSIMD16ResidualsBatch2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+{
+	IPBinaryFloatDistanceBatch2<true> ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
+}
+
+float L2BinaryFloatDistanceGeneric ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam )
+{
+	return L2BinaryFloatDistance<false,BinaryDotProduct> ( pVect1, pVect2, uRowID1, uRowID2, pParam );
+}
+
+float L2BinaryFloatDistanceSIMD16 ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam )
+{
+	return L2BinaryFloatDistance<false,BinaryDotProduct16<false>> ( pVect1, pVect2, uRowID1, uRowID2, pParam );
+}
+
+float L2BinaryFloatDistanceSIMD16Residuals ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam )
+{
+	return L2BinaryFloatDistance<false,BinaryDotProduct16<true>> ( pVect1, pVect2, uRowID1, uRowID2, pParam );
+}
+
+template <bool RESIDUALS>
+static void L2BinaryFloatDistanceBatch2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+{
+	const auto & tBinaryParam = *(const DistFuncParamBinary_t*)pParam;
+
+	auto pV1 = (const uint8_t *)pVect1;
+	auto pVA = (const uint8_t *)pVect2A;
+	auto pVB = (const uint8_t *)pVect2B;
+
+	assert ( uRowID2A!=(size_t)-1 );
+	assert ( uRowID2B!=(size_t)-1 );
+
+	auto tFactors4Bit = *(Binary4BitFactors_t*)pV1;
+	pV1 += sizeof(Binary4BitFactors_t);
+
+	auto tFactors1BitA = *(Binary1BitFactorsL2_t*)pVA;
+	pVA += sizeof(Binary1BitFactorsL2_t);
+	auto tFactors1BitB = *(Binary1BitFactorsL2_t*)pVB;
+	pVB += sizeof(Binary1BitFactorsL2_t);
+
+	int iBytes = ( tBinaryParam.m_uDim+7 ) >> 3;
+	int64_t iHammingDistA = 0, iHammingDistB = 0;
+	BinaryDotProductBatch2<RESIDUALS> ( pV1, pVA, pVB, iBytes, iHammingDistA, iHammingDistB );
+
+	fDistA = L2BinaryFloatDistanceFromHammingDist ( tFactors4Bit, tFactors1BitA, iHammingDistA, tBinaryParam );
+	fDistB = L2BinaryFloatDistanceFromHammingDist ( tFactors4Bit, tFactors1BitB, iHammingDistB, tBinaryParam );
+}
+
+void L2BinaryFloatDistanceSIMD16Batch2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+{
+	L2BinaryFloatDistanceBatch2<false> ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
+}
+
+void L2BinaryFloatDistanceSIMD16ResidualsBatch2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+{
+	L2BinaryFloatDistanceBatch2<true> ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+IPSpace32BitFloat_c::IPSpace32BitFloat_c ( size_t uDim )
+	: Space_c ( uDim )
+{
+	m_fnDist = IPFloatDistance;
+	m_eDistFuncId = DistFuncId_e::IP_FLOAT32;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+L2Space32BitFloat_c::L2Space32BitFloat_c ( size_t uDim )
+	: Space_c ( uDim )
+{
+	m_fnDist = L2FloatDistance;
+	m_eDistFuncId = DistFuncId_e::L2_FLOAT32;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -716,9 +1338,12 @@ IPSpaceBinaryFloat_c::IPSpaceBinaryFloat_c ( size_t uDim, bool bBuild )
 {
 #if defined(USE_SIMDE)
 	if ( bBuild )
-	m_fnDist = IPBinaryFloatDistance<true,BinaryDotProduct>;
-else
-	m_fnDist = IPBinaryFloatDistance<false,BinaryDotProduct>;
+		m_fnDist = IPBinaryFloatDistance<true,BinaryDotProduct>;
+	else
+	{
+		m_fnDist = IPBinaryFloatDistance<false,BinaryDotProduct>;
+		m_eDistFuncId = DistFuncId_e::IP_BINARY_GENERIC;
+	}
 #else
 	int iBytes = ( uDim+7 ) >> 3;
 	bool bUseSSE = iBytes>=16;
@@ -736,6 +1361,14 @@ else
 	case 5: m_fnDist = IPBinaryFloatDistance<true,	BinaryDotProduct>; break;
 	case 6: m_fnDist = IPBinaryFloatDistance<true,	BinaryDotProduct16<false>>; break;
 	case 7: m_fnDist = IPBinaryFloatDistance<true,	BinaryDotProduct16<true>>; break;
+	}
+
+	if ( !bBuild )
+	{
+		if ( bUseSSE )
+			m_eDistFuncId = bNeedResiduals ? DistFuncId_e::IP_BINARY_SIMD16_RESIDUALS : DistFuncId_e::IP_BINARY_SIMD16;
+		else
+			m_eDistFuncId = DistFuncId_e::IP_BINARY_GENERIC;
 	}
 #endif
 }
@@ -755,9 +1388,12 @@ L2SpaceBinaryFloat_c::L2SpaceBinaryFloat_c ( size_t uDim, bool bBuild )
 {
 #if defined(USE_SIMDE)
 	if ( bBuild )
-	m_fnDist = L2BinaryFloatDistance<true,BinaryDotProduct>;
-else
-	m_fnDist = L2BinaryFloatDistance<false,BinaryDotProduct>;
+		m_fnDist = L2BinaryFloatDistance<true,BinaryDotProduct>;
+	else
+	{
+		m_fnDist = L2BinaryFloatDistance<false,BinaryDotProduct>;
+		m_eDistFuncId = DistFuncId_e::L2_BINARY_GENERIC;
+	}
 #else
 	int iBytes = ( uDim+7 ) >> 3;
 	bool bUseSSE = iBytes>=16;
@@ -775,6 +1411,14 @@ else
 	case 5: m_fnDist = L2BinaryFloatDistance<true,	BinaryDotProduct>; break;
 	case 6: m_fnDist = L2BinaryFloatDistance<true,	BinaryDotProduct16<false>>; break;
 	case 7: m_fnDist = L2BinaryFloatDistance<true,	BinaryDotProduct16<true>>; break;
+	}
+
+	if ( !bBuild )
+	{
+		if ( bUseSSE )
+			m_eDistFuncId = bNeedResiduals ? DistFuncId_e::L2_BINARY_SIMD16_RESIDUALS : DistFuncId_e::L2_BINARY_SIMD16;
+		else
+			m_eDistFuncId = DistFuncId_e::L2_BINARY_GENERIC;
 	}
 #endif
 }

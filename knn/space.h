@@ -25,10 +25,24 @@ namespace knn
 
 struct QuantizationSettings_t;
 
+enum class DistFuncId_e
+{
+	NONE,
+	IP_FLOAT32,
+	IP_BINARY_GENERIC,
+	IP_BINARY_SIMD16,
+	IP_BINARY_SIMD16_RESIDUALS,
+	L2_FLOAT32,
+	L2_BINARY_GENERIC,
+	L2_BINARY_SIMD16,
+	L2_BINARY_SIMD16_RESIDUALS
+};
+
 class Space_i : public hnswlib::SpaceInterface<float>
 {
 public:
 	virtual void SetQuantizationSettings ( ScalarQuantizer_i & tQuantizer ) {}
+	virtual DistFuncId_e GetDistFuncId() const { return DistFuncId_e::NONE; }
 };
 
 class Space_c : public Space_i
@@ -40,27 +54,22 @@ public:
 
 	Dist_fn	get_dist_func()	override		{ return m_fnDist; }
 	void *	get_dist_func_param() override	{ return &m_uDim; }
+	DistFuncId_e GetDistFuncId() const override { return m_eDistFuncId; }
 
 protected:
 	Dist_fn	m_fnDist = nullptr;
 	size_t	m_uDim = 0;
+	DistFuncId_e m_eDistFuncId = DistFuncId_e::NONE;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
 
-class L2Space32BitFloat_c : public Space_i
+class L2Space32BitFloat_c : public Space_c
 {
-	using Dist_fn = hnswlib::DISTFUNC<float>;
-
 public:
-			L2Space32BitFloat_c ( size_t uDim ) : m_tL2S(uDim) {}
+			L2Space32BitFloat_c ( size_t uDim );
 
-	size_t	get_data_size() override		{ return m_tL2S.get_data_size(); }
-	Dist_fn	get_dist_func() override		{ return m_tL2S.get_dist_func(); }
-	void *	get_dist_func_param() override	{ return m_tL2S.get_dist_func_param(); }
-
-private:
-	hnswlib::L2Space m_tL2S;
+	size_t	get_data_size() override		{ return m_uDim*sizeof(float); }
 };
 
 
@@ -100,19 +109,12 @@ protected:
 
 ///////////////////////////////////////////////////////////////////////////////
 
-class IPSpace32BitFloat_c : public Space_i
+class IPSpace32BitFloat_c : public Space_c
 {
-	using Dist_fn = hnswlib::DISTFUNC<float>;
-
 public:
-			IPSpace32BitFloat_c ( size_t uDim ) : m_tIPS(uDim) {}
+			IPSpace32BitFloat_c ( size_t uDim );
 
-	size_t	get_data_size() override		{ return m_tIPS.get_data_size(); }
-	Dist_fn	get_dist_func() override		{ return m_tIPS.get_dist_func(); }
-	void *	get_dist_func_param() override	{ return m_tIPS.get_dist_func_param(); }
-
-private:
-	hnswlib::InnerProductSpace m_tIPS;
+	size_t	get_data_size() override		{ return m_uDim*sizeof(float); }
 };
 
 
@@ -175,6 +177,21 @@ struct DistFuncParamBinary_t
 		return ( ( iValue + iPad - 1 ) / iPad ) * iPad;
 	}
 };
+
+float	IPFloatDistance ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam );
+void	IPFloatDistanceBatch2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB );
+float	IPBinaryFloatDistanceGeneric ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam );
+float	IPBinaryFloatDistanceSIMD16 ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam );
+float	IPBinaryFloatDistanceSIMD16Residuals ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam );
+void	IPBinaryFloatDistanceSIMD16Batch2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB );
+void	IPBinaryFloatDistanceSIMD16ResidualsBatch2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB );
+float	L2FloatDistance ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam );
+void	L2FloatDistanceBatch2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB );
+float	L2BinaryFloatDistanceGeneric ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam );
+float	L2BinaryFloatDistanceSIMD16 ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam );
+float	L2BinaryFloatDistanceSIMD16Residuals ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam );
+void	L2BinaryFloatDistanceSIMD16Batch2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB );
+void	L2BinaryFloatDistanceSIMD16ResidualsBatch2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB );
 
 
 class IPSpaceBinaryFloat_c : public Space_c

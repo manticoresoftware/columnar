@@ -237,7 +237,7 @@ private:
 
 	static void					Pack ( const Span_T<float> & dVector, Span_T<uint8_t> & dPacked );
 	FORCE_INLINE static int		Quantize ( const Span_T<float> & dVector, float fMin, float fRange, SpanResizeable_T<uint8_t> & dQuantized );
-#if defined(USE_AVX2)
+#if defined(USE_AVX2) || defined(USE_AVX512)
 	FORCE_INLINE static void	TransposeAVX ( const Span_T<uint8_t> & dQuantized, size_t uDim, Span_T<uint8_t> & dTransposed );
 #endif
 	FORCE_INLINE static void	Transpose ( const Span_T<uint8_t> & dQuantized, size_t uDim, Span_T<uint8_t> & dTransposed );
@@ -311,7 +311,7 @@ int BinaryQuantizer_c::Quantize ( const Span_T<float> & dVector, float fMin, flo
 	int iQuantizedSum = 0;
 	int64_t i = 0;
 
-#if defined(USE_AVX2)
+#if defined(USE_AVX2) || defined(USE_AVX512)
 	__m256 iMinVec = _mm256_set1_ps(fMin);
 	__m256 iDivVec = _mm256_set1_ps(fDiv);
 	__m256i iSumVec = _mm256_setzero_si256();
@@ -445,7 +445,7 @@ void BinaryQuantizer_c::Quantize1Bit ( const Span_T<float> & dVector, const std:
 	}
 }
 
-#if defined(USE_AVX2)
+#if defined(USE_AVX2) || defined(USE_AVX512)
 static const uint8_t g_dBitReverseTable[256] =
 {
     0x00, 0x80, 0x40, 0xC0, 0x20, 0xA0, 0x60, 0xE0, 0x10, 0x90, 0x50, 0xD0, 0x30, 0xB0, 0x70, 0xF0,
@@ -629,7 +629,7 @@ void BinaryQuantizer_c::Quantize4Bit ( const Span_T<float> & dVector, const std:
 		Transpose ( m_dQuantized, m_uDim, dTransposed );
 	else
 	{
-#if defined(USE_AVX2)
+#if defined(USE_AVX2) || defined(USE_AVX512)
 		TransposeAVX ( m_dQuantized, m_uDim, dTransposed );
 #else
 		Transpose ( m_dQuantized, m_uDim, dTransposed );
