@@ -17,10 +17,11 @@ rayon = "1.10.0"
 candle-core = "0.9.2"
 candle-nn = "0.9.2"
 candle-transformers = "0.9.2"
-ort = { version = "2.0.0-rc.9", default-features = false, features = ["std", "download-binaries", "tls-rustls"] }
+ort = { version = "2.0.0-rc.9", default-features = false, features = ["std"] }
 
 [features]
 default = []
+download-ort = ["ort/download-binaries", "ort/tls-rustls"]
 accelerate = ["candle-core/accelerate", "candle-nn/accelerate", "candle-transformers/accelerate"]
 mkl = ["candle-core/mkl", "candle-nn/mkl", "candle-transformers/mkl"]
 cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
