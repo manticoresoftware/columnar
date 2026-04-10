@@ -36,6 +36,7 @@ jobs:
         uses: arduino/setup-protoc@v3
         with:
           version: '29.3'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -175,6 +176,7 @@ jobs:
         uses: arduino/setup-protoc@v3
         with:
           version: '29.3'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract git metadata
         id: git_meta
