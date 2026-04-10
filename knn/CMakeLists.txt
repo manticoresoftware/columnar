@@ -50,7 +50,7 @@ if (PACK AND NOT EMBEDDINGS_LIB)
 endif()
 
 # Add embeddings library as a component to be included in packages
-add_library ( embeddings MODULE IMPORTED )
+add_library ( embeddings MODULE IMPORTED GLOBAL )
 set_target_properties ( embeddings PROPERTIES IMPORTED_LOCATION "${EMBEDDINGS_LIB}" INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/embeddings/")
 
 if ( NOT EXTERNAL_LIB ) # install only once, not from external_project build

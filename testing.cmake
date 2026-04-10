@@ -35,6 +35,7 @@ function ( special_ubertest_properties test )
 	set_property ( TEST "${test}" APPEND PROPERTY ENVIRONMENT "LIB_MANTICORE_COLUMNAR=$<TARGET_FILE:columnar_lib>" )
 	set_property ( TEST "${test}" APPEND PROPERTY ENVIRONMENT "LIB_MANTICORE_SECONDARY=$<TARGET_FILE:secondary_index>" )
 	set_property ( TEST "${test}" APPEND PROPERTY ENVIRONMENT "LIB_MANTICORE_KNN=$<TARGET_FILE:knn_lib>" )
+	set_property ( TEST "${test}" APPEND PROPERTY ENVIRONMENT "LIB_MANTICORE_KNN_EMBEDDINGS=$<TARGET_FILE:embeddings>" )
 endfunction ()
 
 # this will switch off pure manticore-specific tests: google, api, keyword consistency and benches (we don't need them here)
