@@ -44,8 +44,13 @@ on:
         type: string
         default: boost_nov22
       embeddings_artifact:
-        required: true
+        required: false
         type: string
+        default: ""
+      build_embeddings_locally:
+        required: false
+        type: boolean
+        default: false
       artifact_list:
         required: false
         type: string
@@ -124,6 +129,7 @@ jobs:
           cat CMakeLists.txt
 
       - name: Download embeddings lib
+        if: inputs.build_embeddings_locally != true
         uses: manticoresoftware/download_artifact_with_retries@v3
         continue-on-error: true
         with:
@@ -134,9 +140,20 @@ jobs:
         run: | # without adding the safe.directory cmake fails to do git log -1 --date=short --format=%cd
           bash /sysroot/root/entry_point.sh
           git config --global --add safe.directory /__w/columnar/columnar
-          mkdir -p embeddings/target/release
-          mv ./embeddings-lib/build/* embeddings/target/release/
-          rm -fr ./embeddings-lib
+          if [ "${{ inputs.build_embeddings_locally }}" = "true" ]; then
+            apt-get update -y
+            apt-get install -y curl ca-certificates pkg-config protobuf-compiler build-essential libssl-dev
+            curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain stable
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          else
+            mkdir -p embeddings/target/release
+            mv ./embeddings-lib/build/* embeddings/target/release/
+            rm -fr ./embeddings-lib
+          fi
+
+      - name: Enable local embeddings build
+        if: inputs.build_embeddings_locally == true
+        run: echo "BUILD_EMBEDDINGS_LOCALLY=1" >> "$GITHUB_ENV"
 
       - name: Check out main cache before building
         uses: actions/cache@v4
@@ -158,6 +175,12 @@ jobs:
 
       - name: 🚀 Build
         run: ${{ inputs.cmake_command }}
+
+      - name: Sync locally built embeddings runtime
+        if: success() && inputs.build_embeddings_locally == true
+        run: |
+          mkdir -p embeddings/target/release
+          cp build/knn/embeddings/release/lib_manticore_knn_embeddings.* embeddings/target/release/
 
       - name: Move AVX2/AVX-512-optimized libraries
         if: success() && inputs.skip_avx2_move != true
