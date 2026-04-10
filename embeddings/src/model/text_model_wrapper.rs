@@ -130,15 +130,20 @@ impl TextModelWrapper {
     ) -> FloatVecResult {
         let string_slice = unsafe { std::slice::from_raw_parts(texts, count) };
 
-        // Zero-copy: borrow C++ strings directly as &str.
-        // Input is already valid UTF-8 (passed through SQL parser on the C++ side).
-        let string_refs: Vec<&str> = string_slice
+        // Convert bytes to strings, handling invalid UTF-8 gracefully
+        // Use from_utf8_lossy to replace invalid sequences with replacement characters
+        let strings: Vec<String> = string_slice
             .iter()
-            .map(|item| unsafe {
-                let bytes = std::slice::from_raw_parts(item.ptr as *const u8, item.len);
-                std::str::from_utf8_unchecked(bytes)
+            .map(|item| {
+                let bytes = unsafe { std::slice::from_raw_parts(item.ptr as *const u8, item.len) };
+                // Use from_utf8_lossy to handle invalid UTF-8 gracefully
+                // This replaces invalid sequences with the replacement character (U+FFFD)
+                String::from_utf8_lossy(bytes).into_owned()
             })
             .collect();
+
+        // Convert Vec<String> to Vec<&str> for the predict function
+        let string_refs: Vec<&str> = strings.iter().map(|s| s.as_str()).collect();
 
         let mut float_vec_list: Vec<FloatVec> = Vec::new();
         let model = self.as_model();

@@ -29,7 +29,6 @@ pub enum LibError {
     RemoteHttpError {
         status: u16,
     },
-    OnnxModelEvalFailed,
 }
 
 // Implement std::error::Error for LibError
@@ -94,7 +93,6 @@ impl std::fmt::Display for LibError {
             LibError::RemoteHttpError { status } => {
                 write!(f, "HTTP error from remote model: status code {}", status)
             }
-            LibError::OnnxModelEvalFailed => write!(f, "Failed to evaluate ONNX model"),
         }
     }
 }

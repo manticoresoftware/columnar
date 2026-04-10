@@ -95,6 +95,41 @@ jobs:
             echo "Set manticore_locator: (empty)"
           fi
 
+  win_bundle:
+    name: Windows supplementary files preparation
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Determine branch name for cache
+        id: branch
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "branch_name=${{ github.head_ref }}" >> $GITHUB_OUTPUT
+          else
+            echo "branch_name=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          fi
+      - name: Check out cache
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            bundle
+            boost_1_75_0
+          enableCrossOsArchive: true
+          key: win_bundle_${{ steps.branch.outputs.branch_name }}
+          lookup-only: true
+      - name: Extract Windows bundle from Windows sysroot
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          wget https://repo.manticoresearch.com/repository/sysroots/roots_nov22/sysroot_windows_x64.tar.xz
+          tar -xvf sysroot_windows_x64.tar.xz
+          mv diskc/winbundle bundle
+      - name: Extract Boost to put it to the cache
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          wget https://repo.manticoresearch.com/repository/ci/boost_1_75_0.tgz
+          tar -xf boost_1_75_0.tgz
+
+
   embedding_linux_pack:
     needs: commit_info
     uses: ./.github/workflows/embedding_build_template.yml
@@ -201,7 +236,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Download test report artifact 1_54
@@ -327,7 +362,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Download test report artifact 1_54
@@ -406,7 +441,7 @@ jobs:
 
   test_windows:
     name: Windows tests
-    needs: [build_windows, check_branch]
+    needs: [build_windows, win_bundle, check_branch]
     uses: ./.github/workflows/win_test_template.yml
     strategy:
       fail-fast: false
@@ -443,7 +478,7 @@ jobs:
       image: manticoresearch/ubertests_ctest:3263_mar_2024
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Download test report artifact 1_86
@@ -535,13 +570,13 @@ jobs:
       image: ${{ steps.vars.outputs.image }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
         with:
           fetch-depth: 0
           fetch-tags: true
 
       - name: Checkout daemon repository for branch detection
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
         with:
           repository: manticoresoftware/manticoresearch
           path: manticoresearch
@@ -643,17 +678,6 @@ jobs:
             'apt-get remove -y manticore-columnar-lib || true && \
              dpkg -i --force-confnew /build/manticore-columnar-lib*.deb && \
              apt-get install -f -y'
-
-          # Debug: check installed libraries and their dependencies
-          docker exec temp bash -c \
-            'echo "=== Installed MCL files ===" && \
-             dpkg -L manticore-columnar-lib && \
-             echo "=== Embeddings lib dependencies ===" && \
-             find / -name "lib_manticore_knn_embeddings*" 2>/dev/null && \
-             for f in $(find / -name "lib_manticore_knn_embeddings*" 2>/dev/null); do ldd "$f" 2>&1; done && \
-             echo "=== KNN lib dependencies ===" && \
-             find / -name "lib_manticore_knn.*" 2>/dev/null && \
-             for f in $(find / -name "lib_manticore_knn.*" 2>/dev/null); do ldd "$f" 2>&1; done'
           
           # Commit the modified test-kit images
           docker commit temp ${{ steps.vars.outputs.image }}

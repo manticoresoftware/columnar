@@ -23,7 +23,7 @@ jobs:
         shell: bash
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v3
 
       - name: Setup Rust toolchain
         uses: actions-rs/toolchain@v1
@@ -32,35 +32,17 @@ jobs:
           components: clippy, rustfmt
           override: true
 
-      - name: Install protoc
-        uses: arduino/setup-protoc@v3
-        with:
-          version: '29.3'
-
       - name: Cache cargo registry
-        uses: actions/cache@v4
+        uses: actions/cache@v3
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: cargo-registry-${{ runner.os }}-${{ hashFiles('embeddings/Cargo.lock') }}
-          restore-keys: cargo-registry-${{ runner.os }}-
-
-      - name: Cache cargo build target
-        uses: actions/cache@v4
-        with:
-          path: ./embeddings/target
-          key: cargo-target-${{ runner.os }}-${{ hashFiles('embeddings/Cargo.lock') }}-${{ hashFiles('embeddings/src/**/*.rs') }}
+            ./embeddings/target
+            ./embeddings/.cache/manticore
+          key: quality-check-${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            cargo-target-${{ runner.os }}-${{ hashFiles('embeddings/Cargo.lock') }}-
-            cargo-target-${{ runner.os }}-
-
-      - name: Cache ML test models
-        uses: actions/cache@v4
-        with:
-          path: ./embeddings/.cache/manticore
-          key: ml-models-${{ runner.os }}-${{ hashFiles('embeddings/src/model/local_test.rs') }}
-          restore-keys: ml-models-${{ runner.os }}-
+            quality-check-${{ runner.os }}-cargo-
 
       - name: Run Clippy (strict mode)
         run: cargo clippy --lib --manifest-path ./embeddings/Cargo.toml -- -D warnings
@@ -101,13 +83,6 @@ jobs:
           VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
           JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
           RUST_BACKTRACE: 1
-
-      - name: Clean build target bloat
-        if: always()
-        run: |
-          rm -rf ./embeddings/target/debug/incremental
-          rm -rf ./embeddings/target/debug/.fingerprint
-          find ./embeddings/target/debug -name "*.d" -delete 2>/dev/null || true
 
       - name: Quality check summary
         run: |
@@ -161,20 +136,11 @@ jobs:
           lib_dir="./embeddings/target/${target}/release"
           echo "lib_dir=${lib_dir}" >> $GITHUB_OUTPUT
 
-      - uses: actions/checkout@v4
-
-      - name: Setup Rust toolchain
-        uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v3
         with:
           toolchain: stable
           target: ${{ steps.vars.outputs.target }}
           override: true
-
-      - name: Install protoc
-        if: ${{ inputs.distr != 'linux' }}
-        uses: arduino/setup-protoc@v3
-        with:
-          version: '29.3'
 
       - name: Extract git metadata
         id: git_meta
@@ -195,81 +161,41 @@ jobs:
       - name: Prepare build args
         id: params
         run: |
-          # Enable platform-specific BLAS acceleration:
-          # - macOS: Apple Accelerate framework (always available)
-          # - Linux/Windows x86_64: Intel MKL (downloaded at build time)
-          # - Linux aarch64: no extra BLAS (gemm crate uses NEON via runtime detection)
-          features=""
-          if [[ "${{ inputs.distr }}" == "macos" ]]; then
-            features="--features accelerate"
-          elif [[ "${{ inputs.arch }}" == "x86_64" ]]; then
-            features="--features mkl"
-          fi
-
           args=(
-            "--target"
-            "${{ steps.vars.outputs.target }}"
+            "--target" 
+            "${{ steps.vars.outputs.target }}" 
             "--lib"
-            "--release"
-            "--manifest-path"
+            "--release" 
+            "--manifest-path" 
             "./embeddings/Cargo.toml"
-            ${features}
           )
           echo "args=${args[@]}" >> $GITHUB_OUTPUT
-
-      - name: Cache cargo registry for Docker build
-        if: ${{ inputs.distr == 'linux' }}
-        uses: actions/cache@v4
-        with:
-          path: |
-            .cargo-cache/registry
-            .cargo-cache/git
-          key: emb-build-cargo-${{ runner.os }}-${{ inputs.arch }}-${{ hashFiles('embeddings/Cargo.lock') }}
-          restore-keys: emb-build-cargo-${{ runner.os }}-${{ inputs.arch }}-
 
       - name: Build for Linux
         if: ${{ inputs.distr == 'linux' }}
         run: |
           # Set Docker image based on architecture
           if [[ "${{ inputs.arch }}" == "aarch64" ]]; then
-            docker_image="ghcr.io/manticoresoftware/rust-min-libc:aarch64-rust1.94.1-glibc2.27-openssl1.1.1k"
+            docker_image="ghcr.io/manticoresoftware/rust-min-libc:aarch64-rust1.92.0-glibc2.27-openssl1.1.1k"
             extra=""
           else
-            docker_image="ghcr.io/manticoresoftware/rust-min-libc:amd64-rust1.94.1-glibc2.27-openssl1.1.1k"
+            docker_image="ghcr.io/manticoresoftware/rust-min-libc:amd64-rust1.92.0-glibc2.27-openssl1.1.1k"
             extra=""
           fi
 
           docker run --rm  \
             -v $(pwd):/src \
-            -v $(pwd)/.cargo-cache:/cargo-cache \
             -w /src \
             -u root \
-            -e CARGO_HOME=/cargo-cache \
-            -e MKLROOT=/opt/intel/oneapi/mkl/latest \
             -e GIT_COMMIT_ID="${{ steps.git_meta.outputs.commit }}" \
             -e GIT_TIMESTAMP_ID="${{ steps.git_meta.outputs.timestamp }}" \
             --entrypoint bash \
             "${docker_image}" \
-            -c "apt-get update -y && apt-get install -y gcc g++ protobuf-compiler && ${extra} cargo build ${{ steps.params.outputs.args }}"
+            -c "apt-get update -y && apt-get install -y gcc g++ && ${extra} cargo build ${{ steps.params.outputs.args }}"
           sudo chown -hR $(id -u):$(id -g) ${{ steps.vars.outputs.lib_dir }}
-          sudo chown -hR $(id -u):$(id -g) .cargo-cache
 
 
-      - name: Download ONNX Runtime static library
-        if: ${{ inputs.distr == 'macos' }}
-        run: |
-          ort_version="1.24.2"
-          if [[ "${{ inputs.arch }}" == "aarch64" ]]; then
-            ort_arch="arm64"
-          else
-            ort_arch="x86_64"
-          fi
-          ort_name="onnxruntime-osx-${ort_arch}-static_lib-${ort_version}"
-          curl -sL "https://github.com/csukuangfj/onnxruntime-libs/releases/download/v${ort_version}/${ort_name}.zip" -o /tmp/ort.zip
-          unzip -q /tmp/ort.zip -d /tmp/ort
-          echo "ORT_LIB_LOCATION=/tmp/ort/${ort_name}/lib" >> $GITHUB_ENV
-
-      - name: Build native
+      - name: Build native 
         if: ${{ inputs.distr == 'windows' || inputs.distr == 'macos' }}
         run: |
           rustup target add ${{ steps.vars.outputs.target }}
