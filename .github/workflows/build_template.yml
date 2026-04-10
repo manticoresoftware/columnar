@@ -142,9 +142,31 @@ jobs:
           git config --global --add safe.directory /__w/columnar/columnar
           if [ "${{ inputs.build_embeddings_locally }}" = "true" ]; then
             apt-get update -y
-            apt-get install -y curl ca-certificates pkg-config protobuf-compiler build-essential libssl-dev
+            apt-get install -y curl ca-certificates pkg-config protobuf-compiler build-essential libssl-dev unzip
             curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal --default-toolchain stable
             echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+            ort_version="1.24.2"
+            case "${{ inputs.arch }}" in
+              x86_64)
+                ort_asset="onnxruntime-linux-x64-static_lib-${ort_version}-glibc2_17.zip"
+                ort_dir="/tmp/ort/onnxruntime-linux-x64-static_lib-${ort_version}-glibc2_17"
+                ;;
+              aarch64)
+                ort_asset="onnxruntime-linux-aarch64-static_lib-${ort_version}-glibc2_17.zip"
+                ort_dir="/tmp/ort/onnxruntime-linux-aarch64-static_lib-${ort_version}-glibc2_17"
+                ;;
+              *)
+                echo "Unsupported arch for local embeddings build: ${{ inputs.arch }}"
+                exit 1
+                ;;
+            esac
+
+            rm -rf /tmp/ort
+            mkdir -p /tmp/ort
+            curl -fsSL "https://github.com/csukuangfj/onnxruntime-libs/releases/download/v${ort_version}/${ort_asset}" -o /tmp/ort/ort.zip
+            unzip -q /tmp/ort/ort.zip -d /tmp/ort
+            echo "ORT_LIB_LOCATION=${ort_dir}/lib" >> "$GITHUB_ENV"
           else
             mkdir -p embeddings/target/release
             mv ./embeddings-lib/build/* embeddings/target/release/
