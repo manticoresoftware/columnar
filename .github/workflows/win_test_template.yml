@@ -14,6 +14,10 @@ on:
       artifact_name:
         required: true
         type: string
+      embeddings_artifact:
+        required: false
+        type: string
+        default: embeddings_windows_x86_64
       MANTICORE_LOCATOR:
         required: false
         type: string
@@ -90,6 +94,17 @@ jobs:
         with:
           name: build_windows_Debug_x64
           path: .
+      - name: Download embeddings lib
+        uses: manticoresoftware/download_artifact_with_retries@v4
+        with:
+          name: ${{ inputs.embeddings_artifact }}
+          path: ./embeddings-lib/
+      - name: Prepare embeddings runtime path
+        shell: bash
+        run: |
+          mkdir -p embeddings/target/release
+          mv ./embeddings-lib/build/* embeddings/target/release/
+          rm -fr ./embeddings-lib
       - name: Cache Windows bundle
         id: bundle_cache
         uses: actions/cache@v4
