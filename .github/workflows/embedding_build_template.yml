@@ -279,7 +279,11 @@ jobs:
             unzip -q /tmp/ort.zip -d /tmp/ort
             echo "ORT_LIB_LOCATION=/tmp/ort/${ort_name}/lib" >> $GITHUB_ENV
           else
-            ort_name="onnxruntime-win-x64-static_lib-MD-Release-${ort_version}"
+            if [[ "${{ inputs.arch }}" == "aarch64" ]]; then
+              ort_name="onnxruntime-win-arm64-static_lib-MD-Release-${ort_version}"
+            else
+              ort_name="onnxruntime-win-x64-static_lib-MD-Release-${ort_version}"
+            fi
             curl -sL "https://github.com/csukuangfj/onnxruntime-libs/releases/download/v${ort_version}/${ort_name}.tar.bz2" -o ort.tar.bz2
             mkdir -p ort-lib
             tar xjf ort.tar.bz2 -C ort-lib
