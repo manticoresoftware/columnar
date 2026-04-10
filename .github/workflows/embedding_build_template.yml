@@ -265,18 +265,26 @@ jobs:
 
 
       - name: Download ONNX Runtime static library
-        if: ${{ inputs.distr == 'macos' }}
+        if: ${{ inputs.distr == 'macos' || inputs.distr == 'windows' }}
+        shell: bash
         run: |
           ort_version="1.24.2"
-          if [[ "${{ inputs.arch }}" == "aarch64" ]]; then
-            ort_arch="arm64"
+          if [[ "${{ inputs.distr }}" == "macos" ]]; then
+            if [[ "${{ inputs.arch }}" == "aarch64" ]]; then
+              ort_name="onnxruntime-osx-arm64-static_lib-${ort_version}"
+            else
+              ort_name="onnxruntime-osx-x86_64-static_lib-${ort_version}"
+            fi
+            curl -sL "https://github.com/csukuangfj/onnxruntime-libs/releases/download/v${ort_version}/${ort_name}.zip" -o /tmp/ort.zip
+            unzip -q /tmp/ort.zip -d /tmp/ort
+            echo "ORT_LIB_LOCATION=/tmp/ort/${ort_name}/lib" >> $GITHUB_ENV
           else
-            ort_arch="x86_64"
+            ort_name="onnxruntime-win-x64-static_lib-MD-Release-${ort_version}"
+            curl -sL "https://github.com/csukuangfj/onnxruntime-libs/releases/download/v${ort_version}/${ort_name}.tar.bz2" -o ort.tar.bz2
+            mkdir -p ort-lib
+            tar xjf ort.tar.bz2 -C ort-lib
+            echo "ORT_LIB_LOCATION=${{ github.workspace }}/ort-lib/${ort_name}/lib" >> $GITHUB_ENV
           fi
-          ort_name="onnxruntime-osx-${ort_arch}-static_lib-${ort_version}"
-          curl -sL "https://github.com/csukuangfj/onnxruntime-libs/releases/download/v${ort_version}/${ort_name}.zip" -o /tmp/ort.zip
-          unzip -q /tmp/ort.zip -d /tmp/ort
-          echo "ORT_LIB_LOCATION=/tmp/ort/${ort_name}/lib" >> $GITHUB_ENV
 
       - name: Build native
         if: ${{ inputs.distr == 'windows' || inputs.distr == 'macos' }}
