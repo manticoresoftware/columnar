@@ -181,17 +181,19 @@ struct DistFuncParamBinary_t
 float	IPFloatDistance ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam );
 void	IPFloatDistanceBatch2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB );
 float	IPBinaryFloatDistanceGeneric ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam );
+float	L2FloatDistance ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam );
+void	L2FloatDistanceBatch2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB );
+float	L2BinaryFloatDistanceGeneric ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam );
+#if !defined(USE_SIMDE)
 float	IPBinaryFloatDistanceSIMD16 ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam );
 float	IPBinaryFloatDistanceSIMD16Residuals ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam );
 void	IPBinaryFloatDistanceSIMD16Batch2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB );
 void	IPBinaryFloatDistanceSIMD16ResidualsBatch2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB );
-float	L2FloatDistance ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam );
-void	L2FloatDistanceBatch2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB );
-float	L2BinaryFloatDistanceGeneric ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam );
 float	L2BinaryFloatDistanceSIMD16 ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam );
 float	L2BinaryFloatDistanceSIMD16Residuals ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam );
 void	L2BinaryFloatDistanceSIMD16Batch2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB );
 void	L2BinaryFloatDistanceSIMD16ResidualsBatch2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB );
+#endif
 
 
 class IPSpaceBinaryFloat_c : public Space_c

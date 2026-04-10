@@ -1211,6 +1211,13 @@ float IPBinaryFloatDistanceGeneric ( const void * pVect1, const void * pVect2, s
 	return IPBinaryFloatDistance<false,BinaryDotProduct> ( pVect1, pVect2, uRowID1, uRowID2, pParam );
 }
 
+float L2BinaryFloatDistanceGeneric ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam )
+{
+	return L2BinaryFloatDistance<false,BinaryDotProduct> ( pVect1, pVect2, uRowID1, uRowID2, pParam );
+}
+
+#if !defined(USE_SIMDE)
+
 float IPBinaryFloatDistanceSIMD16 ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam )
 {
 	return IPBinaryFloatDistance<false,BinaryDotProduct16<false>> ( pVect1, pVect2, uRowID1, uRowID2, pParam );
@@ -1257,11 +1264,6 @@ void IPBinaryFloatDistanceSIMD16Batch2 ( const void * pVect1, const void * pVect
 void IPBinaryFloatDistanceSIMD16ResidualsBatch2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
 {
 	IPBinaryFloatDistanceBatch2<true> ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
-}
-
-float L2BinaryFloatDistanceGeneric ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam )
-{
-	return L2BinaryFloatDistance<false,BinaryDotProduct> ( pVect1, pVect2, uRowID1, uRowID2, pParam );
 }
 
 float L2BinaryFloatDistanceSIMD16 ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam )
@@ -1311,6 +1313,8 @@ void L2BinaryFloatDistanceSIMD16ResidualsBatch2 ( const void * pVect1, const voi
 {
 	L2BinaryFloatDistanceBatch2<true> ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
 }
+
+#endif // !USE_SIMDE
 
 ///////////////////////////////////////////////////////////////////////////////
 

@@ -260,6 +260,7 @@ public:
 	}
 };
 
+#if !defined(USE_SIMDE)
 class IPBinarySIMD16DistFn_c : public DistFnDispatch_c<&IPBinaryFloatDistanceSIMD16>
 {
 public:
@@ -277,6 +278,7 @@ public:
 		IPBinaryFloatDistanceSIMD16ResidualsBatch2 ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
 	}
 };
+#endif
 
 using L2BinaryGenericDistFn_c = DistFnDispatch_c<&L2BinaryFloatDistanceGeneric>;
 class L2FloatDistFn_c : public DistFnDispatch_c<&L2FloatDistance>
@@ -288,6 +290,7 @@ public:
 	}
 };
 
+#if !defined(USE_SIMDE)
 class L2BinarySIMD16DistFn_c : public DistFnDispatch_c<&L2BinaryFloatDistanceSIMD16>
 {
 public:
@@ -305,6 +308,7 @@ public:
 		L2BinaryFloatDistanceSIMD16ResidualsBatch2 ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
 	}
 };
+#endif
 
 template <typename DistFn = void>
 static void RunSearchPath ( const hnswlib::HierarchicalNSW<float> & tAlg, std::vector<DocDist_t> & dResults, const void * pData, int64_t iResults, HNSWFilterWrapper_c * pFilter, size_t * pSearchEf, int iSearchPath )
@@ -387,6 +391,7 @@ void HNSWIndex_c::Search ( std::vector<DocDist_t> & dResults, const Span_T<float
 		RunSearchPath<IPBinaryGenericDistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath );
 		break;
 
+#if !defined(USE_SIMDE)
 	case DistFuncId_e::IP_BINARY_SIMD16:
 		RunSearchPath<IPBinarySIMD16DistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath );
 		break;
@@ -394,6 +399,7 @@ void HNSWIndex_c::Search ( std::vector<DocDist_t> & dResults, const Span_T<float
 	case DistFuncId_e::IP_BINARY_SIMD16_RESIDUALS:
 		RunSearchPath<IPBinarySIMD16ResidualsDistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath );
 		break;
+#endif
 
 	case DistFuncId_e::L2_FLOAT32:
 		RunSearchPath<L2FloatDistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath );
@@ -403,6 +409,7 @@ void HNSWIndex_c::Search ( std::vector<DocDist_t> & dResults, const Span_T<float
 		RunSearchPath<L2BinaryGenericDistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath );
 		break;
 
+#if !defined(USE_SIMDE)
 	case DistFuncId_e::L2_BINARY_SIMD16:
 		RunSearchPath<L2BinarySIMD16DistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath );
 		break;
@@ -410,6 +417,7 @@ void HNSWIndex_c::Search ( std::vector<DocDist_t> & dResults, const Span_T<float
 	case DistFuncId_e::L2_BINARY_SIMD16_RESIDUALS:
 		RunSearchPath<L2BinarySIMD16ResidualsDistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath );
 		break;
+#endif
 
 	default:
 		assert ( 0 );
