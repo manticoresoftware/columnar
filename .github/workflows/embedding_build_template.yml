@@ -259,7 +259,7 @@ jobs:
             -e GIT_TIMESTAMP_ID="${{ steps.git_meta.outputs.timestamp }}" \
             --entrypoint bash \
             "${docker_image}" \
-            -c "apt-get update -y && apt-get install -y gcc g++ protobuf-compiler && cargo build ${{ steps.params.outputs.args }}"
+            -c "cargo build ${{ steps.params.outputs.args }}"
           sudo chown -hR $(id -u):$(id -g) ${{ steps.vars.outputs.lib_dir }}
           sudo chown -hR $(id -u):$(id -g) .cargo-cache
 
@@ -334,6 +334,51 @@ jobs:
                   echo "Renamed $file to build/$newbase"
               fi
           done
+
+      - name: Verify Linux library compatibility
+        if: ${{ inputs.distr == 'linux' }}
+        run: |
+          lib=$(find build -name "lib_manticore_knn_embeddings.so" | head -1)
+          if [ -z "$lib" ]; then
+            echo "Embeddings library not found in build/, skipping check"
+            exit 0
+          fi
+
+          echo "=== Checking $lib ==="
+          failed=0
+
+          # Check GLIBC — must not exceed 2.27
+          max_glibc=$(objdump -T "$lib" | grep -oE 'GLIBC_[0-9.]+' | sort -u -t. -k1,1 -k2,2n | tail -1)
+          echo "Max GLIBC: $max_glibc"
+          glibc_minor=$(echo "$max_glibc" | grep -oE '[0-9]+$')
+          if [ -n "$glibc_minor" ] && [ "$glibc_minor" -gt 27 ]; then
+            echo "FAIL: GLIBC requirement $max_glibc exceeds 2.27"
+            failed=1
+          fi
+
+          # Check GLIBCXX — must have none (libstdc++ should be static)
+          glibcxx=$(objdump -T "$lib" | grep -c 'GLIBCXX' || true)
+          echo "GLIBCXX dynamic symbols: $glibcxx"
+          if [ "$glibcxx" -gt 0 ]; then
+            echo "FAIL: Found GLIBCXX dynamic symbols — libstdc++ not statically linked"
+            objdump -T "$lib" | grep 'GLIBCXX' | head -5
+            failed=1
+          fi
+
+          # Check __isoc23 — must have none
+          isoc23=$(nm -D "$lib" 2>/dev/null | grep -c '__isoc23' || true)
+          echo "__isoc23 symbols: $isoc23"
+          if [ "$isoc23" -gt 0 ]; then
+            echo "FAIL: Found __isoc23 symbols — ORT prebuilt has wrong glibc target"
+            failed=1
+          fi
+
+          if [ "$failed" -eq 1 ]; then
+            echo ""
+            echo "Library compatibility check FAILED"
+            exit 1
+          fi
+          echo "All checks passed"
 
       - name: Install current Bash on macOS
         if: inputs.distr == 'macos'
