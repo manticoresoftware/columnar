@@ -19,6 +19,9 @@ mod local_test;
 #[cfg(test)]
 mod ffi_test;
 
+#[cfg(test)]
+mod create_model_test;
+
 use std::error::Error;
 use std::path::PathBuf;
 
@@ -39,6 +42,12 @@ pub struct ModelOptions {
     pub api_url: Option<String>,
     pub api_timeout: Option<u64>, // Timeout in seconds (None means use default: 10 seconds)
     pub use_gpu: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelValidationMode {
+    StrictBuiltInList,
+    Passthrough,
 }
 
 /// Unified model enum
@@ -96,33 +105,54 @@ impl TextModel for Model {
 
 pub fn create_model(options: ModelOptions) -> Result<Model, Box<dyn Error>> {
     let model_id = options.model_id.as_str();
+    let api_key = options.api_key.unwrap_or_default();
+    let api_url = options.api_url;
+    let api_timeout = options.api_timeout;
 
     // Remote providers (HTTP APIs)
-    if model_id.starts_with("openai/") {
-        let model = openai::OpenAIModel::new(
+    if model_id.starts_with("openai:") {
+        let model = openai::OpenAIModel::new_with_validation_mode(
             model_id,
-            options.api_key.unwrap_or_default().as_str(),
-            options.api_url.as_deref(),
-            options.api_timeout,
+            api_key.as_str(),
+            api_url.as_deref(),
+            api_timeout,
+            ModelValidationMode::Passthrough,
         )?;
 
         Ok(Model::OpenAI(Box::new(model)))
-    } else if model_id.starts_with("voyage/") {
-        let model = voyage::VoyageModel::new(
+    } else if model_id.starts_with("openai/") {
+        let model =
+            openai::OpenAIModel::new(model_id, api_key.as_str(), api_url.as_deref(), api_timeout)?;
+
+        Ok(Model::OpenAI(Box::new(model)))
+    } else if model_id.starts_with("voyage:") {
+        let model = voyage::VoyageModel::new_with_validation_mode(
             model_id,
-            options.api_key.unwrap_or_default().as_str(),
-            options.api_url.as_deref(),
-            options.api_timeout,
+            api_key.as_str(),
+            api_url.as_deref(),
+            api_timeout,
+            ModelValidationMode::Passthrough,
         )?;
 
         Ok(Model::Voyage(Box::new(model)))
-    } else if model_id.starts_with("jina/") {
-        let model = jina::JinaModel::new(
+    } else if model_id.starts_with("voyage/") {
+        let model =
+            voyage::VoyageModel::new(model_id, api_key.as_str(), api_url.as_deref(), api_timeout)?;
+
+        Ok(Model::Voyage(Box::new(model)))
+    } else if model_id.starts_with("jina:") {
+        let model = jina::JinaModel::new_with_validation_mode(
             model_id,
-            options.api_key.unwrap_or_default().as_str(),
-            options.api_url.as_deref(),
-            options.api_timeout,
+            api_key.as_str(),
+            api_url.as_deref(),
+            api_timeout,
+            ModelValidationMode::Passthrough,
         )?;
+
+        Ok(Model::Jina(Box::new(model)))
+    } else if model_id.starts_with("jina/") {
+        let model =
+            jina::JinaModel::new(model_id, api_key.as_str(), api_url.as_deref(), api_timeout)?;
 
         Ok(Model::Jina(Box::new(model)))
     } else {
@@ -135,7 +165,11 @@ pub fn create_model(options: ModelOptions) -> Result<Model, Box<dyn Error>> {
                 .unwrap_or(String::from(".cache/manticore")),
         );
 
-        let hf_token = options.api_key.as_deref();
+        let hf_token = if api_key.is_empty() {
+            None
+        } else {
+            Some(api_key.as_str())
+        };
         let model = local::LocalModel::new(
             model_id,
             cache_path,

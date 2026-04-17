@@ -1,6 +1,7 @@
-use super::TextModel;
+use super::{ModelValidationMode, TextModel};
 use crate::LibError;
 use reqwest::blocking::Client;
+use std::sync::Mutex;
 
 #[derive(Debug)]
 pub struct VoyageModel {
@@ -8,6 +9,7 @@ pub struct VoyageModel {
     pub model: String,
     pub api_key: String,
     pub api_url: Option<String>,
+    hidden_size_cache: Mutex<Option<usize>>,
 }
 
 pub fn validate_model(model: &str) -> Result<(), String> {
@@ -41,8 +43,32 @@ impl VoyageModel {
         api_url: Option<&str>,
         api_timeout: Option<u64>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let model = model_id.trim_start_matches("voyage/").to_string();
-        validate_model(&model).map_err(|_| LibError::RemoteUnsupportedModel { status: None })?;
+        let validation_mode = if api_url.is_some() {
+            ModelValidationMode::Passthrough
+        } else {
+            ModelValidationMode::StrictBuiltInList
+        };
+
+        Self::new_with_validation_mode(model_id, api_key, api_url, api_timeout, validation_mode)
+    }
+
+    pub fn new_with_validation_mode(
+        model_id: &str,
+        api_key: &str,
+        api_url: Option<&str>,
+        api_timeout: Option<u64>,
+        validation_mode: ModelValidationMode,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let model = if let Some(model) = model_id.strip_prefix("voyage:") {
+            model.to_string()
+        } else {
+            model_id.trim_start_matches("voyage/").to_string()
+        };
+
+        if validation_mode == ModelValidationMode::StrictBuiltInList {
+            validate_model(&model)
+                .map_err(|_| LibError::RemoteUnsupportedModel { status: None })?;
+        }
         // Only validate basic requirements (non-empty, no whitespace)
         // Real validation happens via actual API request in validate_api_key()
         validate_api_key_basic(api_key)
@@ -53,7 +79,21 @@ impl VoyageModel {
             model,
             api_key: api_key.to_string(),
             api_url: api_url.map(|s| s.to_string()),
+            hidden_size_cache: Mutex::new(None),
         })
+    }
+
+    fn known_hidden_size(&self) -> Option<usize> {
+        match self.model.as_str() {
+            "voyage-3-large" => Some(1024), // Default 1024, supports 256, 512, 2048
+            "voyage-3.5" => Some(1024),     // Default 1024, supports 256, 512, 2048
+            "voyage-3.5-lite" => Some(1024), // Default 1024, supports 256, 512, 2048
+            "voyage-code-3" => Some(1024),  // Default 1024, supports 256, 512, 2048
+            "voyage-finance-2" => Some(1024),
+            "voyage-law-2" => Some(1024),
+            "voyage-code-2" => Some(1536),
+            _ => None,
+        }
     }
 }
 
@@ -175,15 +215,17 @@ impl TextModel for VoyageModel {
             }));
         }
 
+        let inferred_dim = embeddings[0].len();
+        *self.hidden_size_cache.lock().unwrap() = Some(inferred_dim);
+
         // Validate embedding dimensions and handle empty individual embeddings
-        let expected_dim = self.get_hidden_size();
         for embedding in embeddings.iter() {
             if embedding.is_empty() {
                 return Err(Box::new(LibError::RemoteHttpError {
                     status: status_code,
                 }));
             }
-            if embedding.len() != expected_dim {
+            if embedding.len() != inferred_dim {
                 // Some models might return different dimensions, but we should validate
                 // For now, we'll be lenient but could add stricter validation later
             }
@@ -193,16 +235,9 @@ impl TextModel for VoyageModel {
     }
 
     fn get_hidden_size(&self) -> usize {
-        match self.model.as_str() {
-            "voyage-3-large" => 1024,  // Default 1024, supports 256, 512, 2048
-            "voyage-3.5" => 1024,      // Default 1024, supports 256, 512, 2048
-            "voyage-3.5-lite" => 1024, // Default 1024, supports 256, 512, 2048
-            "voyage-code-3" => 1024,   // Default 1024, supports 256, 512, 2048
-            "voyage-finance-2" => 1024,
-            "voyage-law-2" => 1024,
-            "voyage-code-2" => 1536,
-            _ => panic!("Unknown model"),
-        }
+        self.known_hidden_size()
+            .or_else(|| *self.hidden_size_cache.lock().unwrap())
+            .unwrap_or_else(|| panic!("Unknown model"))
     }
 
     fn get_max_input_len(&self) -> usize {
