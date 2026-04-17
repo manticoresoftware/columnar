@@ -5,6 +5,15 @@ use serde_json::Value;
 /// Most tokenizers average 3–5 bytes/token; 8 covers worst-case (CJK, emoji).
 const BYTES_PER_TOKEN_UPPER_BOUND: usize = 8;
 
+#[inline]
+fn floor_char_boundary(text: &str, index: usize) -> usize {
+    let mut i = index.min(text.len());
+    while i > 0 && !text.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+
 /// Pre-truncate text to avoid running BPE on excessively long input.
 /// Cuts at a valid UTF-8 char boundary with a safe byte margin.
 /// `truncate_tokens` remains the final guarantee on token count.
@@ -14,7 +23,7 @@ pub fn pre_truncate_text(text: &str, max_seq_len: usize) -> &str {
     if text.len() <= byte_limit {
         text
     } else {
-        &text[..text.floor_char_boundary(byte_limit)]
+        &text[..floor_char_boundary(text, byte_limit)]
     }
 }
 

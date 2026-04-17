@@ -1,6 +1,7 @@
-use super::TextModel;
+use super::{ModelValidationMode, TextModel};
 use crate::LibError;
 use reqwest::blocking::Client;
+use std::sync::Mutex;
 
 #[derive(Debug)]
 pub struct OpenAIModel {
@@ -8,6 +9,7 @@ pub struct OpenAIModel {
     pub model: String,
     pub api_key: String,
     pub api_url: Option<String>,
+    hidden_size_cache: Mutex<Option<usize>>,
 }
 
 pub fn validate_model(model: &str) -> Result<(), String> {
@@ -40,8 +42,32 @@ impl OpenAIModel {
         api_url: Option<&str>,
         api_timeout: Option<u64>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let model = model_id.trim_start_matches("openai/").to_string();
-        validate_model(&model).map_err(|_| LibError::RemoteUnsupportedModel { status: None })?;
+        let validation_mode = if api_url.is_some() {
+            ModelValidationMode::Passthrough
+        } else {
+            ModelValidationMode::StrictBuiltInList
+        };
+
+        Self::new_with_validation_mode(model_id, api_key, api_url, api_timeout, validation_mode)
+    }
+
+    pub fn new_with_validation_mode(
+        model_id: &str,
+        api_key: &str,
+        api_url: Option<&str>,
+        api_timeout: Option<u64>,
+        validation_mode: ModelValidationMode,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let model = if let Some(model) = model_id.strip_prefix("openai:") {
+            model.to_string()
+        } else {
+            model_id.trim_start_matches("openai/").to_string()
+        };
+
+        if validation_mode == ModelValidationMode::StrictBuiltInList {
+            validate_model(&model)
+                .map_err(|_| LibError::RemoteUnsupportedModel { status: None })?;
+        }
         // Only validate basic requirements (non-empty, no whitespace)
         // Real validation happens via actual API request in validate_api_key()
         validate_api_key_basic(api_key)
@@ -52,7 +78,17 @@ impl OpenAIModel {
             model,
             api_key: api_key.to_string(),
             api_url: api_url.map(|s| s.to_string()),
+            hidden_size_cache: Mutex::new(None),
         })
+    }
+
+    fn known_hidden_size(&self) -> Option<usize> {
+        match self.model.as_str() {
+            "text-embedding-ada-002" => Some(1536), // Fixed: was 768, should be 1536
+            "text-embedding-3-small" => Some(1536),
+            "text-embedding-3-large" => Some(3072),
+            _ => None,
+        }
     }
 }
 
@@ -163,16 +199,16 @@ impl TextModel for OpenAIModel {
             }));
         }
 
+        *self.hidden_size_cache.lock().unwrap() =
+            embeddings.first().map(|embedding| embedding.len());
+
         Ok(embeddings)
     }
 
     fn get_hidden_size(&self) -> usize {
-        match self.model.as_str() {
-            "text-embedding-ada-002" => 1536, // Fixed: was 768, should be 1536
-            "text-embedding-3-small" => 1536,
-            "text-embedding-3-large" => 3072,
-            _ => panic!("Unknown model"),
-        }
+        self.known_hidden_size()
+            .or_else(|| *self.hidden_size_cache.lock().unwrap())
+            .unwrap_or_else(|| panic!("Unknown model"))
     }
 
     fn get_max_input_len(&self) -> usize {

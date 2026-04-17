@@ -1,6 +1,7 @@
-use super::TextModel;
+use super::{ModelValidationMode, TextModel};
 use crate::LibError;
 use reqwest::blocking::Client;
+use std::sync::Mutex;
 
 #[derive(Debug)]
 pub struct JinaModel {
@@ -8,6 +9,7 @@ pub struct JinaModel {
     pub model: String,
     pub api_key: String,
     pub api_url: Option<String>,
+    hidden_size_cache: Mutex<Option<usize>>,
 }
 
 pub fn validate_model(model: &str) -> Result<(), String> {
@@ -50,8 +52,32 @@ impl JinaModel {
         api_url: Option<&str>,
         api_timeout: Option<u64>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let model = model_id.trim_start_matches("jina/").to_string();
-        validate_model(&model).map_err(|_| LibError::RemoteUnsupportedModel { status: None })?;
+        let validation_mode = if api_url.is_some() {
+            ModelValidationMode::Passthrough
+        } else {
+            ModelValidationMode::StrictBuiltInList
+        };
+
+        Self::new_with_validation_mode(model_id, api_key, api_url, api_timeout, validation_mode)
+    }
+
+    pub fn new_with_validation_mode(
+        model_id: &str,
+        api_key: &str,
+        api_url: Option<&str>,
+        api_timeout: Option<u64>,
+        validation_mode: ModelValidationMode,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let model = if let Some(model) = model_id.strip_prefix("jina:") {
+            model.to_string()
+        } else {
+            model_id.trim_start_matches("jina/").to_string()
+        };
+
+        if validation_mode == ModelValidationMode::StrictBuiltInList {
+            validate_model(&model)
+                .map_err(|_| LibError::RemoteUnsupportedModel { status: None })?;
+        }
         // Only validate basic requirements (non-empty, no whitespace)
         // Real validation happens via actual API request in validate_api_key()
         validate_api_key_basic(api_key)
@@ -62,7 +88,25 @@ impl JinaModel {
             model,
             api_key: api_key.to_string(),
             api_url: api_url.map(|s| s.to_string()),
+            hidden_size_cache: Mutex::new(None),
         })
+    }
+
+    fn known_hidden_size(&self) -> Option<usize> {
+        match self.model.as_str() {
+            "jina-embeddings-v4" => Some(2048), // 32K context, 2048 dimensions
+            "jina-clip-v2" => Some(1024),       // 8K context, 1024 dimensions, multimodal
+            "jina-embeddings-v3" => Some(1024), // 8K context, 1024 dimensions
+            "jina-colbert-v2" => Some(128),     // Multi-vector model, 8K context
+            "jina-clip-v1" => Some(768),        // 8K context, 768 dimensions, multimodal
+            "jina-colbert-v1-en" => Some(128),  // Multi-vector model, 8K context
+            "jina-embeddings-v2-base-es" => Some(768), // 8K context, 768 dimensions
+            "jina-embeddings-v2-base-code" => Some(768), // 8K context, 768 dimensions
+            "jina-embeddings-v2-base-de" => Some(768), // 8K context, 768 dimensions
+            "jina-embeddings-v2-base-zh" => Some(768), // 8K context, 768 dimensions
+            "jina-embeddings-v2-base-en" => Some(768), // 8K context, 768 dimensions
+            _ => None,
+        }
     }
 }
 
@@ -254,15 +298,17 @@ impl TextModel for JinaModel {
             }));
         }
 
+        let inferred_dim = embeddings[0].len();
+        *self.hidden_size_cache.lock().unwrap() = Some(inferred_dim);
+
         // Validate embedding dimensions and handle empty individual embeddings
-        let expected_dim = self.get_hidden_size();
         for embedding in embeddings.iter() {
             if embedding.is_empty() {
                 return Err(Box::new(LibError::RemoteHttpError {
                     status: status_code,
                 }));
             }
-            if embedding.len() != expected_dim {
+            if embedding.len() != inferred_dim {
                 // Some models might return different dimensions, but we should validate
                 // For now, we'll be lenient but could add stricter validation later
             }
@@ -272,20 +318,9 @@ impl TextModel for JinaModel {
     }
 
     fn get_hidden_size(&self) -> usize {
-        match self.model.as_str() {
-            "jina-embeddings-v4" => 2048,          // 32K context, 2048 dimensions
-            "jina-clip-v2" => 1024,                // 8K context, 1024 dimensions, multimodal
-            "jina-embeddings-v3" => 1024,          // 8K context, 1024 dimensions
-            "jina-colbert-v2" => 128,              // Multi-vector model, 8K context
-            "jina-clip-v1" => 768,                 // 8K context, 768 dimensions, multimodal
-            "jina-colbert-v1-en" => 128,           // Multi-vector model, 8K context
-            "jina-embeddings-v2-base-es" => 768,   // 8K context, 768 dimensions
-            "jina-embeddings-v2-base-code" => 768, // 8K context, 768 dimensions
-            "jina-embeddings-v2-base-de" => 768,   // 8K context, 768 dimensions
-            "jina-embeddings-v2-base-zh" => 768,   // 8K context, 768 dimensions
-            "jina-embeddings-v2-base-en" => 768,   // 8K context, 768 dimensions
-            _ => panic!("Unknown model"),
-        }
+        self.known_hidden_size()
+            .or_else(|| *self.hidden_size_cache.lock().unwrap())
+            .unwrap_or_else(|| panic!("Unknown model"))
     }
 
     fn get_max_input_len(&self) -> usize {
