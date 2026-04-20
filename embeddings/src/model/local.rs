@@ -757,8 +757,6 @@ impl OnnxEmbeddingModel {
             .map_err(|_| LibError::OnnxModelEvalFailed)?
             .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Level3)
             .map_err(|_| LibError::OnnxModelEvalFailed)?
-            .with_intra_threads(4)
-            .map_err(|_| LibError::OnnxModelEvalFailed)?
             .commit_from_file(&onnx_path)
             .map_err(|_| LibError::ModelWeightsLoadFailed)?;
 
