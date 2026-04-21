@@ -159,6 +159,10 @@ jobs:
           mkdir embeddings\target\release
           mv .\embeddings-lib\build\* embeddings\target\release\
           rm -r ./embeddings-lib
+          $embeddingsDir = (Resolve-Path "embeddings\target\release").Path
+          $env:PATH = "$embeddingsDir;$env:PATH"
+          echo $embeddingsDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          Write-Host "Added embeddings runtime directory to PATH: $embeddingsDir"
 
       - name: Diagnose embeddings DLL loading
         shell: powershell

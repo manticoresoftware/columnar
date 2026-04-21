@@ -335,6 +335,21 @@ jobs:
               fi
           done
 
+          if [[ "${{ inputs.distr }}" == "windows" ]]; then
+            echo "=== Package Windows runtime DLL dependencies ==="
+            for dll in libiomp5md.dll; do
+              dep=$(find ./embeddings/target "$HOME/.cargo" -type f -iname "$dll" 2>/dev/null | head -1)
+              if [[ -z "$dep" ]]; then
+                echo "Required Windows runtime dependency was not found: $dll"
+                find ./embeddings/target "$HOME/.cargo" -type f -iname "*.dll" 2>/dev/null | sort || true
+                exit 1
+              fi
+
+              cp "$dep" build/
+              echo "Packaged $dll from $dep"
+            done
+          fi
+
       - name: Verify Linux library compatibility
         if: ${{ inputs.distr == 'linux' }}
         run: |
@@ -379,6 +394,74 @@ jobs:
             exit 1
           fi
           echo "All checks passed"
+
+      - name: Verify Windows embeddings DLL loading
+        if: ${{ inputs.distr == 'windows' }}
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $dll = "build\lib_manticore_knn_embeddings.dll"
+
+          if (-not (Test-Path $dll)) {
+            throw "Embeddings DLL was not found at $dll"
+          }
+
+          if (-not (Test-Path "build\libiomp5md.dll")) {
+            throw "Required runtime DLL was not packaged: build\libiomp5md.dll"
+          }
+
+          Write-Host "=== Packaged embeddings files ==="
+          Get-ChildItem -Force build | Format-List Name,Length,FullName
+
+          Write-Host "=== dumpbin /dependents ==="
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsInstall = $null
+          if (Test-Path $vswhere) {
+            $vsInstall = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          }
+          if (-not $vsInstall) {
+            throw "Visual Studio installation was not found by vswhere"
+          }
+
+          $vcvars = Join-Path $vsInstall "VC\Auxiliary\Build\vcvars64.bat"
+          if (-not (Test-Path $vcvars)) {
+            throw "vcvars64.bat was not found at $vcvars"
+          }
+
+          cmd /c "`"$vcvars`" >nul && dumpbin /dependents `"$dll`""
+          if ($LASTEXITCODE -ne 0) {
+            throw "dumpbin /dependents failed"
+          }
+
+          cmd /c "`"$vcvars`" >nul && dumpbin /exports `"$dll`" | findstr GetLibFuncs"
+          if ($LASTEXITCODE -ne 0) {
+            throw "GetLibFuncs export was not found"
+          }
+
+          Write-Host "=== Direct LoadLibraryW probe ==="
+          $buildDir = (Resolve-Path "build").Path
+          $env:PATH = "$buildDir;$env:PATH"
+
+          Add-Type -TypeDefinition @'
+          using System;
+          using System.Runtime.InteropServices;
+
+          public static class NativeDllProbe
+          {
+              [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+              public static extern IntPtr LoadLibraryW(string lpFileName);
+          }
+          '@
+
+          $fullDll = (Resolve-Path $dll).Path
+          $handle = [NativeDllProbe]::LoadLibraryW($fullDll)
+          if ($handle -eq [IntPtr]::Zero) {
+            $code = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+            $message = (New-Object ComponentModel.Win32Exception($code)).Message
+            throw "LoadLibraryW($fullDll) failed: $code $message"
+          }
+
+          Write-Host "LoadLibraryW($fullDll) succeeded: $handle"
 
       - name: Install current Bash on macOS
         if: inputs.distr == 'macos'
