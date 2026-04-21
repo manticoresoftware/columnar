@@ -29,9 +29,15 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 use tokenizers::Tokenizer;
 
-/// Maximum batch size for batched inference (BERT, ONNX).
-/// Balances throughput vs padding waste. Matches Typesense's default.
-const BATCH_SIZE: usize = 8;
+/// Batch size for batched inference (BERT, ONNX).
+/// Scales with available CPUs: more cores need larger matrices to stay fed.
+/// Minimum 8, then roughly cores/2 (capped at 128 to limit padding waste).
+fn batch_size() -> usize {
+    let cpus = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(8);
+    (cpus / 2).max(8).min(128)
+}
 
 /// Model architecture type - determines pooling strategy
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -378,7 +384,7 @@ impl BertEmbeddingModel {
     fn predict_chunks(&self, chunks: &[Vec<u32>]) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
         let mut all_embeddings = Vec::with_capacity(chunks.len());
 
-        for batch in chunks.chunks(BATCH_SIZE) {
+        for batch in chunks.chunks(batch_size()) {
             let batch_size = batch.len();
             let max_len = batch.iter().map(|c| c.len()).max().unwrap_or(0);
 
@@ -773,7 +779,7 @@ impl OnnxEmbeddingModel {
         let mut all_embeddings = Vec::with_capacity(chunks.len());
         let mut session = self.session.lock().unwrap();
 
-        for batch in chunks.chunks(BATCH_SIZE) {
+        for batch in chunks.chunks(batch_size()) {
             let batch_size = batch.len();
             let max_len = batch.iter().map(|c| c.len()).max().unwrap_or(0);
 
@@ -964,7 +970,7 @@ impl LocalModel {
 
 impl TextModel for LocalModel {
     fn predict(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
-        // BERT and ONNX: batched path (batch_size up to BATCH_SIZE per forward pass)
+        // BERT and ONNX: batched path (batch_size up to batch_size() per forward pass)
         match self {
             LocalModel::Bert(m) => {
                 return Self::predict_batched(&m.tokenizer, m.max_input_len, texts, |chunks| {
