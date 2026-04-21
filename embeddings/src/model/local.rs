@@ -32,9 +32,8 @@ use tokenizers::Tokenizer;
 /// Batch size per ONNX forward pass.
 const BATCH_SIZE: usize = 8;
 
-/// Intra-op threads per ONNX session. Sweet spot for batch=8: enough to
-/// saturate one forward pass without wasting cores on sync overhead.
-const INTRA_THREADS: usize = 4;
+/// Intra-op threads per ONNX session — matches BATCH_SIZE for 1:1 thread-to-sample ratio.
+const INTRA_THREADS: usize = 8;
 
 /// Model architecture type - determines pooling strategy
 #[derive(Debug, Clone, Copy, PartialEq)]
