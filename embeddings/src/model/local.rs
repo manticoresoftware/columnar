@@ -880,8 +880,7 @@ impl OnnxEmbeddingModel {
             .map(|(i, batch)| {
                 let session_idx = i % num_sessions;
                 let mut session = self.sessions[session_idx].lock().unwrap();
-                Self::run_batch(&mut session, batch)
-                    .map_err(|_| LibError::OnnxModelEvalFailed)
+                Self::run_batch(&mut session, batch).map_err(|_| LibError::OnnxModelEvalFailed)
             })
             .collect();
 
