@@ -347,9 +347,9 @@ jobs:
                 mkdir -p "$openmp_redist_dir/pkg"
                 curl -fsSL \
                   "https://api.nuget.org/v3-flatcontainer/intelopenmp.redist.win/${openmp_redist_version}/intelopenmp.redist.win.${openmp_redist_version}.nupkg" \
-                  -o "$openmp_redist_dir/intelopenmp.redist.win.nupkg"
+                  -o "$openmp_redist_dir/intelopenmp.redist.win.zip"
                 powershell -NoProfile -NonInteractive -Command \
-                  "Expand-Archive -LiteralPath '$(cygpath -w "$openmp_redist_dir/intelopenmp.redist.win.nupkg")' -DestinationPath '$(cygpath -w "$openmp_redist_dir/pkg")' -Force"
+                  "Expand-Archive -LiteralPath '$(cygpath -w "$openmp_redist_dir/intelopenmp.redist.win.zip")' -DestinationPath '$(cygpath -w "$openmp_redist_dir/pkg")' -Force"
                 dep=$(find "$openmp_redist_dir/pkg" -type f -iname "$dll" | head -1)
               fi
 
