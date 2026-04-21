@@ -337,11 +337,25 @@ jobs:
 
           if [[ "${{ inputs.distr }}" == "windows" ]]; then
             echo "=== Package Windows runtime DLL dependencies ==="
+            openmp_redist_version="2025.3.3.31"
+            openmp_redist_dir=".openmp-redist"
             for dll in libiomp5md.dll; do
               dep=$(find ./embeddings/target "$HOME/.cargo" -type f -iname "$dll" 2>/dev/null | head -1)
               if [[ -z "$dep" ]]; then
-                echo "Required Windows runtime dependency was not found: $dll"
-                find ./embeddings/target "$HOME/.cargo" -type f -iname "*.dll" 2>/dev/null | sort || true
+                echo "$dll was not found in the Cargo build tree; downloading Intel OpenMP redist ${openmp_redist_version}"
+                rm -rf "$openmp_redist_dir"
+                mkdir -p "$openmp_redist_dir/pkg"
+                curl -fsSL \
+                  "https://api.nuget.org/v3-flatcontainer/intelopenmp.redist.win/${openmp_redist_version}/intelopenmp.redist.win.${openmp_redist_version}.nupkg" \
+                  -o "$openmp_redist_dir/intelopenmp.redist.win.nupkg"
+                powershell -NoProfile -NonInteractive -Command \
+                  "Expand-Archive -LiteralPath '$(cygpath -w "$openmp_redist_dir/intelopenmp.redist.win.nupkg")' -DestinationPath '$(cygpath -w "$openmp_redist_dir/pkg")' -Force"
+                dep=$(find "$openmp_redist_dir/pkg" -type f -iname "$dll" | head -1)
+              fi
+
+              if [[ -z "$dep" ]]; then
+                echo "Required Windows runtime dependency was not found after redist download: $dll"
+                find ./embeddings/target "$HOME/.cargo" "$openmp_redist_dir" -type f -iname "*.dll" 2>/dev/null | sort || true
                 exit 1
               fi
 
