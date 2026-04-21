@@ -36,7 +36,7 @@ fn batch_size() -> usize {
     let cpus = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(8);
-    (cpus / 2).max(8).min(128)
+    (cpus / 2).clamp(8, 128)
 }
 
 /// Model architecture type - determines pooling strategy
@@ -945,8 +945,12 @@ impl LocalModel {
             .map(|t| pre_truncate_text(t, max_input_len))
             .collect();
 
-        // Batch tokenization — uses rayon parallelism internally when
-        // TOKENIZERS_PARALLELISM=true (set below on first call)
+        // Enable parallel tokenization via rayon (once)
+        static INIT_PARALLEL: std::sync::Once = std::sync::Once::new();
+        INIT_PARALLEL.call_once(|| {
+            std::env::set_var("TOKENIZERS_PARALLELISM", "true");
+        });
+
         let encodings = tokenizer
             .encode_batch(texts, true)
             .map_err(|_| LibError::ModelTokenizerEncodeFailed)?;
