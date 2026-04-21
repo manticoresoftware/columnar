@@ -29,15 +29,12 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 use tokenizers::Tokenizer;
 
-/// Batch size for batched inference (BERT, ONNX).
-/// Scales with available CPUs: more cores need larger matrices to stay fed.
-/// Minimum 8, then roughly cores/2 (capped at 128 to limit padding waste).
-fn batch_size() -> usize {
-    let cpus = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(8);
-    (cpus / 2).clamp(8, 128)
-}
+/// Batch size per ONNX forward pass.
+const BATCH_SIZE: usize = 8;
+
+/// Intra-op threads per ONNX session. Sweet spot for batch=8: enough to
+/// saturate one forward pass without wasting cores on sync overhead.
+const INTRA_THREADS: usize = 4;
 
 /// Model architecture type - determines pooling strategy
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -384,7 +381,7 @@ impl BertEmbeddingModel {
     fn predict_chunks(&self, chunks: &[Vec<u32>]) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
         let mut all_embeddings = Vec::with_capacity(chunks.len());
 
-        for batch in chunks.chunks(batch_size()) {
+        for batch in chunks.chunks(BATCH_SIZE) {
             let batch_size = batch.len();
             let max_len = batch.iter().map(|c| c.len()).max().unwrap_or(0);
 
@@ -735,8 +732,9 @@ impl QuantizedEmbeddingModel {
 }
 
 /// ONNX embedding model using ORT (onnxruntime) for optimized inference.
+/// Uses a pool of sessions for parallel inference across CPU cores.
 pub struct OnnxEmbeddingModel {
-    session: Mutex<ort::session::Session>,
+    sessions: Vec<Mutex<ort::session::Session>>,
     tokenizer: Tokenizer,
     max_input_len: usize,
     hidden_size: usize,
@@ -759,102 +757,139 @@ impl OnnxEmbeddingModel {
         tokenizer.with_padding(None);
         let _ = tokenizer.with_truncation(None);
 
-        let session = ort::session::Session::builder()
-            .map_err(|_| LibError::OnnxModelEvalFailed)?
-            .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Level3)
-            .map_err(|_| LibError::OnnxModelEvalFailed)?
-            .commit_from_file(&onnx_path)
-            .map_err(|_| LibError::ModelWeightsLoadFailed)?;
+        let num_cpus = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(INTRA_THREADS);
+        let num_sessions = (num_cpus / INTRA_THREADS).max(1);
+
+        let mut sessions = Vec::with_capacity(num_sessions);
+        for _ in 0..num_sessions {
+            let session = ort::session::Session::builder()
+                .map_err(|_| LibError::OnnxModelEvalFailed)?
+                .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Level3)
+                .map_err(|_| LibError::OnnxModelEvalFailed)?
+                .with_intra_threads(INTRA_THREADS)
+                .map_err(|_| LibError::OnnxModelEvalFailed)?
+                .commit_from_file(&onnx_path)
+                .map_err(|_| LibError::ModelWeightsLoadFailed)?;
+            sessions.push(Mutex::new(session));
+        }
 
         Ok(Self {
-            session: Mutex::new(session),
+            sessions,
             tokenizer,
             max_input_len,
             hidden_size,
         })
     }
 
-    /// Batched forward pass for ONNX model via ORT.
-    fn predict_chunks(&self, chunks: &[Vec<u32>]) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
-        let mut all_embeddings = Vec::with_capacity(chunks.len());
-        let mut session = self.session.lock().unwrap();
+    /// Run a single ONNX forward pass on one batch, using the given session.
+    fn run_batch(
+        session: &mut ort::session::Session,
+        batch: &[Vec<u32>],
+    ) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
+        let batch_size = batch.len();
+        let max_len = batch.iter().map(|c| c.len()).max().unwrap_or(0);
 
-        for batch in chunks.chunks(batch_size()) {
-            let batch_size = batch.len();
-            let max_len = batch.iter().map(|c| c.len()).max().unwrap_or(0);
+        let mut flat_ids: Vec<i64> = Vec::with_capacity(batch_size * max_len);
+        let mut flat_mask: Vec<i64> = Vec::with_capacity(batch_size * max_len);
+        let mut flat_type_ids: Vec<i64> = Vec::with_capacity(batch_size * max_len);
 
-            let mut flat_ids: Vec<i64> = Vec::with_capacity(batch_size * max_len);
-            let mut flat_mask: Vec<i64> = Vec::with_capacity(batch_size * max_len);
-            let mut flat_type_ids: Vec<i64> = Vec::with_capacity(batch_size * max_len);
-
-            for chunk in batch {
-                let real_len = chunk.len();
-                for &id in chunk.iter() {
-                    flat_ids.push(id as i64);
-                }
-                flat_ids.extend(std::iter::repeat_n(0i64, max_len - real_len));
-                flat_mask.extend(std::iter::repeat_n(1i64, real_len));
-                flat_mask.extend(std::iter::repeat_n(0i64, max_len - real_len));
-                flat_type_ids.extend(std::iter::repeat_n(0i64, max_len));
+        for chunk in batch {
+            let real_len = chunk.len();
+            for &id in chunk.iter() {
+                flat_ids.push(id as i64);
             }
+            flat_ids.extend(std::iter::repeat_n(0i64, max_len - real_len));
+            flat_mask.extend(std::iter::repeat_n(1i64, real_len));
+            flat_mask.extend(std::iter::repeat_n(0i64, max_len - real_len));
+            flat_type_ids.extend(std::iter::repeat_n(0i64, max_len));
+        }
 
-            let input_ids = ort::value::Tensor::from_array((vec![batch_size, max_len], flat_ids))
+        let input_ids = ort::value::Tensor::from_array((vec![batch_size, max_len], flat_ids))
+            .map_err(|_| LibError::OnnxModelEvalFailed)?;
+        let attention_mask =
+            ort::value::Tensor::from_array((vec![batch_size, max_len], flat_mask.clone()))
                 .map_err(|_| LibError::OnnxModelEvalFailed)?;
-            let attention_mask =
-                ort::value::Tensor::from_array((vec![batch_size, max_len], flat_mask.clone()))
-                    .map_err(|_| LibError::OnnxModelEvalFailed)?;
-            let token_type_ids =
-                ort::value::Tensor::from_array((vec![batch_size, max_len], flat_type_ids))
-                    .map_err(|_| LibError::OnnxModelEvalFailed)?;
-
-            let outputs = session
-                .run(ort::inputs![
-                    "input_ids" => input_ids,
-                    "attention_mask" => attention_mask,
-                    "token_type_ids" => token_type_ids,
-                ])
+        let token_type_ids =
+            ort::value::Tensor::from_array((vec![batch_size, max_len], flat_type_ids))
                 .map_err(|_| LibError::OnnxModelEvalFailed)?;
 
-            let (shape, data) = outputs[0]
-                .try_extract_tensor::<f32>()
-                .map_err(|_| LibError::OnnxModelEvalFailed)?;
+        let outputs = session
+            .run(ort::inputs![
+                "input_ids" => input_ids,
+                "attention_mask" => attention_mask,
+                "token_type_ids" => token_type_ids,
+            ])
+            .map_err(|_| LibError::OnnxModelEvalFailed)?;
 
-            let ndim = shape.len();
-            if ndim == 2 {
-                // [batch, hidden] — already pooled
-                let hidden_dim = shape[1] as usize;
-                for i in 0..batch_size {
-                    let start = i * hidden_dim;
-                    let mut emb = data[start..start + hidden_dim].to_vec();
-                    normalize(&mut emb);
-                    all_embeddings.push(emb);
-                }
-            } else if ndim == 3 {
-                // [batch, seq_len, hidden] — masked mean pooling
-                let seq_len = shape[1] as usize;
-                let hidden_dim = shape[2] as usize;
-                for i in 0..batch_size {
-                    let mut emb = vec![0.0f32; hidden_dim];
-                    let mut count = 0.0f32;
-                    for j in 0..seq_len {
-                        let mask_val = flat_mask[i * max_len + j] as f32;
-                        if mask_val > 0.0 {
-                            let offset = (i * seq_len + j) * hidden_dim;
-                            for k in 0..hidden_dim {
-                                emb[k] += data[offset + k];
-                            }
-                            count += 1.0;
+        let (shape, data) = outputs[0]
+            .try_extract_tensor::<f32>()
+            .map_err(|_| LibError::OnnxModelEvalFailed)?;
+
+        let ndim = shape.len();
+        let mut embeddings = Vec::with_capacity(batch_size);
+
+        if ndim == 2 {
+            let hidden_dim = shape[1] as usize;
+            for i in 0..batch_size {
+                let start = i * hidden_dim;
+                let mut emb = data[start..start + hidden_dim].to_vec();
+                normalize(&mut emb);
+                embeddings.push(emb);
+            }
+        } else if ndim == 3 {
+            let seq_len = shape[1] as usize;
+            let hidden_dim = shape[2] as usize;
+            for i in 0..batch_size {
+                let mut emb = vec![0.0f32; hidden_dim];
+                let mut count = 0.0f32;
+                for j in 0..seq_len {
+                    let mask_val = flat_mask[i * max_len + j] as f32;
+                    if mask_val > 0.0 {
+                        let offset = (i * seq_len + j) * hidden_dim;
+                        for k in 0..hidden_dim {
+                            emb[k] += data[offset + k];
                         }
+                        count += 1.0;
                     }
-                    if count > 0.0 {
-                        emb.iter_mut().for_each(|v| *v /= count);
-                    }
-                    normalize(&mut emb);
-                    all_embeddings.push(emb);
                 }
-            } else {
-                return Err(Box::new(LibError::OnnxModelEvalFailed));
+                if count > 0.0 {
+                    emb.iter_mut().for_each(|v| *v /= count);
+                }
+                normalize(&mut emb);
+                embeddings.push(emb);
             }
+        } else {
+            return Err(Box::new(LibError::OnnxModelEvalFailed));
+        }
+
+        Ok(embeddings)
+    }
+
+    /// Parallel batched forward pass: splits chunks across session pool via rayon.
+    fn predict_chunks(&self, chunks: &[Vec<u32>]) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
+        use rayon::prelude::*;
+
+        let batches: Vec<&[Vec<u32>]> = chunks.chunks(BATCH_SIZE).collect();
+        let num_sessions = self.sessions.len();
+
+        let results: Vec<Result<Vec<Vec<f32>>, Box<dyn Error + Send + Sync>>> = batches
+            .par_iter()
+            .enumerate()
+            .map(|(i, batch)| {
+                let session_idx = i % num_sessions;
+                let mut session = self.sessions[session_idx].lock().unwrap();
+                Self::run_batch(&mut session, batch)
+                    .map_err(|_| -> Box<dyn Error + Send + Sync> {
+                        Box::new(LibError::OnnxModelEvalFailed)
+                    })
+            })
+            .collect();
+
+        let mut all_embeddings = Vec::with_capacity(chunks.len());
+        for result in results {
+            all_embeddings.extend(result?);
         }
 
         Ok(all_embeddings)
@@ -974,7 +1009,7 @@ impl LocalModel {
 
 impl TextModel for LocalModel {
     fn predict(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
-        // BERT and ONNX: batched path (batch_size up to batch_size() per forward pass)
+        // BERT and ONNX: batched path (batch_size up to BATCH_SIZE per forward pass)
         match self {
             LocalModel::Bert(m) => {
                 return Self::predict_batched(&m.tokenizer, m.max_input_len, texts, |chunks| {
