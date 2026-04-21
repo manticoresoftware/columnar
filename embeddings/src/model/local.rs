@@ -874,22 +874,20 @@ impl OnnxEmbeddingModel {
         let batches: Vec<&[Vec<u32>]> = chunks.chunks(BATCH_SIZE).collect();
         let num_sessions = self.sessions.len();
 
-        let results: Vec<Result<Vec<Vec<f32>>, Box<dyn Error + Send + Sync>>> = batches
+        let results: Vec<Result<Vec<Vec<f32>>, LibError>> = batches
             .par_iter()
             .enumerate()
             .map(|(i, batch)| {
                 let session_idx = i % num_sessions;
                 let mut session = self.sessions[session_idx].lock().unwrap();
                 Self::run_batch(&mut session, batch)
-                    .map_err(|_| -> Box<dyn Error + Send + Sync> {
-                        Box::new(LibError::OnnxModelEvalFailed)
-                    })
+                    .map_err(|_| LibError::OnnxModelEvalFailed)
             })
             .collect();
 
         let mut all_embeddings = Vec::with_capacity(chunks.len());
         for result in results {
-            all_embeddings.extend(result?);
+            all_embeddings.extend(result.map_err(|e| -> Box<dyn Error> { Box::new(e) })?);
         }
 
         Ok(all_embeddings)
