@@ -49,6 +49,10 @@ if (PACK AND NOT EMBEDDINGS_LIB)
 	message(FATAL_ERROR "Could not find manticoresearch text embeddings library at: ${EMBEDDINGS_LIB}")
 endif()
 
+if (EMBEDDINGS_LIB)
+	set ( MANTICORE_KNN_EMBEDDINGS_LIB "${EMBEDDINGS_LIB}" CACHE INTERNAL "Path to manticoresearch text embeddings library" FORCE )
+endif()
+
 # Add embeddings library as a component to be included in packages
 add_library ( embeddings MODULE IMPORTED )
 set_target_properties ( embeddings PROPERTIES IMPORTED_LOCATION "${EMBEDDINGS_LIB}" INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/embeddings/")
