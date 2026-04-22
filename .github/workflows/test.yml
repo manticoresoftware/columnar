@@ -41,6 +41,9 @@ jobs:
       manticore_locator: ${{ steps.set_locator.outputs.manticore_locator }}
       ref: ${{ steps.ref.outputs.ref }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Check if branch exists in manticoresoftware/manticoresearch
         id: check_branch
         if: github.ref_name != 'master'
@@ -68,11 +71,35 @@ jobs:
             echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
           fi
 
+      - name: Resolve Manticore ref from locator
+        id: locator_ref
+        run: |
+          set -e
+          REF=""
+          if [[ -f manticore_src.txt ]]; then
+            TAG=$(sed -nE 's/.*GIT_TAG[[:space:]]+"?([^" ]+)"?.*/\1/p' manticore_src.txt | head -n1)
+            if [[ -n "$TAG" && "$TAG" != *'$'* ]]; then
+              REF="$TAG"
+              if [[ "$REF" =~ ^[0-9a-fA-F]{40}$ ]]; then
+                MATCH=$(git ls-remote --heads https://github.com/manticoresoftware/manticoresearch.git | awk -v sha="${REF,,}" 'tolower($1)==sha { sub("refs/heads/", "", $2); print $2; exit }')
+                if [[ -n "$MATCH" ]]; then
+                  REF="$MATCH"
+                fi
+              fi
+            fi
+          fi
+          echo "ref=${REF}" >> $GITHUB_OUTPUT
+          if [[ -n "$REF" ]]; then
+            echo "Manticore ref from locator: ${REF}" >> $GITHUB_STEP_SUMMARY
+          fi
+
       - name: Detect ref for CLT tests
         id: ref
         run: |
           set -e
-          if [[ "${{ github.ref_name }}" == "master" ]]; then
+          if [[ "${{ github.ref_name }}" == "master" && -n "${{ steps.locator_ref.outputs.ref }}" ]]; then
+            REF="${{ steps.locator_ref.outputs.ref }}"
+          elif [[ "${{ github.ref_name }}" == "master" ]]; then
             REF="master"
           elif [[ "${{ steps.check_branch.outputs.branch_exists }}" == "true" ]]; then
             REF="${{ steps.check_branch.outputs.branch_name }}"
@@ -565,11 +592,11 @@ jobs:
         id: base_image
         run: |
           set -e
-          # Always use test-kit-latest when the branch is master
-          if [[ "${{ steps.current_branch.outputs.branch }}" == "master" ]]; then
+          MANTICORE_REF="${{ needs.check_branch.outputs.ref }}"
+          if [[ "$MANTICORE_REF" == "master" ]]; then
             IMAGE="${GHCR_REPO}:test-kit-latest"
-          elif [[ "${{ steps.check_branch_exists.outputs.exists }}" == "true" ]]; then
-            BRANCH="${{ steps.current_branch.outputs.branch }}"
+          elif [[ "${{ steps.check_branch_exists.outputs.exists }}" == "true" || "${{ steps.current_branch.outputs.branch }}" == "master" ]]; then
+            BRANCH="${MANTICORE_REF}"
             fix=$(echo "$BRANCH" | tr '/' '_')
             DOCKER_TAG=$(echo "$fix" | sed 's/[^a-zA-Z0-9_.-]//g')
             IMAGE="${GHCR_REPO}:test-kit-${DOCKER_TAG,,}"
