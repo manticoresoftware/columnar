@@ -880,27 +880,21 @@ impl OnnxEmbeddingModel {
         Ok(embeddings)
     }
 
-    /// Pipelined predict: tokenizes batch N+1 while ORT infers batch N.
-    /// Overlaps tokenization with inference to keep CPU busy.
+    /// Per-batch predict: tokenize and infer one batch at a time.
+    /// Avoids tokenizing all texts upfront — better cache locality.
     fn predict_pipelined(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
         let bs = batch_size();
         let max_input = self.max_input_len;
-        let tokenizer = &self.tokenizer;
+        let mut all_embeddings = Vec::with_capacity(texts.len());
+        let mut session = self.session.lock().unwrap();
 
-        let text_batches: Vec<&[&str]> = texts.chunks(bs).collect();
-        let num_batches = text_batches.len();
-
-        if num_batches == 0 {
-            return Ok(Vec::new());
-        }
-
-        // Single batch — no pipeline needed
-        if num_batches == 1 {
-            let truncated: Vec<&str> = text_batches[0]
+        for batch in texts.chunks(bs) {
+            let truncated: Vec<&str> = batch
                 .iter()
                 .map(|t| pre_truncate_text(t, max_input))
                 .collect();
-            let encoded = tokenizer
+            let encoded = self
+                .tokenizer
                 .encode_batch(truncated, true)
                 .map_err(|_| LibError::ModelTokenizerEncodeFailed)?;
             let chunks: Vec<Vec<u32>> = encoded
@@ -910,62 +904,8 @@ impl OnnxEmbeddingModel {
                     ids[..ids.len().min(max_input)].to_vec()
                 })
                 .collect();
-            return Self::run_batch(&mut self.session.lock().unwrap(), &chunks);
-        }
-
-        let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<Vec<u32>>>(1);
-        let mut all_embeddings = Vec::with_capacity(texts.len());
-        let mut tok_error: Option<Box<dyn std::error::Error + Send>> = None;
-
-        std::thread::scope(|s| {
-            // Tokenizer thread: tokenize one batch at a time, send to channel
-            // Move tx into the thread so it drops when done, closing the channel
-            s.spawn(move || {
-                for batch in &text_batches {
-                    let truncated: Vec<&str> = batch
-                        .iter()
-                        .map(|t| pre_truncate_text(t, max_input))
-                        .collect();
-                    let encoded = match tokenizer.encode_batch(truncated, true) {
-                        Ok(enc) => enc,
-                        Err(_) => {
-                            // Channel will close, inference thread will stop
-                            return;
-                        }
-                    };
-                    let chunks: Vec<Vec<u32>> = encoded
-                        .iter()
-                        .map(|enc| {
-                            let ids = enc.get_ids();
-                            ids[..ids.len().min(max_input)].to_vec()
-                        })
-                        .collect();
-                    if tx.send(chunks).is_err() {
-                        return;
-                    }
-                }
-            });
-
-            // Inference on current thread (owns session via Mutex)
-            let mut session = self.session.lock().unwrap();
-            for chunks in rx {
-                match Self::run_batch(&mut session, &chunks) {
-                    Ok(embs) => all_embeddings.extend(embs),
-                    Err(_) => {
-                        tok_error =
-                            Some(Box::new(LibError::OnnxModelEvalFailed) as Box<dyn Error + Send>);
-                        break;
-                    }
-                }
-            }
-        });
-
-        if let Some(e) = tok_error {
-            return Err(e);
-        }
-
-        if all_embeddings.len() != texts.len() {
-            return Err(Box::new(LibError::OnnxModelEvalFailed));
+            let embs = Self::run_batch(&mut session, &chunks)?;
+            all_embeddings.extend(embs);
         }
 
         Ok(all_embeddings)
