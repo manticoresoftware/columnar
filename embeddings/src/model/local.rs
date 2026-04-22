@@ -745,9 +745,12 @@ impl QuantizedEmbeddingModel {
 }
 
 /// ONNX embedding model using ORT (onnxruntime) for optimized inference.
-/// Uses a pool of sessions for true parallel inference — each session has its own thread pool.
+/// Single ONNX session with intra-op threading for parallelism.
+/// Mutex is for interior mutability only (ort requires `&mut` for `run()`),
+/// not for synchronization — access is sequential, zero contention.
+/// Parallelism comes from ONNX Runtime's internal thread pool.
 pub struct OnnxEmbeddingModel {
-    sessions: Vec<Mutex<ort::session::Session>>,
+    session: std::sync::Mutex<ort::session::Session>,
     tokenizer: Tokenizer,
     max_input_len: usize,
     hidden_size: usize,
@@ -771,30 +774,22 @@ impl OnnxEmbeddingModel {
         let _ = tokenizer.with_truncation(None);
 
         let it = intra_threads();
-        let num_cpus = std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(it);
-        let num_sessions = (num_cpus / it).max(1);
 
-        let mut sessions = Vec::with_capacity(num_sessions);
-        for _ in 0..num_sessions {
-            let session = ort::session::Session::builder()
-                .map_err(|_| LibError::OnnxModelEvalFailed)?
-                .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Level3)
-                .map_err(|_| LibError::OnnxModelEvalFailed)?
-                .with_intra_threads(it)
-                .map_err(|_| LibError::OnnxModelEvalFailed)?
-                .with_intra_op_spinning(false)
-                .map_err(|_| LibError::OnnxModelEvalFailed)?
-                .with_approximate_gelu()
-                .map_err(|_| LibError::OnnxModelEvalFailed)?
-                .commit_from_file(&onnx_path)
-                .map_err(|_| LibError::ModelWeightsLoadFailed)?;
-            sessions.push(Mutex::new(session));
-        }
+        let session = ort::session::Session::builder()
+            .map_err(|_| LibError::OnnxModelEvalFailed)?
+            .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Level3)
+            .map_err(|_| LibError::OnnxModelEvalFailed)?
+            .with_intra_threads(it)
+            .map_err(|_| LibError::OnnxModelEvalFailed)?
+            .with_intra_op_spinning(false)
+            .map_err(|_| LibError::OnnxModelEvalFailed)?
+            .with_approximate_gelu()
+            .map_err(|_| LibError::OnnxModelEvalFailed)?
+            .commit_from_file(&onnx_path)
+            .map_err(|_| LibError::ModelWeightsLoadFailed)?;
 
         Ok(Self {
-            sessions,
+            session: std::sync::Mutex::new(session),
             tokenizer,
             max_input_len,
             hidden_size,
@@ -885,33 +880,91 @@ impl OnnxEmbeddingModel {
         Ok(embeddings)
     }
 
-    /// Parallel batched forward pass: dispatches batches across session pool via rayon.
-    fn predict_chunks(&self, chunks: &[Vec<u32>]) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
-        use rayon::prelude::*;
-        use std::sync::atomic::{AtomicUsize, Ordering};
+    /// Pipelined predict: tokenizes batch N+1 while ORT infers batch N.
+    /// Overlaps tokenization with inference to keep CPU busy.
+    fn predict_pipelined(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
+        let bs = batch_size();
+        let max_input = self.max_input_len;
+        let tokenizer = &self.tokenizer;
 
-        let batches: Vec<&[Vec<u32>]> = chunks.chunks(batch_size()).collect();
-        let num_sessions = self.sessions.len();
-        let active = AtomicUsize::new(0);
-        let max_active = AtomicUsize::new(0);
+        let text_batches: Vec<&[&str]> = texts.chunks(bs).collect();
+        let num_batches = text_batches.len();
 
-        let results: Vec<Result<Vec<Vec<f32>>, LibError>> = batches
-            .par_iter()
-            .enumerate()
-            .map(|(i, batch)| {
-                let cur = active.fetch_add(1, Ordering::Relaxed) + 1;
-                max_active.fetch_max(cur, Ordering::Relaxed);
-                let mut session = self.sessions[i % num_sessions].lock().unwrap();
-                let res =
-                    Self::run_batch(&mut session, batch).map_err(|_| LibError::OnnxModelEvalFailed);
-                active.fetch_sub(1, Ordering::Relaxed);
-                res
-            })
-            .collect();
+        if num_batches == 0 {
+            return Ok(Vec::new());
+        }
 
-        let mut all_embeddings = Vec::with_capacity(chunks.len());
-        for result in results {
-            all_embeddings.extend(result.map_err(|e| -> Box<dyn Error> { Box::new(e) })?);
+        // Single batch — no pipeline needed
+        if num_batches == 1 {
+            let truncated: Vec<&str> = text_batches[0]
+                .iter()
+                .map(|t| pre_truncate_text(t, max_input))
+                .collect();
+            let encoded = tokenizer
+                .encode_batch(truncated, true)
+                .map_err(|_| LibError::ModelTokenizerEncodeFailed)?;
+            let chunks: Vec<Vec<u32>> = encoded
+                .iter()
+                .map(|enc| {
+                    let ids = enc.get_ids();
+                    ids[..ids.len().min(max_input)].to_vec()
+                })
+                .collect();
+            return Self::run_batch(&mut self.session.lock().unwrap(), &chunks);
+        }
+
+        let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<Vec<u32>>>(1);
+        let mut all_embeddings = Vec::with_capacity(texts.len());
+        let mut tok_error: Option<Box<dyn std::error::Error + Send>> = None;
+
+        std::thread::scope(|s| {
+            // Tokenizer thread: tokenize one batch at a time, send to channel
+            s.spawn(|| {
+                for batch in &text_batches {
+                    let truncated: Vec<&str> = batch
+                        .iter()
+                        .map(|t| pre_truncate_text(t, max_input))
+                        .collect();
+                    let encoded = match tokenizer.encode_batch(truncated, true) {
+                        Ok(enc) => enc,
+                        Err(_) => {
+                            // Channel will close, inference thread will stop
+                            return;
+                        }
+                    };
+                    let chunks: Vec<Vec<u32>> = encoded
+                        .iter()
+                        .map(|enc| {
+                            let ids = enc.get_ids();
+                            ids[..ids.len().min(max_input)].to_vec()
+                        })
+                        .collect();
+                    if tx.send(chunks).is_err() {
+                        return;
+                    }
+                }
+            });
+
+            // Inference on current thread (owns session via Mutex)
+            let mut session = self.session.lock().unwrap();
+            for chunks in rx {
+                match Self::run_batch(&mut session, &chunks) {
+                    Ok(embs) => all_embeddings.extend(embs),
+                    Err(_) => {
+                        tok_error =
+                            Some(Box::new(LibError::OnnxModelEvalFailed) as Box<dyn Error + Send>);
+                        break;
+                    }
+                }
+            }
+        });
+
+        if let Some(e) = tok_error {
+            return Err(e);
+        }
+
+        if all_embeddings.len() != texts.len() {
+            return Err(Box::new(LibError::OnnxModelEvalFailed));
         }
 
         Ok(all_embeddings)
@@ -1039,9 +1092,7 @@ impl TextModel for LocalModel {
                 });
             }
             LocalModel::Onnx(m) => {
-                return Self::predict_batched(&m.tokenizer, m.max_input_len, texts, |chunks| {
-                    m.predict_chunks(chunks)
-                });
+                return m.predict_pipelined(texts);
             }
             _ => {} // fall through to sequential path
         }
