@@ -907,16 +907,84 @@ impl OnnxEmbeddingModel {
         Ok(embeddings)
     }
 
-    /// Batched forward pass: processes batches sequentially.
-    /// ORT's intra-op thread pool handles per-batch parallelism internally.
-    fn predict_chunks(&self, chunks: &[Vec<u32>]) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
-        let mut all_embeddings = Vec::with_capacity(chunks.len());
+    /// Pipelined predict: tokenizer thread prepares batch N+1 while ORT infers batch N.
+    fn predict_pipelined(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
+        let bs = batch_size();
+        let max_input = self.max_input_len;
+        let tokenizer = &self.tokenizer;
+        let session = &self.session;
 
-        for batch in chunks.chunks(batch_size()) {
-            let embs = Self::run_batch(&self.session, batch)?;
-            all_embeddings.extend(embs);
+        let text_batches: Vec<&[&str]> = texts.chunks(bs).collect();
+        if text_batches.is_empty() {
+            return Ok(Vec::new());
         }
 
+        // Single batch — no pipeline overhead needed
+        if text_batches.len() == 1 {
+            let truncated: Vec<&str> = text_batches[0]
+                .iter()
+                .map(|t| pre_truncate_text(t, max_input))
+                .collect();
+            let encoded = tokenizer
+                .encode_batch(truncated, true)
+                .map_err(|_| LibError::ModelTokenizerEncodeFailed)?;
+            let chunks: Vec<Vec<u32>> = encoded
+                .iter()
+                .map(|enc| {
+                    let ids = enc.get_ids();
+                    ids[..ids.len().min(max_input)].to_vec()
+                })
+                .collect();
+            return Self::run_batch(session, &chunks);
+        }
+
+        // Pipeline: tokenizer thread feeds batches, main thread runs inference
+        let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<Vec<u32>>>(1);
+        let mut all_embeddings = Vec::with_capacity(texts.len());
+        let mut infer_error: Option<LibError> = None;
+
+        std::thread::scope(|s| {
+            s.spawn(move || {
+                for batch in &text_batches {
+                    let truncated: Vec<&str> = batch
+                        .iter()
+                        .map(|t| pre_truncate_text(t, max_input))
+                        .collect();
+                    let encoded = match tokenizer.encode_batch(truncated, true) {
+                        Ok(enc) => enc,
+                        Err(_) => return,
+                    };
+                    let chunks: Vec<Vec<u32>> = encoded
+                        .iter()
+                        .map(|enc| {
+                            let ids = enc.get_ids();
+                            ids[..ids.len().min(max_input)].to_vec()
+                        })
+                        .collect();
+                    if tx.send(chunks).is_err() {
+                        return;
+                    }
+                }
+                // tx drops here — closes channel, rx loop ends
+            });
+
+            for chunks in rx {
+                match Self::run_batch(session, &chunks) {
+                    Ok(embs) => all_embeddings.extend(embs),
+                    Err(_) => {
+                        infer_error = Some(LibError::OnnxModelEvalFailed);
+                        break;
+                    }
+                }
+            }
+        });
+
+        if let Some(e) = infer_error {
+            return Err(Box::new(e));
+        }
+        if all_embeddings.len() != texts.len() {
+            return Err(Box::new(LibError::OnnxModelEvalFailed));
+        }
         Ok(all_embeddings)
     }
 }
@@ -1042,9 +1110,7 @@ impl TextModel for LocalModel {
                 });
             }
             LocalModel::Onnx(m) => {
-                return Self::predict_batched(&m.tokenizer, m.max_input_len, texts, |chunks| {
-                    m.predict_chunks(chunks)
-                });
+                return m.predict_pipelined(texts);
             }
             _ => {} // fall through to sequential path
         }
