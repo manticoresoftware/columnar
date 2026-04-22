@@ -919,7 +919,8 @@ impl OnnxEmbeddingModel {
 
         std::thread::scope(|s| {
             // Tokenizer thread: tokenize one batch at a time, send to channel
-            s.spawn(|| {
+            // Move tx into the thread so it drops when done, closing the channel
+            s.spawn(move || {
                 for batch in &text_batches {
                     let truncated: Vec<&str> = batch
                         .iter()
