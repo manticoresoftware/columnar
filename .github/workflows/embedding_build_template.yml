@@ -335,7 +335,7 @@ jobs:
               fi
           done
 
-          if [[ "${{ inputs.distr }}" == "windows" ]]; then
+          if [[ "${{ inputs.distr }}" == "windows" && "${{ inputs.arch }}" != "aarch64" ]]; then
             echo "=== Package Windows runtime DLL dependencies ==="
             openmp_redist_version="2025.3.3.31"
             openmp_redist_dir=".openmp-redist"
@@ -362,6 +362,8 @@ jobs:
               cp "$dep" build/
               echo "Packaged $dll from $dep"
             done
+          elif [[ "${{ inputs.distr }}" == "windows" ]]; then
+            echo "Skipping Intel OpenMP runtime packaging for Windows ${{ inputs.arch }}; Intel OpenMP redist currently ships win-x64 DLLs only"
           fi
 
       - name: Verify Linux library compatibility
@@ -420,7 +422,7 @@ jobs:
             throw "Embeddings DLL was not found at $dll"
           }
 
-          if (-not (Test-Path "build\libiomp5md.dll")) {
+          if ("${{ inputs.arch }}" -ne "aarch64" -and -not (Test-Path "build\libiomp5md.dll")) {
             throw "Required runtime DLL was not packaged: build\libiomp5md.dll"
           }
 
@@ -450,6 +452,11 @@ jobs:
           cmd /c "`"$vcvars`" >nul && dumpbin /exports `"$dll`" | findstr GetLibFuncs"
           if ($LASTEXITCODE -ne 0) {
             throw "GetLibFuncs export was not found"
+          }
+
+          if ("${{ inputs.arch }}" -eq "aarch64") {
+            Write-Host "Skipping direct LoadLibraryW probe for Windows aarch64; GitHub runner is x64 and cannot load an ARM64 DLL"
+            exit 0
           }
 
           Write-Host "=== Direct LoadLibraryW probe ==="
