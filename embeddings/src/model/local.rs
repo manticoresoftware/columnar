@@ -32,8 +32,8 @@ use tokenizers::Tokenizer;
 /// Default batch size per ONNX forward pass.
 const DEFAULT_BATCH_SIZE: usize = 8;
 
-/// Default intra-op threads per ONNX session.
-const DEFAULT_INTRA_THREADS: usize = 8;
+/// Default intra-op threads: 0 = ORT default (all cores).
+const DEFAULT_INTRA_THREADS: usize = 0;
 
 fn batch_size() -> usize {
     std::env::var("EMBEDDINGS_BATCH_SIZE")
@@ -47,6 +47,38 @@ fn intra_threads() -> usize {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(DEFAULT_INTRA_THREADS)
+}
+
+/// Thread-safe wrapper around `ort::session::Session`.
+/// ORT's C API `OrtSession::Run` is documented as thread-safe for concurrent calls.
+/// The Rust `ort` crate requires `&mut self` for `run()` which is overly conservative.
+/// This wrapper provides `run(&self)` using `UnsafeCell` to allow parallel inference
+/// on a single loaded model without duplicating weights in memory.
+struct SyncSession {
+    inner: std::cell::UnsafeCell<ort::session::Session>,
+}
+
+// SAFETY: ORT's OrtSession::Run is thread-safe for concurrent calls.
+// The session state is internally synchronized by ORT.
+unsafe impl Sync for SyncSession {}
+unsafe impl Send for SyncSession {}
+
+impl SyncSession {
+    fn new(session: ort::session::Session) -> Self {
+        Self {
+            inner: std::cell::UnsafeCell::new(session),
+        }
+    }
+
+    /// Run inference on this session. Safe to call from multiple threads concurrently.
+    /// SAFETY: relies on ORT's documented thread-safety of OrtSession::Run.
+    fn run<'s, 'i, 'v: 'i, const N: usize>(
+        &'s self,
+        input_values: impl Into<ort::session::SessionInputs<'i, 'v, N>>,
+    ) -> ort::Result<ort::session::SessionOutputs<'s>> {
+        // SAFETY: ORT guarantees thread-safe concurrent Run() on the same session.
+        unsafe { &mut *self.inner.get() }.run(input_values)
+    }
 }
 
 /// Model architecture type - determines pooling strategy
@@ -745,12 +777,9 @@ impl QuantizedEmbeddingModel {
 }
 
 /// ONNX embedding model using ORT (onnxruntime) for optimized inference.
-/// Single ONNX session with intra-op threading for parallelism.
-/// Mutex is for interior mutability only (ort requires `&mut` for `run()`),
-/// not for synchronization — access is sequential, zero contention.
-/// Parallelism comes from ONNX Runtime's internal thread pool.
+/// Uses a single session with concurrent inference via SyncSession wrapper.
 pub struct OnnxEmbeddingModel {
-    session: std::sync::Mutex<ort::session::Session>,
+    session: SyncSession,
     tokenizer: Tokenizer,
     max_input_len: usize,
     hidden_size: usize,
@@ -773,13 +802,11 @@ impl OnnxEmbeddingModel {
         tokenizer.with_padding(None);
         let _ = tokenizer.with_truncation(None);
 
-        let it = intra_threads();
-
         let session = ort::session::Session::builder()
             .map_err(|_| LibError::OnnxModelEvalFailed)?
             .with_optimization_level(ort::session::builder::GraphOptimizationLevel::Level3)
             .map_err(|_| LibError::OnnxModelEvalFailed)?
-            .with_intra_threads(it)
+            .with_intra_threads(intra_threads())
             .map_err(|_| LibError::OnnxModelEvalFailed)?
             .with_intra_op_spinning(false)
             .map_err(|_| LibError::OnnxModelEvalFailed)?
@@ -789,7 +816,7 @@ impl OnnxEmbeddingModel {
             .map_err(|_| LibError::ModelWeightsLoadFailed)?;
 
         Ok(Self {
-            session: std::sync::Mutex::new(session),
+            session: SyncSession::new(session),
             tokenizer,
             max_input_len,
             hidden_size,
@@ -798,7 +825,7 @@ impl OnnxEmbeddingModel {
 
     /// Run a single ONNX forward pass on one batch.
     fn run_batch(
-        session: &mut ort::session::Session,
+        session: &SyncSession,
         batch: &[Vec<u32>],
     ) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
         let batch_size = batch.len();
@@ -880,31 +907,13 @@ impl OnnxEmbeddingModel {
         Ok(embeddings)
     }
 
-    /// Per-batch predict: tokenize and infer one batch at a time.
-    /// Avoids tokenizing all texts upfront — better cache locality.
-    fn predict_pipelined(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
-        let bs = batch_size();
-        let max_input = self.max_input_len;
-        let mut all_embeddings = Vec::with_capacity(texts.len());
-        let mut session = self.session.lock().unwrap();
+    /// Batched forward pass: processes batches sequentially.
+    /// ORT's intra-op thread pool handles per-batch parallelism internally.
+    fn predict_chunks(&self, chunks: &[Vec<u32>]) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
+        let mut all_embeddings = Vec::with_capacity(chunks.len());
 
-        for batch in texts.chunks(bs) {
-            let truncated: Vec<&str> = batch
-                .iter()
-                .map(|t| pre_truncate_text(t, max_input))
-                .collect();
-            let encoded = self
-                .tokenizer
-                .encode_batch(truncated, true)
-                .map_err(|_| LibError::ModelTokenizerEncodeFailed)?;
-            let chunks: Vec<Vec<u32>> = encoded
-                .iter()
-                .map(|enc| {
-                    let ids = enc.get_ids();
-                    ids[..ids.len().min(max_input)].to_vec()
-                })
-                .collect();
-            let embs = Self::run_batch(&mut session, &chunks)?;
+        for batch in chunks.chunks(batch_size()) {
+            let embs = Self::run_batch(&self.session, batch)?;
             all_embeddings.extend(embs);
         }
 
@@ -1033,7 +1042,9 @@ impl TextModel for LocalModel {
                 });
             }
             LocalModel::Onnx(m) => {
-                return m.predict_pipelined(texts);
+                return Self::predict_batched(&m.tokenizer, m.max_input_len, texts, |chunks| {
+                    m.predict_chunks(chunks)
+                });
             }
             _ => {} // fall through to sequential path
         }
