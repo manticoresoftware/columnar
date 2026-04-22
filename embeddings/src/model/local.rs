@@ -30,7 +30,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use tokenizers::Tokenizer;
 
 /// Default batch size per ONNX forward pass.
-const DEFAULT_BATCH_SIZE: usize = 8;
+const DEFAULT_BATCH_SIZE: usize = 32;
 
 /// Default intra-op threads: 0 = ORT default (all cores).
 const DEFAULT_INTRA_THREADS: usize = 0;
@@ -916,6 +916,10 @@ impl OnnxEmbeddingModel {
         let tokenizer = &self.tokenizer;
         let session = &self.session;
 
+        if texts.is_empty() {
+            return Ok(Vec::new());
+        }
+
         let text_batches: Vec<&[&str]> = texts.chunks(bs).collect();
         if text_batches.is_empty() {
             return Ok(Vec::new());
@@ -987,6 +991,7 @@ impl OnnxEmbeddingModel {
         if all_embeddings.len() != texts.len() {
             return Err(Box::new(LibError::OnnxModelEvalFailed));
         }
+
         Ok(all_embeddings)
     }
 }
