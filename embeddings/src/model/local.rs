@@ -888,16 +888,24 @@ impl OnnxEmbeddingModel {
     /// Parallel batched forward pass: dispatches batches across session pool via rayon.
     fn predict_chunks(&self, chunks: &[Vec<u32>]) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
         use rayon::prelude::*;
+        use std::sync::atomic::{AtomicUsize, Ordering};
 
         let batches: Vec<&[Vec<u32>]> = chunks.chunks(batch_size()).collect();
         let num_sessions = self.sessions.len();
+        let active = AtomicUsize::new(0);
+        let max_active = AtomicUsize::new(0);
 
         let results: Vec<Result<Vec<Vec<f32>>, LibError>> = batches
             .par_iter()
             .enumerate()
             .map(|(i, batch)| {
+                let cur = active.fetch_add(1, Ordering::Relaxed) + 1;
+                max_active.fetch_max(cur, Ordering::Relaxed);
                 let mut session = self.sessions[i % num_sessions].lock().unwrap();
-                Self::run_batch(&mut session, batch).map_err(|_| LibError::OnnxModelEvalFailed)
+                let res =
+                    Self::run_batch(&mut session, batch).map_err(|_| LibError::OnnxModelEvalFailed);
+                active.fetch_sub(1, Ordering::Relaxed);
+                res
             })
             .collect();
 
