@@ -810,6 +810,8 @@ impl OnnxEmbeddingModel {
             .map_err(|_| LibError::OnnxModelEvalFailed)?
             .with_intra_op_spinning(false)
             .map_err(|_| LibError::OnnxModelEvalFailed)?
+            .with_flush_to_zero()
+            .map_err(|_| LibError::OnnxModelEvalFailed)?
             .with_approximate_gelu()
             .map_err(|_| LibError::OnnxModelEvalFailed)?
             .commit_from_file(&onnx_path)
