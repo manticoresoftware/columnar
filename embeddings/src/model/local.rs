@@ -30,7 +30,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use tokenizers::Tokenizer;
 
 /// Default batch size per ONNX forward pass.
-const DEFAULT_BATCH_SIZE: usize = 32;
+const DEFAULT_BATCH_SIZE: usize = 8;
 
 /// Default intra-op threads: 0 = ORT default (all cores).
 const DEFAULT_INTRA_THREADS: usize = 0;
