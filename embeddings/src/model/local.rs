@@ -977,10 +977,10 @@ impl OnnxEmbeddingModel {
             return Self::tokenize_and_infer(session, tokenizer, texts, max_input);
         }
 
-        // Large input — split across num_cpus workers, each processing 1 doc at a time.
-        // This mimics the concurrent caller pattern (many small Run() calls)
-        // which outperforms sequential batched processing.
-        let num_workers = available_cpus();
+        // Adaptive parallelism: scale workers with input size.
+        // Each worker needs at least batch_size docs to justify thread overhead.
+        // Cap at available CPUs — more workers than cores adds contention.
+        let num_workers = (texts.len() / bs).min(available_cpus()).max(1);
         let docs_per_worker = texts.len().div_ceil(num_workers);
 
         let mut ordered_results: Vec<Vec<Vec<f32>>> = Vec::with_capacity(num_workers);
