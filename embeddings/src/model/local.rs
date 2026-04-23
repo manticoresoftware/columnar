@@ -999,14 +999,11 @@ impl OnnxEmbeddingModel {
                 .map(|worker_texts| {
                     s.spawn(move || -> Result<Vec<Vec<f32>>, LibError> {
                         let mut embeddings = Vec::with_capacity(worker_texts.len());
-                        for text in worker_texts {
-                            let embs = Self::tokenize_and_infer(
-                                session,
-                                tokenizer,
-                                std::slice::from_ref(text),
-                                max_input,
-                            )
-                            .map_err(|_| LibError::OnnxModelEvalFailed)?;
+                        // Process in batches of bs — same efficiency as batched path
+                        for batch in worker_texts.chunks(bs) {
+                            let embs =
+                                Self::tokenize_and_infer(session, tokenizer, batch, max_input)
+                                    .map_err(|_| LibError::OnnxModelEvalFailed)?;
                             embeddings.extend(embs);
                         }
                         Ok(embeddings)
