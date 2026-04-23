@@ -35,6 +35,12 @@ const DEFAULT_BATCH_SIZE: usize = 8;
 /// Default intra-op threads: 0 = ORT default (all cores).
 const DEFAULT_INTRA_THREADS: usize = 0;
 
+fn available_cpus() -> usize {
+    std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(2)
+}
+
 fn batch_size() -> usize {
     std::env::var("EMBEDDINGS_BATCH_SIZE")
         .ok()
@@ -927,89 +933,99 @@ impl OnnxEmbeddingModel {
         Ok(embeddings)
     }
 
-    /// Pipelined predict: tokenizer thread prepares batch N+1 while ORT infers batch N.
+    /// Tokenize one batch and run inference.
+    fn tokenize_and_infer(
+        session: &SessionWrapper,
+        tokenizer: &Tokenizer,
+        texts: &[&str],
+        max_input: usize,
+    ) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
+        let truncated: Vec<&str> = texts
+            .iter()
+            .map(|t| pre_truncate_text(t, max_input))
+            .collect();
+        let encoded = tokenizer
+            .encode_batch(truncated, true)
+            .map_err(|_| LibError::ModelTokenizerEncodeFailed)?;
+        let chunks: Vec<Vec<u32>> = encoded
+            .iter()
+            .map(|enc| {
+                let ids = enc.get_ids();
+                ids[..ids.len().min(max_input)].to_vec()
+            })
+            .collect();
+        Self::run_batch(session, &chunks)
+    }
+
+    /// Adaptive predict: automatically chooses the best strategy based on input size.
+    /// - Small input (≤ batch_size): single tokenize + infer, zero overhead.
+    /// - Large input (> batch_size): splits into num_cpus concurrent single-doc workers.
+    ///   Each worker tokenizes + infers 1 doc at a time through SessionWrapper,
+    ///   mimicking the concurrent caller pattern that gives best throughput.
     fn predict_pipelined(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
         let bs = batch_size();
         let max_input = self.max_input_len;
-        let tokenizer = &self.tokenizer;
         let session = &self.session;
+        let tokenizer = &self.tokenizer;
 
         if texts.is_empty() {
             return Ok(Vec::new());
         }
 
-        let text_batches: Vec<&[&str]> = texts.chunks(bs).collect();
-        if text_batches.is_empty() {
-            return Ok(Vec::new());
+        // Small input — single tokenize + infer, no threading overhead
+        if texts.len() <= bs {
+            return Self::tokenize_and_infer(session, tokenizer, texts, max_input);
         }
 
-        // Single batch — no pipeline overhead needed
-        if text_batches.len() == 1 {
-            let truncated: Vec<&str> = text_batches[0]
-                .iter()
-                .map(|t| pre_truncate_text(t, max_input))
-                .collect();
-            let encoded = tokenizer
-                .encode_batch(truncated, true)
-                .map_err(|_| LibError::ModelTokenizerEncodeFailed)?;
-            let chunks: Vec<Vec<u32>> = encoded
-                .iter()
-                .map(|enc| {
-                    let ids = enc.get_ids();
-                    ids[..ids.len().min(max_input)].to_vec()
-                })
-                .collect();
-            return Self::run_batch(session, &chunks);
-        }
+        // Large input — split across num_cpus workers, each processing 1 doc at a time.
+        // This mimics the concurrent caller pattern (many small Run() calls)
+        // which outperforms sequential batched processing.
+        let num_workers = available_cpus();
+        let docs_per_worker = texts.len().div_ceil(num_workers);
 
-        // Pipeline: tokenizer thread feeds batches, main thread runs inference
-        let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<Vec<u32>>>(1);
-        let mut all_embeddings = Vec::with_capacity(texts.len());
-        let mut infer_error: Option<LibError> = None;
+        let mut ordered_results: Vec<Vec<Vec<f32>>> = Vec::with_capacity(num_workers);
+        let mut error: Option<LibError> = None;
 
         std::thread::scope(|s| {
-            s.spawn(move || {
-                for batch in &text_batches {
-                    let truncated: Vec<&str> = batch
-                        .iter()
-                        .map(|t| pre_truncate_text(t, max_input))
-                        .collect();
-                    let encoded = match tokenizer.encode_batch(truncated, true) {
-                        Ok(enc) => enc,
-                        Err(_) => return,
-                    };
-                    let chunks: Vec<Vec<u32>> = encoded
-                        .iter()
-                        .map(|enc| {
-                            let ids = enc.get_ids();
-                            ids[..ids.len().min(max_input)].to_vec()
-                        })
-                        .collect();
-                    if tx.send(chunks).is_err() {
-                        return;
-                    }
-                }
-                // tx drops here — closes channel, rx loop ends
-            });
+            let handles: Vec<_> = texts
+                .chunks(docs_per_worker)
+                .map(|worker_texts| {
+                    s.spawn(move || -> Result<Vec<Vec<f32>>, LibError> {
+                        let mut embeddings = Vec::with_capacity(worker_texts.len());
+                        for text in worker_texts {
+                            let embs = Self::tokenize_and_infer(
+                                session,
+                                tokenizer,
+                                std::slice::from_ref(text),
+                                max_input,
+                            )
+                            .map_err(|_| LibError::OnnxModelEvalFailed)?;
+                            embeddings.extend(embs);
+                        }
+                        Ok(embeddings)
+                    })
+                })
+                .collect();
 
-            for chunks in rx {
-                match Self::run_batch(session, &chunks) {
-                    Ok(embs) => all_embeddings.extend(embs),
-                    Err(_) => {
-                        infer_error = Some(LibError::OnnxModelEvalFailed);
+            for handle in handles {
+                match handle.join().unwrap() {
+                    Ok(embs) => ordered_results.push(embs),
+                    Err(e) => {
+                        error = Some(e);
                         break;
                     }
                 }
             }
         });
 
-        if let Some(e) = infer_error {
+        if let Some(e) = error {
             return Err(Box::new(e));
         }
-        if all_embeddings.len() != texts.len() {
-            return Err(Box::new(LibError::OnnxModelEvalFailed));
-        }
 
+        let mut all_embeddings = Vec::with_capacity(texts.len());
+        for chunk in ordered_results {
+            all_embeddings.extend(chunk);
+        }
         Ok(all_embeddings)
     }
 }
