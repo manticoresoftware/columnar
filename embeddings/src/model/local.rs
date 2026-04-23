@@ -49,35 +49,53 @@ fn intra_threads() -> usize {
         .unwrap_or(DEFAULT_INTRA_THREADS)
 }
 
-/// Thread-safe wrapper around `ort::session::Session`.
-/// ORT's C API `OrtSession::Run` is documented as thread-safe for concurrent calls.
-/// The Rust `ort` crate requires `&mut self` for `run()` which is overly conservative.
-/// This wrapper provides `run(&self)` using `UnsafeCell` to allow parallel inference
-/// on a single loaded model without duplicating weights in memory.
-struct SyncSession {
+/// Thread-safe session wrapper with platform-specific strategy:
+/// - Linux/macOS: UnsafeCell for concurrent Run() (ORT C API is thread-safe)
+/// - Windows: Mutex for serialized Run() (Windows ORT has threading issues)
+#[cfg(not(target_os = "windows"))]
+struct SessionWrapper {
     inner: std::cell::UnsafeCell<ort::session::Session>,
 }
 
-// SAFETY: ORT's OrtSession::Run is thread-safe for concurrent calls.
-// The session state is internally synchronized by ORT.
-unsafe impl Sync for SyncSession {}
-unsafe impl Send for SyncSession {}
+#[cfg(not(target_os = "windows"))]
+unsafe impl Sync for SessionWrapper {}
+#[cfg(not(target_os = "windows"))]
+unsafe impl Send for SessionWrapper {}
 
-impl SyncSession {
+#[cfg(not(target_os = "windows"))]
+impl SessionWrapper {
     fn new(session: ort::session::Session) -> Self {
         Self {
             inner: std::cell::UnsafeCell::new(session),
         }
     }
 
-    /// Run inference on this session. Safe to call from multiple threads concurrently.
-    /// SAFETY: relies on ORT's documented thread-safety of OrtSession::Run.
     fn run<'s, 'i, 'v: 'i, const N: usize>(
         &'s self,
         input_values: impl Into<ort::session::SessionInputs<'i, 'v, N>>,
     ) -> ort::Result<ort::session::SessionOutputs<'s>> {
-        // SAFETY: ORT guarantees thread-safe concurrent Run() on the same session.
         unsafe { &mut *self.inner.get() }.run(input_values)
+    }
+}
+
+#[cfg(target_os = "windows")]
+struct SessionWrapper {
+    inner: Mutex<ort::session::Session>,
+}
+
+#[cfg(target_os = "windows")]
+impl SessionWrapper {
+    fn new(session: ort::session::Session) -> Self {
+        Self {
+            inner: Mutex::new(session),
+        }
+    }
+
+    fn run<'s, 'i, 'v: 'i, const N: usize>(
+        &'s self,
+        input_values: impl Into<ort::session::SessionInputs<'i, 'v, N>>,
+    ) -> ort::Result<ort::session::SessionOutputs<'s>> {
+        self.inner.lock().unwrap().run(input_values)
     }
 }
 
@@ -777,9 +795,9 @@ impl QuantizedEmbeddingModel {
 }
 
 /// ONNX embedding model using ORT (onnxruntime) for optimized inference.
-/// Uses a single session with concurrent inference via SyncSession wrapper.
+/// Uses a single session with concurrent inference via SessionWrapper wrapper.
 pub struct OnnxEmbeddingModel {
-    session: SyncSession,
+    session: SessionWrapper,
     tokenizer: Tokenizer,
     max_input_len: usize,
     hidden_size: usize,
@@ -818,7 +836,7 @@ impl OnnxEmbeddingModel {
             .map_err(|_| LibError::ModelWeightsLoadFailed)?;
 
         Ok(Self {
-            session: SyncSession::new(session),
+            session: SessionWrapper::new(session),
             tokenizer,
             max_input_len,
             hidden_size,
@@ -827,7 +845,7 @@ impl OnnxEmbeddingModel {
 
     /// Run a single ONNX forward pass on one batch.
     fn run_batch(
-        session: &SyncSession,
+        session: &SessionWrapper,
         batch: &[Vec<u32>],
     ) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
         let batch_size = batch.len();
