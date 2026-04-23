@@ -86,14 +86,19 @@ impl SessionWrapper {
 
 #[cfg(target_os = "windows")]
 struct SessionWrapper {
-    inner: Mutex<ort::session::Session>,
+    inner: Mutex<std::cell::UnsafeCell<ort::session::Session>>,
 }
+
+#[cfg(target_os = "windows")]
+unsafe impl Sync for SessionWrapper {}
+#[cfg(target_os = "windows")]
+unsafe impl Send for SessionWrapper {}
 
 #[cfg(target_os = "windows")]
 impl SessionWrapper {
     fn new(session: ort::session::Session) -> Self {
         Self {
-            inner: Mutex::new(session),
+            inner: Mutex::new(std::cell::UnsafeCell::new(session)),
         }
     }
 
@@ -101,7 +106,9 @@ impl SessionWrapper {
         &'s self,
         input_values: impl Into<ort::session::SessionInputs<'i, 'v, N>>,
     ) -> ort::Result<ort::session::SessionOutputs<'s>> {
-        self.inner.lock().unwrap().run(input_values)
+        let guard = self.inner.lock().unwrap();
+        // SAFETY: Mutex ensures exclusive access. UnsafeCell provides &mut.
+        unsafe { &mut *guard.get() }.run(input_values)
     }
 }
 
