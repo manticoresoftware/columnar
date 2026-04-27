@@ -592,11 +592,11 @@ jobs:
         id: base_image
         run: |
           set -e
-          MANTICORE_REF="${{ needs.check_branch.outputs.ref }}"
-          if [[ "$MANTICORE_REF" == "master" ]]; then
+          # Always use test-kit-latest when the branch is master
+          if [[ "${{ steps.current_branch.outputs.branch }}" == "master" ]]; then
             IMAGE="${GHCR_REPO}:test-kit-latest"
-          elif [[ "${{ steps.check_branch_exists.outputs.exists }}" == "true" || "${{ steps.current_branch.outputs.branch }}" == "master" ]]; then
-            BRANCH="${MANTICORE_REF}"
+          elif [[ "${{ steps.check_branch_exists.outputs.exists }}" == "true" ]]; then
+            BRANCH="${{ steps.current_branch.outputs.branch }}"
             fix=$(echo "$BRANCH" | tr '/' '_')
             DOCKER_TAG=$(echo "$fix" | sed 's/[^a-zA-Z0-9_.-]//g')
             IMAGE="${GHCR_REPO}:test-kit-${DOCKER_TAG,,}"
