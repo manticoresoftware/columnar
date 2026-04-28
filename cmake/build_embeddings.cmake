@@ -50,8 +50,20 @@ function(build_embeddings_lib)
 	set(ENV{GIT_COMMIT_ID} "${GIT_COMMIT_ID}")
 	set(ENV{GIT_TIMESTAMP_ID} "${GIT_TIMESTAMP_ID}")
 
+	# Enable platform-specific BLAS acceleration for candle when available
+	set(EMBEDDINGS_CARGO_FEATURES "")
+	if(APPLE)
+		set(EMBEDDINGS_CARGO_FEATURES "--features" "accelerate")
+	elseif(UNIX)
+		# MKL provides multi-threaded BLAS on Linux; skip if not available
+		execute_process(COMMAND pkg-config --exists mkl-dynamic-lp64-seq RESULT_VARIABLE MKL_FOUND OUTPUT_QUIET ERROR_QUIET)
+		if(MKL_FOUND EQUAL 0)
+			set(EMBEDDINGS_CARGO_FEATURES "--features" "mkl")
+		endif()
+	endif()
+
 	execute_process (
-			COMMAND cargo build --manifest-path ${CMAKE_SOURCE_DIR}/embeddings/Cargo.toml --lib --release --target-dir ${CMAKE_CURRENT_BINARY_DIR}/embeddings
+			COMMAND cargo build --manifest-path ${CMAKE_SOURCE_DIR}/embeddings/Cargo.toml --lib --release ${EMBEDDINGS_CARGO_FEATURES} --target-dir ${CMAKE_CURRENT_BINARY_DIR}/embeddings
 			RESULT_VARIABLE CMD_RESULT
 	)
 

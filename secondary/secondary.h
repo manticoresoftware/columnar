@@ -38,7 +38,7 @@ namespace common
 namespace SI
 {
 
-static const int LIB_VERSION = 19;
+static const int LIB_VERSION = 20;
 static const uint32_t STORAGE_VERSION = 9;
 
 struct IndexAttrInfo_t
@@ -76,6 +76,8 @@ public:
 	virtual void		ColumnUpdated ( const char * sName ) = 0;
 	virtual void		GetAttrInfo ( std::vector<IndexAttrInfo_t> & dAttrs ) const = 0;
 	virtual void		ClearCache() = 0;
+	virtual const std::string & GetFilename() const = 0;
+	virtual void		UpdateFilename ( const std::string & sFile ) = 0;
 };
 
 class Builder_i;

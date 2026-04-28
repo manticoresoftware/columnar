@@ -91,6 +91,8 @@ public:
 	void		ColumnUpdated ( const char * sName ) override;
 	void		GetAttrInfo ( std::vector<IndexAttrInfo_t> & dAttrs ) const override;
 	void		ClearCache() override;
+	const std::string & GetFilename() const override;
+	void		UpdateFilename ( const std::string & sFile ) override;
 
 private:
 	Settings_t	m_tSettings;
@@ -232,6 +234,18 @@ bool SecondaryIndex_c::Setup ( const std::string & sFile, std::string & sError )
 	}
 
 	return true;
+}
+
+
+const std::string & SecondaryIndex_c::GetFilename() const
+{
+	return m_sFileName;
+}
+
+
+void SecondaryIndex_c::UpdateFilename ( const std::string & sFile )
+{
+	m_sFileName = sFile;
 }
 
 

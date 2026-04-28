@@ -119,6 +119,6 @@ mod tests {
         let result = pre_truncate_text(&cyrillic, 256);
         assert!(result.len() <= 256 * 8);
         // Must be valid UTF-8 (wouldn't compile otherwise, but ensure no panic)
-        assert!(result.len() % 2 == 0); // Б is 2 bytes
+        assert!(result.len().is_multiple_of(2)); // Б is 2 bytes
     }
 }
