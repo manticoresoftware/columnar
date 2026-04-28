@@ -385,7 +385,8 @@ int     CalcNumBits ( uint64_t uNumber );
 bool    CopySingleFile ( const std::string & sSource, const std::string & sDest, std::string & sError, int iMode, size_t tBufferSize=1048576 );
 bool	FloatEqual ( float fA, float fB );
 
-FORCE_INLINE float VecCalcNorm ( const Span_T<float> & dData )
+template <typename T>
+FORCE_INLINE float VecCalcNorm ( const T & dData )
 {
 	size_t uSize = dData.size();
 	size_t i = 0;
@@ -417,7 +418,8 @@ FORCE_INLINE float VecCalcNorm ( const Span_T<float> & dData )
 	return sqrtf(fNorm);
 }
 
-FORCE_INLINE float VecNormalize ( Span_T<float> & dData )
+template <typename T>
+FORCE_INLINE float VecNormalize ( T & dData )
 {
 	float fNorm = VecCalcNorm(dData);
 	float fDiv = 1.0f / (fNorm + 1e-30f);
