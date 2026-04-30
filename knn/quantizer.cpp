@@ -223,8 +223,8 @@ class BinaryQuantizer_c
 public:
 			BinaryQuantizer_c ( int iDim, HNSWSimilarity_e eSimilarity );
 
-	void	Quantize1Bit ( const Span_T<float> & dVector, const std::vector<float> & dCentroid, std::vector<uint8_t> & dResult );
-	void	Quantize4Bit ( const Span_T<float> & dVector, const std::vector<float> & dCentroid, std::vector<uint8_t> & dResult );
+	void	Quantize1Bit ( const Span_T<float> & dVector, const std::vector<float> & dCentroid, std::vector<uint8_t> & dResult ) const;
+	void	Quantize4Bit ( const Span_T<float> & dVector, const std::vector<float> & dCentroid, std::vector<uint8_t> & dResult ) const;
 
 private:
 	size_t				m_uDim = 0;
@@ -232,21 +232,18 @@ private:
 	HNSWSimilarity_e	m_eSimilarity = HNSWSimilarity_e::COSINE;
 	float				m_fSqrtDim = 0.0f;
 
-	SpanResizeable_T<float>		m_dVecMinusCentroid;
-	SpanResizeable_T<uint8_t>	m_dQuantized;
-
 	static void					Pack ( const Span_T<float> & dVector, Span_T<uint8_t> & dPacked );
-	FORCE_INLINE static int		Quantize ( const Span_T<float> & dVector, float fMin, float fRange, SpanResizeable_T<uint8_t> & dQuantized );
+	FORCE_INLINE static int		Quantize ( const Span_T<float> & dVector, float fMin, float fRange, std::vector<uint8_t> & dQuantized );
 #if defined(USE_AVX2) || defined(USE_AVX512)
 	FORCE_INLINE static void	TransposeAVX ( const Span_T<uint8_t> & dQuantized, size_t uDim, Span_T<uint8_t> & dTransposed );
 #endif
 	FORCE_INLINE static void	Transpose ( const Span_T<uint8_t> & dQuantized, size_t uDim, Span_T<uint8_t> & dTransposed );
 
 	float					ComputeQuality ( int iOriginalLength, const Span_T<float> & dVecMinusCentroidNormalized, const Span_T<uint8_t> & dPacked ) const;
-	float					QuantizeVecL2 ( const Span_T<float> & dVector, const std::vector<float> & dCentroid, Span_T<uint8_t> & dResult );
-	Binary1BitFactorsIP_t	QuantizeVecIP ( const Span_T<float> & dVector, const std::vector<float> & dCentroid, Span_T<uint8_t> & dResult );
+	float					QuantizeVecL2 ( const Span_T<float> & dVector, const std::vector<float> & dCentroid, Span_T<uint8_t> & dResult ) const;
+	Binary1BitFactorsIP_t	QuantizeVecIP ( const Span_T<float> & dVector, const std::vector<float> & dCentroid, Span_T<uint8_t> & dResult ) const;
 
-	template <typename T> FORCE_INLINE void PadToDim ( T & dVec )
+	template <typename T> FORCE_INLINE void PadToDim ( T & dVec ) const
 	{
 		if ( dVec.size() < m_uDimPadded )
 			dVec.resize ( m_uDimPadded, 0 );
@@ -303,7 +300,7 @@ void BinaryQuantizer_c::Pack ( const Span_T<float> & dVector, Span_T<uint8_t> & 
 }
 
 
-int BinaryQuantizer_c::Quantize ( const Span_T<float> & dVector, float fMin, float fRange, SpanResizeable_T<uint8_t> & dQuantized )
+int BinaryQuantizer_c::Quantize ( const Span_T<float> & dVector, float fMin, float fRange, std::vector<uint8_t> & dQuantized )
 {
 	dQuantized.resize ( dVector.size() );
 
@@ -370,49 +367,49 @@ float BinaryQuantizer_c::ComputeQuality ( int iOriginalLength, const Span_T<floa
 }
 
 
-float BinaryQuantizer_c::QuantizeVecL2 ( const Span_T<float> & dVector, const std::vector<float> & dCentroid, Span_T<uint8_t> & dResult )
+float BinaryQuantizer_c::QuantizeVecL2 ( const Span_T<float> & dVector, const std::vector<float> & dCentroid, Span_T<uint8_t> & dResult ) const
 {
-	m_dVecMinusCentroid.resize ( dVector.size() );
-	for ( size_t i = 0; i < m_dVecMinusCentroid.size(); i++ )
-		m_dVecMinusCentroid[i] = dVector[i] - dCentroid[i];
+	std::vector<float> dVecMinusCentroid ( dVector.size() );
+	for ( size_t i = 0; i < dVecMinusCentroid.size(); i++ )
+		dVecMinusCentroid[i] = dVector[i] - dCentroid[i];
 
-	float fNorm = VecCalcNorm(m_dVecMinusCentroid);
-	PadToDim(m_dVecMinusCentroid);
-	Pack ( { m_dVecMinusCentroid.data(), dVector.size() }, dResult );
-	m_dVecMinusCentroid.resize ( dVector.size() );
+	float fNorm = VecCalcNorm(dVecMinusCentroid);
+	PadToDim(dVecMinusCentroid);
+	Pack ( { dVecMinusCentroid.data(), dVector.size() }, dResult );
+	dVecMinusCentroid.resize ( dVector.size() );
 
-	for ( float & i : m_dVecMinusCentroid )
+	for ( float & i : dVecMinusCentroid )
 		i = std::abs(i) / m_fSqrtDim;
 
-	float fNormalized = std::accumulate ( m_dVecMinusCentroid.begin (), m_dVecMinusCentroid.end (), 0.0f );
+	float fNormalized = std::accumulate ( dVecMinusCentroid.begin (), dVecMinusCentroid.end (), 0.0f );
 	fNormalized /= fNorm;
 	return std::isfinite(fNormalized) ? fNormalized : 0.8f;
 }
 
 
-Binary1BitFactorsIP_t BinaryQuantizer_c::QuantizeVecIP ( const Span_T<float> & dVector, const std::vector<float> & dCentroid, Span_T<uint8_t> & dResult )
+Binary1BitFactorsIP_t BinaryQuantizer_c::QuantizeVecIP ( const Span_T<float> & dVector, const std::vector<float> & dCentroid, Span_T<uint8_t> & dResult ) const
 {
 	float fVecDotCentroid = 0.0f;
-	m_dVecMinusCentroid.resize ( dVector.size() );
+	std::vector<float> dVecMinusCentroid ( dVector.size() );
 	for ( size_t i = 0; i < dVector.size(); i++ )
 	{
 		fVecDotCentroid += dVector[i]*dCentroid[i];
-		m_dVecMinusCentroid[i] = dVector[i] - dCentroid[i];
+		dVecMinusCentroid[i] = dVector[i] - dCentroid[i];
 	}
 
-	float fVecMinusCentroidNorm = VecCalcNorm(m_dVecMinusCentroid);
-	PadToDim(m_dVecMinusCentroid);
-	Pack ( { m_dVecMinusCentroid.data(), dVector.size() }, dResult );
+	float fVecMinusCentroidNorm = VecCalcNorm(dVecMinusCentroid);
+	PadToDim(dVecMinusCentroid);
+	Pack ( { dVecMinusCentroid.data(), dVector.size() }, dResult );
 
-	for ( float & i : m_dVecMinusCentroid )
+	for ( float & i : dVecMinusCentroid )
 		i /= fVecMinusCentroidNorm;
 
-	float fQuality = ComputeQuality ( dVector.size(), m_dVecMinusCentroid, dResult );
+	float fQuality = ComputeQuality ( dVector.size(), dVecMinusCentroid, dResult );
 	return { fQuality, fVecMinusCentroidNorm, fVecDotCentroid, (float)PopCnt(dResult) };
 }
 
 
-void BinaryQuantizer_c::Quantize1Bit ( const Span_T<float> & dVector, const std::vector<float> & dCentroid, std::vector<uint8_t> & dResult )
+void BinaryQuantizer_c::Quantize1Bit ( const Span_T<float> & dVector, const std::vector<float> & dCentroid, std::vector<uint8_t> & dResult ) const
 {
 	size_t uDataSize = ( ( dVector.size()+7 ) >> 3 );
 	size_t uHeaderSize = m_eSimilarity==HNSWSimilarity_e::L2 ? sizeof(Binary1BitFactorsL2_t) : sizeof(Binary1BitFactorsIP_t);
@@ -588,11 +585,11 @@ void BinaryQuantizer_c::Transpose ( const Span_T<uint8_t> & dQuantized, size_t u
 }
 
 
-void BinaryQuantizer_c::Quantize4Bit ( const Span_T<float> & dVector, const std::vector<float> & dCentroid, std::vector<uint8_t> & dResult )
+void BinaryQuantizer_c::Quantize4Bit ( const Span_T<float> & dVector, const std::vector<float> & dCentroid, std::vector<uint8_t> & dResult ) const
 {
 	assert ( dVector.size()==dCentroid.size() );
 
-	m_dVecMinusCentroid.resize ( dVector.size() );
+	std::vector<float> dVecMinusCentroid ( dVector.size() );
 
 	Binary4BitFactors_t tFactors = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
 
@@ -600,21 +597,22 @@ void BinaryQuantizer_c::Quantize4Bit ( const Span_T<float> & dVector, const std:
 	{
 		float fDiff = dVector[i] - dCentroid[i];
 		tFactors.m_fDistanceToCentroidSq += fDiff*fDiff;
-		m_dVecMinusCentroid[i] = fDiff;
+		dVecMinusCentroid[i] = fDiff;
 	}
 
 	if ( m_eSimilarity!=HNSWSimilarity_e::L2 )
 	{
-		tFactors.m_fVecMinusCentroidNorm = VecNormalize(m_dVecMinusCentroid);
+		tFactors.m_fVecMinusCentroidNorm = VecNormalize(dVecMinusCentroid);
 		tFactors.m_fVecDotCentroid = VecDot ( dVector, dCentroid );
 	}
 
 	float fMax;
-	VecMinMax ( m_dVecMinusCentroid, tFactors.m_fMin, fMax );
+	VecMinMax ( dVecMinusCentroid, tFactors.m_fMin, fMax );
 	tFactors.m_fRange = ( fMax - tFactors.m_fMin ) / 15.0f;
 
-	tFactors.m_fQuantizedSum = (float)Quantize ( m_dVecMinusCentroid, tFactors.m_fMin, tFactors.m_fRange, m_dQuantized );
-	PadToDim(m_dQuantized);
+	std::vector<uint8_t> dQuantized;
+	tFactors.m_fQuantizedSum = (float)Quantize ( dVecMinusCentroid, tFactors.m_fMin, tFactors.m_fRange, dQuantized );
+	PadToDim(dQuantized);
 
 	size_t uDataSize = dVector.size() >> 1;
 	size_t uHeaderSize = sizeof(float)*6;
@@ -626,13 +624,13 @@ void BinaryQuantizer_c::Quantize4Bit ( const Span_T<float> & dVector, const std:
 	Span_T<uint8_t> dTransposed ( (uint8_t*)pHeader, uDataSize );
 
 	if ( uDataSize & 15 )
-		Transpose ( m_dQuantized, m_uDim, dTransposed );
+		Transpose ( dQuantized, m_uDim, dTransposed );
 	else
 	{
 #if defined(USE_AVX2) || defined(USE_AVX512)
-		TransposeAVX ( m_dQuantized, m_uDim, dTransposed );
+		TransposeAVX ( dQuantized, m_uDim, dTransposed );
 #else
-		Transpose ( m_dQuantized, m_uDim, dTransposed );
+		Transpose ( dQuantized, m_uDim, dTransposed );
 #endif
 	}
 }
