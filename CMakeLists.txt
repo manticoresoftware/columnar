@@ -136,14 +136,9 @@ if (API_ONLY)
 	# below is for support find_package
 	include ( CMakePackageConfigHelpers )
 
-	set ( pkgconfin "${CMAKE_CURRENT_BINARY_DIR}/columnar-config.cmake.in" )
-	file ( WRITE "${pkgconfin}" "@PACKAGE_INIT@
-
-include(\"\${CMAKE_CURRENT_LIST_DIR}/columnar-targets.cmake\")" )
-
-	configure_package_config_file ( "${pkgconfin}"
-			"${CMAKE_CURRENT_BINARY_DIR}/columnar-config.cmake" INSTALL_DESTINATION "${API_CMAKE_DIR}" )
-	install ( FILES "${CMAKE_CURRENT_BINARY_DIR}/columnar-config.cmake" DESTINATION "${API_CMAKE_DIR}" )
+		set ( pkgconf "${CMAKE_CURRENT_BINARY_DIR}/columnar-config.cmake" )
+		file ( WRITE "${pkgconf}" "include(\"\${CMAKE_CURRENT_LIST_DIR}/columnar-targets.cmake\")\n" )
+		install ( FILES "${pkgconf}" DESTINATION "${API_CMAKE_DIR}" )
 
 	write_basic_package_version_file ( "columnar-config-version.cmake" VERSION "${API_VER}.${SI_API_VER}.${KNN_API_VER}" COMPATIBILITY ExactVersion ARCH_INDEPENDENT )
 	install ( FILES "${CMAKE_CURRENT_BINARY_DIR}/columnar-config-version.cmake" DESTINATION "${API_CMAKE_DIR}" )
