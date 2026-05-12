@@ -26,6 +26,14 @@ on:
         required: false
         type: boolean
         default: false
+      CTEST_REGEX_IDS:
+        required: false
+        type: string
+        default: ""
+      FAIL_FAST:
+        required: false
+        type: boolean
+        default: true
 
 jobs:
   test_windows:
@@ -37,8 +45,6 @@ jobs:
       CTEST_START: ${{ inputs.CTEST_START }}
       CTEST_END: ${{ inputs.CTEST_END }}
       MANTICORE_LOCATOR: ${{ inputs.MANTICORE_LOCATOR }}
-      # The following is useful to test a specific test, just uncomment it, no need to disable CTEST_START/END
-      # CTEST_REGEX: test_234
       NO_BUILD: 1
     steps:
       - name: Checkout repository # We have to checkout to access .github/workflows/ in further steps
@@ -188,6 +194,47 @@ jobs:
             Write-Host "Directory D:\a\columnar\columnar\build\columnar\Debug\ does not exist"
           }
 
+      - name: Configure focused CTest run
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $ids = "${{ inputs.CTEST_REGEX_IDS }}"
+          if (-not [string]::IsNullOrWhiteSpace($ids) -and $ids.Trim().ToLowerInvariant() -ne "all") {
+            $tests = $ids -split "[,\s]+" | Where-Object { $_ }
+            $regex = ($tests | ForEach-Object { "col_$_" }) -join "|"
+            "CTEST_REGEX=$regex" >> $env:GITHUB_ENV
+            Write-Host "CTEST_REGEX=$regex"
+          } else {
+            Write-Host "CTEST_REGEX is not set; running CTEST_START=$env:CTEST_START CTEST_END=$env:CTEST_END"
+          }
+
+          "SEARCHD_CLI_EXTRA=--logdebug" >> $env:GITHUB_ENV
+
+          $citest = Get-Content "cmake\citest.cmake" -Raw
+          $citest = $citest -replace "set \( RETRIES 5 \)", "set ( RETRIES 1 )"
+
+          $failFast = "${{ inputs.FAIL_FAST }}"
+          if ($failFast -eq "true" -and -not $citest.Contains("STOP_ON_FAILURE")) {
+            $citest = $citest -replace "REPEAT UNTIL_PASS:\$\{RETRIES\}", "REPEAT UNTIL_PASS:`${RETRIES} STOP_ON_FAILURE"
+          }
+
+          Set-Content "cmake\citest.cmake" $citest -Encoding UTF8
+
+      - name: Enable Windows crash dumps
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Continue"
+          $dumpDir = Join-Path (Resolve-Path "build").Path "dumps"
+          New-Item -ItemType Directory -Force $dumpDir | Out-Null
+
+          $key = "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps"
+          New-Item $key -Force | Out-Null
+          New-ItemProperty -Path $key -Name DumpFolder -Value $dumpDir -PropertyType ExpandString -Force | Out-Null
+          New-ItemProperty -Path $key -Name DumpCount -Value 20 -PropertyType DWord -Force | Out-Null
+          New-ItemProperty -Path $key -Name DumpType -Value 2 -PropertyType DWord -Force | Out-Null
+          Write-Host "Windows crash dumps enabled at $dumpDir"
+
       - name: 🚀 Test
         id: test
         # --timeout may be not working https://gitlab.kitware.com/cmake/cmake/-/issues/23979
@@ -211,4 +258,22 @@ jobs:
         uses: manticoresoftware/upload_artifact_with_retries@main
         with:
           name: ${{ inputs.artifact_name }}
-          path: "build/xml* build/test_*/test_*/report* build/test_*/error*.txt build/test_*/*log build/status*"
+          path: |
+            build/xml*
+            build/test_*/test_*/report*
+            build/test_*/error*.txt
+            build/test_*/*log
+            build/test_*/*.dmp
+            build/test_*/*.mdmp
+            build/status*
+            build/dumps/**
+            build/columnar/Debug/*.dll
+            build/columnar/Debug/*.pdb
+            build/secondary/Debug/*.dll
+            build/secondary/Debug/*.pdb
+            build/knn/Debug/*.dll
+            build/knn/Debug/*.pdb
+            build/_deps/manticore-build/src/Debug/*.dll
+            build/_deps/manticore-build/src/Debug/*.pdb
+            embeddings/target/release/*.dll
+            embeddings/target/release/*.pdb
