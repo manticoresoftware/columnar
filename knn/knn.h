@@ -138,7 +138,7 @@ class TextToEmbeddings_i
 public:
 	virtual			~TextToEmbeddings_i() = default;
 
-	virtual	bool	Convert ( const std::vector<std::string_view> & dTexts, std::vector<std::vector<float>> & dEmbeddings, std::string & sError ) const = 0;
+	virtual	bool	Convert ( const std::vector<std::string_view> & dTexts, std::vector<std::vector<float>> & dEmbeddings, std::string & sError, int iThreads = 0 ) const = 0;
 	virtual int		GetDims() const = 0;
 };
 
