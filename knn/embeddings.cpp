@@ -312,7 +312,7 @@ knn::EmbeddingsLib_i * LoadEmbeddingsLib ( const std::string & sLibPath, std::st
 	if ( !pLib->Load(sError) )
 		return nullptr;
 
-	const int SUPPORTED_EMBEDDINGS_LIB_VER = 3;
+	const int SUPPORTED_EMBEDDINGS_LIB_VER = 4;
 	if ( pLib->GetVersion()!=SUPPORTED_EMBEDDINGS_LIB_VER )
 	{
 		sError = util::FormatStr ( "Unsupported embeddings library version %d (expected %d)", pLib->GetVersion(), SUPPORTED_EMBEDDINGS_LIB_VER );
