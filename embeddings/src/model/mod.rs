@@ -23,7 +23,11 @@ use std::error::Error;
 use std::path::PathBuf;
 
 pub trait TextModel {
-    fn predict(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, Box<dyn Error>>;
+    /// Generate embeddings for the given texts.
+    ///
+    /// `threads` caps the number of CPU threads used during generation.
+    /// 0 means "use all available CPUs" (default).
+    fn predict(&self, texts: &[&str], threads: usize) -> Result<Vec<Vec<f32>>, Box<dyn Error>>;
     fn get_hidden_size(&self) -> usize;
     fn get_max_input_len(&self) -> usize;
     /// Validates the API key by making a minimal test request to the API.
@@ -57,12 +61,12 @@ pub enum Model {
 }
 
 impl TextModel for Model {
-    fn predict(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
+    fn predict(&self, texts: &[&str], threads: usize) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
         match self {
-            Model::OpenAI(m) => m.predict(texts),
-            Model::Voyage(m) => m.predict(texts),
-            Model::Jina(m) => m.predict(texts),
-            Model::Local(m) => m.predict(texts),
+            Model::OpenAI(m) => m.predict(texts, threads),
+            Model::Voyage(m) => m.predict(texts, threads),
+            Model::Jina(m) => m.predict(texts, threads),
+            Model::Local(m) => m.predict(texts, threads),
         }
     }
 

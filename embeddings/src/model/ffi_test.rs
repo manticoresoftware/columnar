@@ -76,7 +76,7 @@ mod tests {
                         )
                     };
                     let vec_result =
-                        TextModelWrapper::make_vect_embeddings(&wrapper, items.as_ptr(), 1);
+                        TextModelWrapper::make_vect_embeddings(&wrapper, items.as_ptr(), 1, 0);
                     assert!(vec_result.error.is_null());
                     assert_eq!(vec_result.len, 1);
                     TextModelWrapper::free_vec_result(vec_result);

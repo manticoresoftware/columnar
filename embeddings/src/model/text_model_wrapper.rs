@@ -127,6 +127,7 @@ impl TextModelWrapper {
         &self,
         texts: *const StringItem,
         count: usize,
+        threads: i32, // 0 = use all available CPUs, >0 = cap thread count
     ) -> FloatVecResult {
         let string_slice = unsafe { std::slice::from_raw_parts(texts, count) };
 
@@ -140,9 +141,11 @@ impl TextModelWrapper {
             })
             .collect();
 
+        let threads = if threads > 0 { threads as usize } else { 0 };
+
         let mut float_vec_list: Vec<FloatVec> = Vec::new();
         let model = self.as_model();
-        let embeddings_list = model.predict(&string_refs);
+        let embeddings_list = model.predict(&string_refs, threads);
         let c_error = match embeddings_list {
             Ok(embeddings_list) => {
                 for embeddings in embeddings_list.iter() {

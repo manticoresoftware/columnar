@@ -67,7 +67,11 @@ impl JinaModel {
 }
 
 impl TextModel for JinaModel {
-    fn predict(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, Box<dyn std::error::Error>> {
+    fn predict(
+        &self,
+        texts: &[&str],
+        _threads: usize,
+    ) -> Result<Vec<Vec<f32>>, Box<dyn std::error::Error>> {
         let url = self
             .api_url
             .as_deref()
@@ -308,7 +312,7 @@ impl TextModel for JinaModel {
     fn validate_api_key(&self) -> Result<(), Box<dyn std::error::Error>> {
         // Make a minimal test request with a single character to validate the API key
         // This is cheaper than a full embedding request but still validates the key
-        self.predict(&["test"])?;
+        self.predict(&["test"], 0)?;
         Ok(())
     }
 }

@@ -47,7 +47,10 @@ struct StringItem {
   uintptr_t len;
 };
 
-using MakeVectEmbeddingsFn = FloatVecResult(*)(const TextModelWrapper*, const StringItem*, uintptr_t);
+using MakeVectEmbeddingsFn = FloatVecResult(*)(const TextModelWrapper*,
+                                               const StringItem*,
+                                               uintptr_t,
+                                               int32_t);
 
 using FreeVecResultFn = void(*)(FloatVecResult);
 
