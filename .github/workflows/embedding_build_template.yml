@@ -236,10 +236,10 @@ jobs:
           # Download glibc2_17-compatible ORT static lib (avoids __isoc23_strtoll from pyke.io builds)
           ORT_VERSION="1.24.2"
           if [[ "${{ inputs.arch }}" == "aarch64" ]]; then
-            docker_image="ghcr.io/manticoresoftware/rust-min-libc:aarch64-rust1.94.1-glibc2.27-openssl1.1.1k"
+            docker_image="ghcr.io/manticoresoftware/rust-min-libc:aarch64-rust1.95.0-glibc2.27-openssl1.1.1k"
             ort_asset="onnxruntime-linux-aarch64-static_lib-${ORT_VERSION}-glibc2_17"
           else
-            docker_image="ghcr.io/manticoresoftware/rust-min-libc:amd64-rust1.94.1-glibc2.27-openssl1.1.1k"
+            docker_image="ghcr.io/manticoresoftware/rust-min-libc:amd64-rust1.95.0-glibc2.27-openssl1.1.1k"
             ort_asset="onnxruntime-linux-x64-static_lib-${ORT_VERSION}-glibc2_17"
           fi
 
@@ -402,6 +402,18 @@ jobs:
           if [ "$isoc23" -gt 0 ]; then
             echo "FAIL: Found __isoc23 symbols — ORT prebuilt has wrong glibc target"
             failed=1
+          fi
+
+          # Check MKL — when building x86_64 with --features mkl, MKL must be
+          # statically linked. intel-mkl-src 0.8.1 silently no-ops if MKL is
+          # absent from the build env, so verify the symbols actually landed.
+          if [ "${{ inputs.arch }}" = "x86_64" ]; then
+            mkl_syms=$(nm "$lib" 2>/dev/null | grep -cE 'mkl_serv_|cblas_sgemm|cblas_dgemm' || true)
+            echo "MKL static symbols: $mkl_syms"
+            if [ "$mkl_syms" -eq 0 ]; then
+              echo "FAIL: --features mkl was requested but no MKL symbols found in lib — build env is missing MKL"
+              failed=1
+            fi
           fi
 
           if [ "$failed" -eq 1 ]; then
