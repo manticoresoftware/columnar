@@ -119,7 +119,7 @@ mod tests {
 
         // Test with real API key
         let texts = vec!["test"];
-        let result = model.predict(&texts);
+        let result = model.predict(&texts, 0);
         match result {
             Ok(embeddings) => {
                 // Should have one embedding for one text
@@ -157,7 +157,7 @@ mod tests {
         let model = JinaModel::new("jina/jina-embeddings-v3", &api_key, None, None).unwrap();
 
         let empty_texts: Vec<&str> = vec![];
-        let result = model.predict(&empty_texts);
+        let result = model.predict(&empty_texts, 0);
         // Empty input should succeed with empty result
         match result {
             Ok(embeddings) => {
