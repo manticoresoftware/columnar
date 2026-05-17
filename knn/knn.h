@@ -26,7 +26,7 @@
 namespace knn
 {
 
-static const int LIB_VERSION = 13;
+static const int LIB_VERSION = 14;
 static const uint32_t STORAGE_VERSION = 3;
 
 enum class HNSWSimilarity_e
@@ -122,15 +122,24 @@ public:
 	virtual bool	ShouldUseFullscan ( const std::string & sName, int64_t iResults, int iEf, int64_t iFilterCount ) = 0;
 };
 
+// passed via SetAttr so the builder itself holds no per-row mutable state
+struct BuildContext_t
+{
+	util::SpanResizeable_T<float>	m_dNormalized;
+	std::vector<uint8_t>			m_dQuantized;
+	std::vector<uint8_t>			m_dQuantizedForQuery;	// 4-bit transposed representation, produced only by the BIT1 binary quantizer during BUILD mode
+	std::string						m_sError;
+};
+
 class Builder_i
 {
 public:
 	virtual			~Builder_i() = default;
 
 	virtual void	Train ( int iAttr, uint32_t uRowID, const util::Span_T<float> & dData ) = 0;
-	virtual bool	SetAttr ( int iAttr, uint32_t uRowID, const util::Span_T<float> & dData ) = 0;
+	virtual bool	SetAttr ( int iAttr, uint32_t uRowID, const util::Span_T<float> & dData, BuildContext_t & tBuildCtx ) = 0;
+	virtual bool	FinalizeTraining ( std::string & sError ) = 0;
 	virtual bool	Save ( const std::string & sFilename, size_t tBufferSize, std::string & sError ) = 0;
-	virtual const std::string & GetError() const = 0;
 };
 
 class TextToEmbeddings_i
