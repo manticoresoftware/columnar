@@ -5,7 +5,7 @@ use std::{ffi::c_void, ptr};
 /// Sentinel written at offset 0 of every live model handle. Lets FFI entry
 /// points detect garbage, null, or freed pointers handed in by the C++ caller
 /// and return a clean error instead of dereferencing into UB.
-const MODEL_MAGIC: u64 = 0xC0FFEE_5EE7_BEEF_DEAD;
+const MODEL_MAGIC: u64 = 0xC0FF_EE5E_E7BE_EFDE;
 
 /// Sentinel written over MODEL_MAGIC in `Drop` before the inner fields are
 /// destroyed. A concurrent reader racing with `free_model_result` either sees
