@@ -401,9 +401,16 @@ pub fn load_tokenizer(path: &PathBuf) -> Result<Tokenizer, Box<dyn Error>> {
     Tokenizer::from_bytes(&bytes).map_err(|_| LibError::ModelTokenizerLoadFailed.into())
 }
 
-/// BERT-style local embedding model
+/// BERT-style local embedding model.
+///
+/// `model` is `Arc<Mutex<BertModel>>` to match T5/Causal/Quantized — candle's
+/// BertModel takes `&self` on forward but concurrent forward calls produced
+/// flaky crashes in the daemon when multiple INSERTs / queries hit the same
+/// model in parallel. Serialising forward here mirrors the other model types'
+/// existing posture and trades nothing measurable on perf (uncontended Mutex
+/// is sub-100ns; a BERT forward is six orders of magnitude more).
 pub struct BertEmbeddingModel {
-    model: BertModel,
+    model: Arc<Mutex<BertModel>>,
     tokenizer: Tokenizer,
     max_input_len: usize,
     hidden_size: usize,
@@ -440,7 +447,7 @@ impl BertEmbeddingModel {
         let model = BertModel::load(vb, &config).map_err(|_| LibError::ModelLoadFailed)?;
 
         Ok(Self {
-            model,
+            model: Arc::new(Mutex::new(model)),
             tokenizer: tokenizer.clone(),
             max_input_len,
             hidden_size,
@@ -461,7 +468,10 @@ impl BertEmbeddingModel {
                 let chunk = &batch[0];
                 let token_ids = Tensor::new(chunk.as_slice(), &self.device)?.unsqueeze(0)?;
                 let token_type_ids = token_ids.zeros_like()?;
-                let emb = self.model.forward(&token_ids, &token_type_ids, None)?;
+                let emb = {
+                    let model = self.model.lock().unwrap();
+                    model.forward(&token_ids, &token_type_ids, None)?
+                };
                 let seq_len = token_ids.dims()[1];
                 let summed = emb.sum(1)?.to_dtype(DType::F32)?;
                 let divisor = Tensor::new(seq_len as f32, &self.device)?;
@@ -491,9 +501,10 @@ impl BertEmbeddingModel {
                 Tensor::from_vec(flat_mask.clone(), (batch_size, max_len), &self.device)?;
             let token_type_ids = token_ids.zeros_like()?;
 
-            let emb = self
-                .model
-                .forward(&token_ids, &token_type_ids, Some(&attention_mask))?;
+            let emb = {
+                let model = self.model.lock().unwrap();
+                model.forward(&token_ids, &token_type_ids, Some(&attention_mask))?
+            };
             // emb: [batch_size, max_len, hidden_size]
 
             // Attention-mask-aware mean pooling: sum(emb * mask) / sum(mask)
@@ -1190,7 +1201,10 @@ impl TextModel for LocalModel {
 
                     let token_ids = Tensor::new(ids, &m.device)?.unsqueeze(0)?;
                     let token_type_ids = token_ids.zeros_like()?;
-                    let emb = m.model.forward(&token_ids, &token_type_ids, None)?;
+                    let emb = {
+                        let model = m.model.lock().unwrap();
+                        model.forward(&token_ids, &token_type_ids, None)?
+                    };
                     let seq_len = token_ids.dims()[1];
                     let summed = emb.sum(1)?.to_dtype(DType::F32)?;
                     let divisor = Tensor::new(seq_len as f32, &m.device)?;
