@@ -84,6 +84,21 @@ ctest_start ( "Continuous" )
 #ctest_update ()
 ctest_configure ()
 
+# Wire up the CTest resource spec so parallel tests get unique data dirs.
+# Without this, every test in a PARALLEL_LEVEL > 1 run shares the same
+# `data/data0/` slot (settings.inc falls through to the default when
+# CTEST_RESOURCE_GROUP_0_DATADIR is unset), and two tests creating tables
+# with the same name race on the same directory — surfacing as flaky
+# "directory is not empty" errors that have nothing to do with the daemon.
+# The spec file lives in the manticoresearch sources fetched into _deps.
+set ( RESOURCE_SPEC "${CTEST_BINARY_DIRECTORY}/_deps/manticore-src/misc/ctest/ubertests/ubertests_docker_image/resource.json" )
+if (EXISTS "${RESOURCE_SPEC}")
+	set ( CTEST_RESOURCE_SPEC_FILE "${RESOURCE_SPEC}" )
+	message ( STATUS "Using CTest resource spec: ${CTEST_RESOURCE_SPEC_FILE}" )
+else ()
+	message ( WARNING "CTest resource spec not found at ${RESOURCE_SPEC} — parallel tests may race on shared data dirs" )
+endif ()
+
 if (NOT NO_BUILD)
 	include ( ProcessorCount )
 	ProcessorCount ( N )
