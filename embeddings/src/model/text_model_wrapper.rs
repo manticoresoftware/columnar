@@ -2,6 +2,46 @@ use crate::model::{create_model, Model, ModelOptions, TextModel};
 use std::os::raw::c_char;
 use std::{ffi::c_void, ptr};
 
+/// Sentinel written at offset 0 of every live model handle. Lets FFI entry
+/// points detect garbage, null, or freed pointers handed in by the C++ caller
+/// and return a clean error instead of dereferencing into UB.
+const MODEL_MAGIC: u64 = 0xC0FFEE_5EE7_BEEF_DEAD;
+
+/// Sentinel written over MODEL_MAGIC in `Drop` before the inner fields are
+/// destroyed. A concurrent reader racing with `free_model_result` either sees
+/// MAGIC (and proceeds safely) or DEAD (and gets a clean error).
+const MODEL_DEAD: u64 = 0xDEAD_DEAD_DEAD_DEAD;
+
+/// Heap-allocated wrapper that the FFI hands to C++ as `*mut c_void`. The C++
+/// side stores the raw pointer and passes it back into every call; we use the
+/// `magic` field to validate that the pointer still references a live handle.
+///
+/// Layout note: `#[repr(C)]` and `magic` as the first field guarantee that the
+/// first 8 bytes of the allocation are the canary, regardless of what the inner
+/// `Model` enum's discriminant looks like.
+#[repr(C)]
+struct ModelHandle {
+    magic: u64,
+    inner: Model,
+}
+
+impl ModelHandle {
+    fn new(inner: Model) -> Self {
+        Self {
+            magic: MODEL_MAGIC,
+            inner,
+        }
+    }
+}
+
+impl Drop for ModelHandle {
+    fn drop(&mut self) {
+        // Tombstone before the inner Model is dropped so any concurrent FFI
+        // reader sees MODEL_DEAD rather than MODEL_MAGIC.
+        self.magic = MODEL_DEAD;
+    }
+}
+
 /// cbindgen:field-names=[m_pModel, m_szError]
 #[repr(C)]
 pub struct TextModelResult {
@@ -94,7 +134,7 @@ impl TextModelWrapper {
 
         match create_model(options) {
             Ok(model) => TextModelResult {
-                model: Box::into_raw(Box::new(model)) as *mut c_void,
+                model: Box::into_raw(Box::new(ModelHandle::new(model))) as *mut c_void,
                 error: ptr::null_mut(),
             },
             Err(e) => {
@@ -110,7 +150,9 @@ impl TextModelWrapper {
     pub extern "C" fn free_model_result(res: TextModelResult) {
         unsafe {
             if !res.model.is_null() {
-                drop(Box::from_raw(res.model as *mut Model));
+                // Drop runs ModelHandle::drop first (tombstones magic to
+                // MODEL_DEAD), then destroys the inner Model.
+                drop(Box::from_raw(res.model as *mut ModelHandle));
             }
 
             if !res.error.is_null() {
@@ -119,8 +161,25 @@ impl TextModelWrapper {
         }
     }
 
-    fn as_model(&self) -> &Model {
-        unsafe { &*(self.0 as *const Model) }
+    /// Validate the handle pointer before dereferencing. Returns a static error
+    /// string the caller can surface to C++ instead of crashing on a bad ptr.
+    /// Catches null, double-free / freed (MODEL_DEAD), and garbage handles.
+    /// Cannot catch a free that happens mid-call — that requires shared
+    /// ownership on the C++ side and is out of scope here.
+    fn as_model(&self) -> Result<&Model, &'static str> {
+        if self.0.is_null() {
+            return Err("embeddings: model handle is null");
+        }
+        // Read the magic without forming a &ModelHandle reference first — that
+        // would already be UB if the pointer is invalid. ptr::read of an
+        // 8-byte aligned u64 is a single atomic load on every target Manticore
+        // ships on, so this is safe against a concurrent Drop tombstone write.
+        let magic = unsafe { std::ptr::read(self.0 as *const u64) };
+        match magic {
+            MODEL_MAGIC => Ok(unsafe { &(*(self.0 as *const ModelHandle)).inner }),
+            MODEL_DEAD => Err("embeddings: model has been freed (use-after-free)"),
+            _ => Err("embeddings: model handle is corrupted (invalid magic)"),
+        }
     }
 
     pub extern "C" fn make_vect_embeddings(
@@ -128,6 +187,19 @@ impl TextModelWrapper {
         texts: *const StringItem,
         count: usize,
     ) -> FloatVecResult {
+        let model = match self.as_model() {
+            Ok(m) => m,
+            Err(msg) => {
+                let c_error = std::ffi::CString::new(msg).unwrap();
+                return FloatVecResult {
+                    error: c_error.into_raw(),
+                    ptr: ptr::null(),
+                    len: 0,
+                    cap: 0,
+                };
+            }
+        };
+
         let string_slice = unsafe { std::slice::from_raw_parts(texts, count) };
 
         // Zero-copy: borrow C++ strings directly as &str.
@@ -141,7 +213,6 @@ impl TextModelWrapper {
             .collect();
 
         let mut float_vec_list: Vec<FloatVec> = Vec::new();
-        let model = self.as_model();
         let embeddings_list = model.predict(&string_refs);
         let c_error = match embeddings_list {
             Ok(embeddings_list) => {
@@ -198,18 +269,29 @@ impl TextModelWrapper {
     }
 
     pub extern "C" fn get_hidden_size(&self) -> usize {
-        self.as_model().get_hidden_size()
+        // No error channel here; return 0 on a bad handle so the C++ caller
+        // sees an obviously-wrong dimension instead of UB. The handle is
+        // already validated before any real work, so a 0 here means the C++
+        // side handed us an invalid pointer.
+        self.as_model().map(|m| m.get_hidden_size()).unwrap_or(0)
     }
 
     pub extern "C" fn get_max_input_len(&self) -> usize {
-        self.as_model().get_max_input_len()
+        self.as_model().map(|m| m.get_max_input_len()).unwrap_or(0)
     }
 
     /// Validates the API key by making a minimal test request to the API.
     /// Returns null on success, or an error message string on failure.
     /// The caller is responsible for freeing the error string using free_string().
     pub extern "C" fn validate_api_key(&self) -> *mut c_char {
-        let model = self.as_model();
+        let model = match self.as_model() {
+            Ok(m) => m,
+            Err(msg) => {
+                return std::ffi::CString::new(msg)
+                    .map(|c| c.into_raw())
+                    .unwrap_or(ptr::null_mut());
+            }
+        };
         match model.validate_api_key() {
             Ok(()) => ptr::null_mut(),
             Err(e) => {
