@@ -36,7 +36,7 @@ name = "manticore_knn_embeddings"
 crate-type = ["cdylib"]
 
 [profile.release]
-opt-level = 3
+opt-level = "z"
 codegen-units = 1
 lto = true
 strip = "debuginfo"
