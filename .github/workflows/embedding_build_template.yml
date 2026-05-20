@@ -298,6 +298,9 @@ jobs:
         env:
           GIT_COMMIT_ID: ${{ steps.git_meta.outputs.commit }}
           GIT_TIMESTAMP_ID: ${{ steps.git_meta.outputs.timestamp }}
+          # Windows: opt for speed (opt-level=3) since size is less critical there;
+          # other targets keep Cargo.toml's opt-level=z for smaller binaries.
+          CARGO_PROFILE_RELEASE_OPT_LEVEL: ${{ inputs.distr == 'windows' && '3' || 'z' }}
 
       - run: | 
           mkdir build
