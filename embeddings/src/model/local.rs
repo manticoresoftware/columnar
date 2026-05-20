@@ -401,9 +401,16 @@ pub fn load_tokenizer(path: &PathBuf) -> Result<Tokenizer, Box<dyn Error>> {
     Tokenizer::from_bytes(&bytes).map_err(|_| LibError::ModelTokenizerLoadFailed.into())
 }
 
-/// BERT-style local embedding model
+/// BERT-style local embedding model.
+///
+/// `model` is `Arc<Mutex<BertModel>>` to match T5/Causal/Quantized — candle's
+/// BertModel takes `&self` on forward but concurrent forward calls produced
+/// flaky crashes in the daemon when multiple INSERTs / queries hit the same
+/// model in parallel. Serialising forward here mirrors the other model types'
+/// existing posture and trades nothing measurable on perf (uncontended Mutex
+/// is sub-100ns; a BERT forward is six orders of magnitude more).
 pub struct BertEmbeddingModel {
-    model: BertModel,
+    model: Arc<Mutex<BertModel>>,
     tokenizer: Tokenizer,
     max_input_len: usize,
     hidden_size: usize,
@@ -440,7 +447,7 @@ impl BertEmbeddingModel {
         let model = BertModel::load(vb, &config).map_err(|_| LibError::ModelLoadFailed)?;
 
         Ok(Self {
-            model,
+            model: Arc::new(Mutex::new(model)),
             tokenizer: tokenizer.clone(),
             max_input_len,
             hidden_size,
@@ -454,6 +461,27 @@ impl BertEmbeddingModel {
         let mut all_embeddings = Vec::with_capacity(chunks.len());
 
         for batch in chunks.chunks(batch_size()) {
+            // Fast path for batch-of-1 (daemon's SELECT KNN(text,...) hot path):
+            // no padding needed, so skip the attention_mask multiply and use a
+            // plain sum/scalar-div mean pool. Matches pre-975b294 behavior.
+            if batch.len() == 1 {
+                let chunk = &batch[0];
+                let token_ids = Tensor::new(chunk.as_slice(), &self.device)?.unsqueeze(0)?;
+                let token_type_ids = token_ids.zeros_like()?;
+                let emb = {
+                    let model = self.model.lock().unwrap();
+                    model.forward(&token_ids, &token_type_ids, None)?
+                };
+                let seq_len = token_ids.dims()[1];
+                let summed = emb.sum(1)?.to_dtype(DType::F32)?;
+                let divisor = Tensor::new(seq_len as f32, &self.device)?;
+                let mean_emb = summed.broadcast_div(&divisor)?;
+                let mut emb_vec: Vec<f32> = mean_emb.get(0)?.to_vec1::<f32>()?;
+                normalize(&mut emb_vec);
+                all_embeddings.push(emb_vec);
+                continue;
+            }
+
             let batch_size = batch.len();
             let max_len = batch.iter().map(|c| c.len()).max().unwrap_or(0);
 
@@ -473,9 +501,10 @@ impl BertEmbeddingModel {
                 Tensor::from_vec(flat_mask.clone(), (batch_size, max_len), &self.device)?;
             let token_type_ids = token_ids.zeros_like()?;
 
-            let emb = self
-                .model
-                .forward(&token_ids, &token_type_ids, Some(&attention_mask))?;
+            let emb = {
+                let model = self.model.lock().unwrap();
+                model.forward(&token_ids, &token_type_ids, Some(&attention_mask))?
+            };
             // emb: [batch_size, max_len, hidden_size]
 
             // Attention-mask-aware mean pooling: sum(emb * mask) / sum(mask)
@@ -1119,15 +1148,22 @@ impl LocalModel {
             .map(|t| pre_truncate_text(t, max_input_len))
             .collect();
 
-        // Enable parallel tokenization via rayon (once)
-        static INIT_PARALLEL: std::sync::Once = std::sync::Once::new();
-        INIT_PARALLEL.call_once(|| {
-            std::env::set_var("TOKENIZERS_PARALLELISM", "true");
-        });
-
-        let encodings = tokenizer
-            .encode_batch(texts, true)
-            .map_err(|_| LibError::ModelTokenizerEncodeFailed)?;
+        // Adaptive tokenization: encode_batch fans out via rayon, which is pure
+        // overhead for small batches. The daemon's SELECT KNN(text,...) hot path
+        // always sends batch=1 — go sequential there. Parallelise only when the
+        // batch is big enough to amortise the rayon dispatch. Threshold mirrors
+        // the ONNX path's "no threading overhead" cutoff.
+        let encodings = if texts.len() > batch_size() {
+            tokenizer
+                .encode_batch(texts, true)
+                .map_err(|_| LibError::ModelTokenizerEncodeFailed)?
+        } else {
+            texts
+                .iter()
+                .map(|t| tokenizer.encode(*t, true))
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|_| LibError::ModelTokenizerEncodeFailed)?
+        };
 
         let truncated: Vec<Vec<u32>> = encodings
             .iter()
@@ -1151,6 +1187,33 @@ impl TextModel for LocalModel {
         // BERT and ONNX: batched path (batch_size up to batch_size() per forward pass)
         match self {
             LocalModel::Bert(m) => {
+                // Dedicated single-text bypass: SELECT KNN(field, k, 'text') hits this
+                // path on every query. Skip all batching wrappers, intermediate Vecs,
+                // and the chunks.chunks() loop — go straight encode → forward → pool.
+                if texts.len() == 1 {
+                    let text = pre_truncate_text(texts[0], m.max_input_len);
+                    let enc = m
+                        .tokenizer
+                        .encode(text, true)
+                        .map_err(|_| LibError::ModelTokenizerEncodeFailed)?;
+                    let ids = enc.get_ids();
+                    let ids = &ids[..ids.len().min(m.max_input_len)];
+
+                    let token_ids = Tensor::new(ids, &m.device)?.unsqueeze(0)?;
+                    let token_type_ids = token_ids.zeros_like()?;
+                    let emb = {
+                        let model = m.model.lock().unwrap();
+                        model.forward(&token_ids, &token_type_ids, None)?
+                    };
+                    let seq_len = token_ids.dims()[1];
+                    let summed = emb.sum(1)?.to_dtype(DType::F32)?;
+                    let divisor = Tensor::new(seq_len as f32, &m.device)?;
+                    let mean_emb = summed.broadcast_div(&divisor)?;
+                    let mut emb_vec: Vec<f32> = mean_emb.get(0)?.to_vec1::<f32>()?;
+                    normalize(&mut emb_vec);
+                    return Ok(vec![emb_vec]);
+                }
+
                 return Self::predict_batched(&m.tokenizer, m.max_input_len, texts, |chunks| {
                     m.predict_chunks(chunks)
                 });
