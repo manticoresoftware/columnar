@@ -3,6 +3,7 @@ run-name: "🔬 Test ${{ (github.event.schedule == '00 20 * * *' || github.event
 
 #on: workflow_call
 
+
 on:
   push:
     branches:
