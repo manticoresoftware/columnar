@@ -234,13 +234,32 @@ jobs:
         run: |
           # Set Docker image based on architecture
           # Download glibc2_17-compatible ORT static lib (avoids __isoc23_strtoll from pyke.io builds)
-          ORT_VERSION="1.24.2"
+          read_ort_metadata() {
+            local key="$1"
+            awk -v key="$key" '
+              /^\[package.metadata.manticore.ort\]/ { in_section=1; next }
+              /^\[/ { in_section=0 }
+              in_section && $1 == key {
+                gsub(/"/, "", $3)
+                print $3
+                exit
+              }
+            ' embeddings/Cargo.toml
+          }
+
+          ORT_VERSION="$(read_ort_metadata version)"
+          ORT_GLIBC="$(read_ort_metadata linux-glibc)"
+          if [[ -z "${ORT_VERSION}" || -z "${ORT_GLIBC}" ]]; then
+            echo "Failed to read ORT metadata from embeddings/Cargo.toml" >&2
+            exit 1
+          fi
+
           if [[ "${{ inputs.arch }}" == "aarch64" ]]; then
             docker_image="ghcr.io/manticoresoftware/rust-min-libc:aarch64-rust1.94.1-glibc2.27-openssl1.1.1k"
-            ort_asset="onnxruntime-linux-aarch64-static_lib-${ORT_VERSION}-glibc2_17"
+            ort_asset="onnxruntime-linux-aarch64-static_lib-${ORT_VERSION}-glibc${ORT_GLIBC}"
           else
             docker_image="ghcr.io/manticoresoftware/rust-min-libc:amd64-rust1.94.1-glibc2.27-openssl1.1.1k"
-            ort_asset="onnxruntime-linux-x64-static_lib-${ORT_VERSION}-glibc2_17"
+            ort_asset="onnxruntime-linux-x64-static_lib-${ORT_VERSION}-glibc${ORT_GLIBC}"
           fi
 
           curl -sL "https://github.com/csukuangfj/onnxruntime-libs/releases/download/v${ORT_VERSION}/${ort_asset}.zip" -o /tmp/ort.zip

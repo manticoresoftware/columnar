@@ -3,6 +3,10 @@ name = "manticore-knn-embeddings"
 version = "1.1.1"
 edition = "2021"
 
+[package.metadata.manticore.ort]
+version = "1.24.2"
+linux-glibc = "2_17"
+
 # Candle: git dep so CI works without a local candle clone.
 # For local dev with ../../candle, add a [patch] section to use path deps.
 [dependencies]

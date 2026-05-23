@@ -20,6 +20,80 @@ if (__build_embeddings_included)
 endif ()
 set ( __build_embeddings_included YES )
 
+set ( EMBEDDINGS_ORT_VERSION "" CACHE STRING "ONNX Runtime version used for local Linux embeddings builds; defaults to embeddings/Cargo.toml metadata" )
+set ( EMBEDDINGS_ORT_GLIBC "" CACHE STRING "ONNX Runtime glibc baseline used for local Linux embeddings builds; defaults to embeddings/Cargo.toml metadata" )
+
+function(read_embeddings_ort_metadata OUT_ORT_VERSION OUT_ORT_GLIBC)
+	set ( CARGO_TOML "${CMAKE_SOURCE_DIR}/embeddings/Cargo.toml" )
+	if (NOT EXISTS "${CARGO_TOML}")
+		message ( FATAL_ERROR "embeddings Cargo.toml was not found: ${CARGO_TOML}" )
+	endif()
+
+	file ( READ "${CARGO_TOML}" CARGO_TOML_CONTENT )
+	string ( REGEX MATCH "\\[package\\.metadata\\.manticore\\.ort\\][^\[]*" ORT_METADATA "${CARGO_TOML_CONTENT}" )
+	if (NOT ORT_METADATA)
+		message ( FATAL_ERROR "Missing [package.metadata.manticore.ort] version/linux-glibc in ${CARGO_TOML}" )
+	endif()
+
+	if (NOT ORT_METADATA MATCHES "version[ \t]*=[ \t]*\"([^\"]+)\"")
+		message ( FATAL_ERROR "Missing [package.metadata.manticore.ort] version in ${CARGO_TOML}" )
+	endif()
+	set ( ORT_VERSION "${CMAKE_MATCH_1}" )
+
+	if (NOT ORT_METADATA MATCHES "linux-glibc[ \t]*=[ \t]*\"([^\"]+)\"")
+		message ( FATAL_ERROR "Missing [package.metadata.manticore.ort] linux-glibc in ${CARGO_TOML}" )
+	endif()
+	set ( ORT_GLIBC "${CMAKE_MATCH_1}" )
+
+	if (EMBEDDINGS_ORT_VERSION)
+		set ( ORT_VERSION "${EMBEDDINGS_ORT_VERSION}" )
+	endif()
+	if (EMBEDDINGS_ORT_GLIBC)
+		set ( ORT_GLIBC "${EMBEDDINGS_ORT_GLIBC}" )
+	endif()
+
+	set ( ${OUT_ORT_VERSION} "${ORT_VERSION}" PARENT_SCOPE )
+	set ( ${OUT_ORT_GLIBC} "${ORT_GLIBC}" PARENT_SCOPE )
+endfunction()
+
+function(prepare_embeddings_ort)
+	if (NOT UNIX OR APPLE)
+		return()
+	endif()
+
+	read_embeddings_ort_metadata ( ORT_VERSION ORT_GLIBC )
+
+	if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
+		set ( ORT_ARCH "aarch64" )
+	else()
+		set ( ORT_ARCH "x64" )
+	endif()
+
+	set ( ORT_ASSET "onnxruntime-linux-${ORT_ARCH}-static_lib-${ORT_VERSION}-glibc${ORT_GLIBC}" )
+	set ( ORT_URL "https://github.com/csukuangfj/onnxruntime-libs/releases/download/v${ORT_VERSION}/${ORT_ASSET}.zip" )
+	set ( ORT_ROOT "${CMAKE_CURRENT_BINARY_DIR}/embeddings/ort/${ORT_ASSET}" )
+	set ( ORT_ZIP "${CMAKE_CURRENT_BINARY_DIR}/embeddings/ort/${ORT_ASSET}.zip" )
+
+	if (NOT EXISTS "${ORT_ROOT}/lib")
+		message ( STATUS "Downloading ONNX Runtime static library: ${ORT_ASSET}" )
+		file ( MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/embeddings/ort" )
+		file ( DOWNLOAD "${ORT_URL}" "${ORT_ZIP}" STATUS ORT_DOWNLOAD_STATUS SHOW_PROGRESS )
+		list ( GET ORT_DOWNLOAD_STATUS 0 ORT_DOWNLOAD_CODE )
+		if (NOT ORT_DOWNLOAD_CODE EQUAL 0)
+			list ( GET ORT_DOWNLOAD_STATUS 1 ORT_DOWNLOAD_ERROR )
+			message ( FATAL_ERROR "Failed to download ${ORT_URL}: ${ORT_DOWNLOAD_ERROR}" )
+		endif()
+		file ( ARCHIVE_EXTRACT INPUT "${ORT_ZIP}" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/embeddings/ort" )
+	endif()
+
+	if (NOT EXISTS "${ORT_ROOT}/lib")
+		message ( FATAL_ERROR "ONNX Runtime lib directory was not found: ${ORT_ROOT}/lib" )
+	endif()
+
+	set ( ENV{ORT_LIB_PATH} "${ORT_ROOT}/lib" )
+	message ( STATUS "Using ONNX Runtime from ORT_LIB_PATH=$ENV{ORT_LIB_PATH}" )
+endfunction()
+
 function(build_embeddings_lib)
 	message ( STATUS "building embeddings locally..." )
 
@@ -49,21 +123,37 @@ function(build_embeddings_lib)
 	# This matches the format used by other Manticore libraries for consistent version display
 	set(ENV{GIT_COMMIT_ID} "${GIT_COMMIT_ID}")
 	set(ENV{GIT_TIMESTAMP_ID} "${GIT_TIMESTAMP_ID}")
+	prepare_embeddings_ort()
 
-	# Enable platform-specific BLAS acceleration for candle when available
-	set(EMBEDDINGS_CARGO_FEATURES "")
-	if(APPLE)
-		set(EMBEDDINGS_CARGO_FEATURES "--features" "accelerate")
-	elseif(UNIX)
-		# MKL provides multi-threaded BLAS on Linux; skip if not available
-		execute_process(COMMAND pkg-config --exists mkl-dynamic-lp64-seq RESULT_VARIABLE MKL_FOUND OUTPUT_QUIET ERROR_QUIET)
-		if(MKL_FOUND EQUAL 0)
-			set(EMBEDDINGS_CARGO_FEATURES "--features" "mkl")
+	# Enable platform-specific BLAS acceleration for candle when available.
+	if (DEFINED EMBEDDINGS_CARGO_FEATURES)
+		set(EMBEDDINGS_FEATURES_CSV "${EMBEDDINGS_CARGO_FEATURES}")
+	else()
+		set(EMBEDDINGS_FEATURE_LIST)
+		if(APPLE)
+			list(APPEND EMBEDDINGS_FEATURE_LIST accelerate)
+		elseif(UNIX)
+			# MKL provides multi-threaded BLAS on Linux; skip if not available
+			execute_process(COMMAND pkg-config --exists mkl-dynamic-lp64-seq RESULT_VARIABLE MKL_FOUND OUTPUT_QUIET ERROR_QUIET)
+			if(MKL_FOUND EQUAL 0)
+				list(APPEND EMBEDDINGS_FEATURE_LIST mkl)
+			endif()
 		endif()
+		list(JOIN EMBEDDINGS_FEATURE_LIST "," EMBEDDINGS_FEATURES_CSV)
+	endif()
+
+	if (UNIX AND NOT APPLE AND DEFINED ENV{ORT_LIB_PATH} AND NOT "$ENV{ORT_LIB_PATH}" STREQUAL "" AND EMBEDDINGS_FEATURES_CSV)
+		string(REPLACE "," ";" EMBEDDINGS_FEATURE_LIST "${EMBEDDINGS_FEATURES_CSV}")
+		list(REMOVE_ITEM EMBEDDINGS_FEATURE_LIST download-ort)
+		list(JOIN EMBEDDINGS_FEATURE_LIST "," EMBEDDINGS_FEATURES_CSV)
+	endif()
+
+	if (EMBEDDINGS_FEATURES_CSV)
+		set(EMBEDDINGS_CARGO_FEATURE_ARGS "--features" "${EMBEDDINGS_FEATURES_CSV}")
 	endif()
 
 	execute_process (
-			COMMAND cargo build --manifest-path ${CMAKE_SOURCE_DIR}/embeddings/Cargo.toml --lib --release ${EMBEDDINGS_CARGO_FEATURES} --target-dir ${CMAKE_CURRENT_BINARY_DIR}/embeddings
+			COMMAND cargo build --manifest-path ${CMAKE_SOURCE_DIR}/embeddings/Cargo.toml --lib --release ${EMBEDDINGS_CARGO_FEATURE_ARGS} --target-dir ${CMAKE_CURRENT_BINARY_DIR}/embeddings
 			RESULT_VARIABLE CMD_RESULT
 	)
 
@@ -86,4 +176,3 @@ function(build_embeddings_lib)
 		file(RENAME "${CMAKE_CURRENT_BINARY_DIR}/embeddings/release/${EMBEDDINGS_LIB_NAME}.pdb" "${CMAKE_CURRENT_BINARY_DIR}/embeddings/release/lib_${EMBEDDINGS_LIB_NAME}.pdb")
 	endif()
 endfunction ()
-
