@@ -197,27 +197,27 @@ jobs:
       - name: Prepare build args
         id: params
         run: |
-          # Enable platform-specific BLAS acceleration:
-          # - macOS: Apple Accelerate framework (always available)
-          # - Linux/Windows x86_64: Intel MKL (downloaded at build time)
-          # - Linux aarch64: no extra BLAS (gemm crate uses NEON via runtime detection)
-          features=""
+          # BLAS acceleration strategy (per-flavor):
+          # - macOS: Apple Accelerate (works on all Apple CPUs) — single build.
+          # - Linux/Windows x86_64: build BOTH a baseline (no MKL, runs on AMD
+          #   without perf regression) AND an Intel MKL flavor (faster on Intel,
+          #   slower on AMD due to Intel's GenuineIntel-only fast path). The
+          #   daemon picks the _mkl variant at startup via cpuid vendor check.
+          # - Linux/Windows aarch64: no equivalent of MKL — single baseline.
+          primary_features=""
+          secondary_flavor=""
+          secondary_features=""
           if [[ "${{ inputs.distr }}" == "macos" ]]; then
-            features="--features accelerate"
+            primary_features="--features accelerate"
           elif [[ "${{ inputs.arch }}" == "x86_64" ]]; then
-            features="--features mkl"
+            primary_features=""
+            secondary_flavor="mkl"
+            secondary_features="--features mkl"
           fi
 
-          args=(
-            "--target"
-            "${{ steps.vars.outputs.target }}"
-            "--lib"
-            "--release"
-            "--manifest-path"
-            "./embeddings/Cargo.toml"
-            ${features}
-          )
-          echo "args=${args[@]}" >> $GITHUB_OUTPUT
+          echo "primary_features=${primary_features}" >> $GITHUB_OUTPUT
+          echo "secondary_flavor=${secondary_flavor}" >> $GITHUB_OUTPUT
+          echo "secondary_features=${secondary_features}" >> $GITHUB_OUTPUT
 
       - name: Cache cargo registry for Docker build
         if: ${{ inputs.distr == 'linux' }}
@@ -236,31 +236,79 @@ jobs:
           # Download glibc2_17-compatible ORT static lib (avoids __isoc23_strtoll from pyke.io builds)
           ORT_VERSION="1.24.2"
           if [[ "${{ inputs.arch }}" == "aarch64" ]]; then
-            docker_image="ghcr.io/manticoresoftware/rust-min-libc:aarch64-rust1.94.1-glibc2.27-openssl1.1.1k"
+            docker_image="ghcr.io/manticoresoftware/rust-min-libc:aarch64-rust1.95.0-glibc2.27-openssl1.1.1k"
             ort_asset="onnxruntime-linux-aarch64-static_lib-${ORT_VERSION}-glibc2_17"
           else
-            docker_image="ghcr.io/manticoresoftware/rust-min-libc:amd64-rust1.94.1-glibc2.27-openssl1.1.1k"
+            docker_image="ghcr.io/manticoresoftware/rust-min-libc:amd64-rust1.95.0-glibc2.27-openssl1.1.1k"
             ort_asset="onnxruntime-linux-x64-static_lib-${ORT_VERSION}-glibc2_17"
           fi
 
           curl -sL "https://github.com/csukuangfj/onnxruntime-libs/releases/download/v${ORT_VERSION}/${ort_asset}.zip" -o /tmp/ort.zip
           unzip -q /tmp/ort.zip -d /tmp/ort
 
-          docker run --rm  \
-            -v $(pwd):/src \
-            -v $(pwd)/.cargo-cache:/cargo-cache \
-            -v /tmp/ort/${ort_asset}/lib:/ort-lib \
-            -w /src \
-            -u root \
-            -e CARGO_HOME=/cargo-cache \
-            -e ORT_LIB_PATH=/ort-lib \
-            -e MKLROOT=/opt/intel/oneapi/mkl/latest \
-            -e GIT_COMMIT_ID="${{ steps.git_meta.outputs.commit }}" \
-            -e GIT_TIMESTAMP_ID="${{ steps.git_meta.outputs.timestamp }}" \
-            --entrypoint bash \
-            "${docker_image}" \
-            -c "cargo build ${{ steps.params.outputs.args }}"
-          sudo chown -hR $(id -u):$(id -g) ${{ steps.vars.outputs.lib_dir }}
+          target="${{ steps.vars.outputs.target }}"
+          # Each flavor gets its own --target-dir so cargo doesn't relink between
+          # builds with different feature flags (otherwise the second build
+          # invalidates the first's artifacts).
+          run_docker_build() {
+            local extra_features="$1"
+            local target_dir="$2"
+            docker run --rm  \
+              -v $(pwd):/src \
+              -v $(pwd)/.cargo-cache:/cargo-cache \
+              -v /tmp/ort/${ort_asset}/lib:/ort-lib \
+              -w /src \
+              -u root \
+              -e CARGO_HOME=/cargo-cache \
+              -e ORT_LIB_PATH=/ort-lib \
+              -e MKLROOT=/opt/intel/oneapi/mkl/latest \
+              -e GIT_COMMIT_ID="${{ steps.git_meta.outputs.commit }}" \
+              -e GIT_TIMESTAMP_ID="${{ steps.git_meta.outputs.timestamp }}" \
+              --entrypoint bash \
+              "${docker_image}" \
+              -c "cargo build --target ${target} --lib --release --manifest-path ./embeddings/Cargo.toml --target-dir ${target_dir} ${extra_features}"
+          }
+
+          # 1) Baseline build (no MKL). Runs on any CPU; on AMD this gives the
+          #    fast candle gemm path with no Intel-only pessimisation.
+          run_docker_build "${{ steps.params.outputs.primary_features }}" "/src/embeddings/target"
+
+          # 2) Optional MKL build (Intel-optimised). Daemon picks this on Intel.
+          if [[ -n "${{ steps.params.outputs.secondary_flavor }}" ]]; then
+            flavor="${{ steps.params.outputs.secondary_flavor }}"
+            run_docker_build "${{ steps.params.outputs.secondary_features }}" "/src/embeddings/target-${flavor}"
+            # Stash the flavor's .so next to the baseline output with a suffix
+            # so the existing collection step picks up both with distinct names.
+            sudo cp ./embeddings/target-${flavor}/${target}/release/libmanticore_knn_embeddings.so \
+                    ${{ steps.vars.outputs.lib_dir }}/libmanticore_knn_embeddings_${flavor}.so
+
+            # Extract libiomp5.so from the build container so the artifact is
+            # self-contained on Linux (mirrors the Windows libiomp5md.dll path).
+            # MKL pulls Intel OpenMP as a dynamic dep; without this, dlopen of
+            # the _mkl .so fails on hosts that don't have Intel OneAPI installed.
+            # Best-effort: warn if not found but don't fail (deployments may
+            # provide libiomp5 system-wide via Intel OneAPI installation).
+            if [[ "$flavor" == "mkl" ]]; then
+              docker run --rm \
+                -v "$(pwd)":/src \
+                -w /src \
+                -u root \
+                --entrypoint bash \
+                "${docker_image}" \
+                -c "iomp=\$(find /opt/intel -name libiomp5.so 2>/dev/null | head -1); \
+                    if [ -n \"\$iomp\" ]; then \
+                      cp \"\$iomp\" /src/${{ steps.vars.outputs.lib_dir }}/libiomp5.so; \
+                      echo \"Packaged \$iomp\"; \
+                    else \
+                      echo 'WARNING: libiomp5.so not found in docker image; _mkl .so will need libiomp5 from system LD_LIBRARY_PATH at runtime'; \
+                    fi"
+            fi
+          fi
+
+          sudo chown -hR $(id -u):$(id -g) ./embeddings/target
+          if [[ -d ./embeddings/target-mkl ]]; then
+            sudo chown -hR $(id -u):$(id -g) ./embeddings/target-mkl
+          fi
           sudo chown -hR $(id -u):$(id -g) .cargo-cache
 
 
@@ -294,7 +342,40 @@ jobs:
         if: ${{ inputs.distr == 'windows' || inputs.distr == 'macos' }}
         run: |
           rustup target add ${{ steps.vars.outputs.target }}
-          cargo build ${{ steps.params.outputs.args }}
+          target="${{ steps.vars.outputs.target }}"
+
+          # 1) Baseline build (Accelerate on macOS, plain on Windows aarch64,
+          #    no MKL on Windows x86_64 — that's flavor #2).
+          cargo build \
+            --target "${target}" \
+            --lib \
+            --release \
+            --manifest-path ./embeddings/Cargo.toml \
+            --target-dir ./embeddings/target \
+            ${{ steps.params.outputs.primary_features }}
+
+          # 2) Optional MKL build (Windows x86_64). macOS skips this (Accelerate
+          #    is the macOS BLAS and is already universal across Apple CPUs).
+          if [[ -n "${{ steps.params.outputs.secondary_flavor }}" ]]; then
+            flavor="${{ steps.params.outputs.secondary_flavor }}"
+            cargo build \
+              --target "${target}" \
+              --lib \
+              --release \
+              --manifest-path ./embeddings/Cargo.toml \
+              --target-dir ./embeddings/target-${flavor} \
+              ${{ steps.params.outputs.secondary_features }}
+
+            # Stash the flavor's output next to baseline with a suffix so the
+            # existing collection step picks up both.
+            if [[ "${{ inputs.distr }}" == "macos" ]]; then
+              cp "./embeddings/target-${flavor}/${target}/release/libmanticore_knn_embeddings.dylib" \
+                 "${{ steps.vars.outputs.lib_dir }}/libmanticore_knn_embeddings_${flavor}.dylib"
+            else
+              cp "./embeddings/target-${flavor}/${target}/release/manticore_knn_embeddings.dll" \
+                 "${{ steps.vars.outputs.lib_dir }}/manticore_knn_embeddings_${flavor}.dll"
+            fi
+          fi
         env:
           GIT_COMMIT_ID: ${{ steps.git_meta.outputs.commit }}
           GIT_TIMESTAMP_ID: ${{ steps.git_meta.outputs.timestamp }}
@@ -302,11 +383,13 @@ jobs:
           # other targets keep Cargo.toml's opt-level=z for smaller binaries.
           CARGO_PROFILE_RELEASE_OPT_LEVEL: ${{ inputs.distr == 'windows' && '3' || 'z' }}
 
-      - run: | 
+      - run: |
           mkdir build
           lib_dir="${{ steps.vars.outputs.lib_dir }}"
           ls -la $lib_dir/*
-          find $lib_dir -type f \( -name "libmanticore*.so" -o -name "libmanticore*.dylib" -o -name "manticore*.dll" \) -exec cp {} build/ \;
+          # libiomp5.so is the Linux MKL OpenMP runtime, copied alongside the
+          # _mkl variant by the build step. Include it so it ships in the artifact.
+          find $lib_dir -type f \( -name "libmanticore*.so" -o -name "libmanticore*.dylib" -o -name "manticore*.dll" -o -name "libiomp5*.so" \) -exec cp {} build/ \;
 
           # Rename libmanticore*.so to lib_manticore*.so
           for file in build/libmanticore*.so; do
@@ -343,7 +426,8 @@ jobs:
             openmp_redist_version="2025.3.3.31"
             openmp_redist_dir=".openmp-redist"
             for dll in libiomp5md.dll; do
-              dep=$(find ./embeddings/target "$HOME/.cargo" -type f -iname "$dll" 2>/dev/null | head -1)
+              # MKL flavor lives under target-mkl; also check it.
+              dep=$(find ./embeddings/target ./embeddings/target-mkl "$HOME/.cargo" -type f -iname "$dll" 2>/dev/null | head -1)
               if [[ -z "$dep" ]]; then
                 echo "$dll was not found in the Cargo build tree; downloading Intel OpenMP redist ${openmp_redist_version}"
                 rm -rf "$openmp_redist_dir"
@@ -358,7 +442,7 @@ jobs:
 
               if [[ -z "$dep" ]]; then
                 echo "Required Windows runtime dependency was not found after redist download: $dll"
-                find ./embeddings/target "$HOME/.cargo" "$openmp_redist_dir" -type f -iname "*.dll" 2>/dev/null | sort || true
+                find ./embeddings/target ./embeddings/target-mkl "$HOME/.cargo" "$openmp_redist_dir" -type f -iname "*.dll" 2>/dev/null | sort || true
                 exit 1
               fi
 
@@ -372,59 +456,93 @@ jobs:
       - name: Verify Linux library compatibility
         if: ${{ inputs.distr == 'linux' }}
         run: |
-          lib=$(find build -name "lib_manticore_knn_embeddings.so" | head -1)
-          if [ -z "$lib" ]; then
+          # On x86_64 we ship TWO variants — baseline (no MKL) and *_mkl.so.
+          # On aarch64 only the baseline exists. Apply per-variant checks.
+          libs=$(find build -name "lib_manticore_knn_embeddings*.so" | sort)
+          if [ -z "$libs" ]; then
             echo "Embeddings library not found in build/, skipping check"
             exit 0
           fi
 
-          echo "=== Checking $lib ==="
-          failed=0
+          overall_failed=0
+          for lib in $libs; do
+            echo "=== Checking $lib ==="
+            failed=0
 
-          # Check GLIBC — must not exceed 2.27
-          max_glibc=$(objdump -T "$lib" | grep -oE 'GLIBC_[0-9.]+' | sort -u -t. -k1,1 -k2,2n | tail -1)
-          echo "Max GLIBC: $max_glibc"
-          glibc_minor=$(echo "$max_glibc" | grep -oE '[0-9]+$')
-          if [ -n "$glibc_minor" ] && [ "$glibc_minor" -gt 27 ]; then
-            echo "FAIL: GLIBC requirement $max_glibc exceeds 2.27"
-            failed=1
-          fi
+            # Check GLIBC — must not exceed 2.27
+            max_glibc=$(objdump -T "$lib" | grep -oE 'GLIBC_[0-9.]+' | sort -u -t. -k1,1 -k2,2n | tail -1)
+            echo "Max GLIBC: $max_glibc"
+            glibc_minor=$(echo "$max_glibc" | grep -oE '[0-9]+$')
+            if [ -n "$glibc_minor" ] && [ "$glibc_minor" -gt 27 ]; then
+              echo "FAIL: GLIBC requirement $max_glibc exceeds 2.27"
+              failed=1
+            fi
 
-          # Check GLIBCXX — must have none (libstdc++ should be static)
-          glibcxx=$(objdump -T "$lib" | grep -c 'GLIBCXX' || true)
-          echo "GLIBCXX dynamic symbols: $glibcxx"
-          if [ "$glibcxx" -gt 0 ]; then
-            echo "FAIL: Found GLIBCXX dynamic symbols — libstdc++ not statically linked"
-            objdump -T "$lib" | grep 'GLIBCXX' | head -5
-            failed=1
-          fi
+            # Check GLIBCXX — must have none (libstdc++ should be static)
+            glibcxx=$(objdump -T "$lib" | grep -c 'GLIBCXX' || true)
+            echo "GLIBCXX dynamic symbols: $glibcxx"
+            if [ "$glibcxx" -gt 0 ]; then
+              echo "FAIL: Found GLIBCXX dynamic symbols — libstdc++ not statically linked"
+              objdump -T "$lib" | grep 'GLIBCXX' | head -5
+              failed=1
+            fi
 
-          # Check __isoc23 — must have none
-          isoc23=$(nm -D "$lib" 2>/dev/null | grep -c '__isoc23' || true)
-          echo "__isoc23 symbols: $isoc23"
-          if [ "$isoc23" -gt 0 ]; then
-            echo "FAIL: Found __isoc23 symbols — ORT prebuilt has wrong glibc target"
-            failed=1
-          fi
+            # Check __isoc23 — must have none
+            isoc23=$(nm -D "$lib" 2>/dev/null | grep -c '__isoc23' || true)
+            echo "__isoc23 symbols: $isoc23"
+            if [ "$isoc23" -gt 0 ]; then
+              echo "FAIL: Found __isoc23 symbols — ORT prebuilt has wrong glibc target"
+              failed=1
+            fi
 
-          if [ "$failed" -eq 1 ]; then
-            echo ""
-            echo "Library compatibility check FAILED"
+            # MKL symbols: required for *_mkl.so (intel-mkl-src 0.8.1 silently
+            # no-ops if MKL is missing from the build env), forbidden in the
+            # baseline (sanity: the baseline must work on AMD too).
+            if [ "${{ inputs.arch }}" = "x86_64" ]; then
+              mkl_syms=$(nm "$lib" 2>/dev/null | grep -cE 'mkl_serv_|cblas_sgemm|cblas_dgemm' || true)
+              echo "MKL static symbols: $mkl_syms"
+              case "$(basename "$lib")" in
+                *_mkl.so)
+                  if [ "$mkl_syms" -eq 0 ]; then
+                    echo "FAIL: $lib was built with --features mkl but contains no MKL symbols (build env missing MKL?)"
+                    failed=1
+                  fi
+                  ;;
+                *)
+                  if [ "$mkl_syms" -gt 0 ]; then
+                    echo "FAIL: $lib is the baseline variant but contains MKL symbols — would pessimise AMD"
+                    failed=1
+                  fi
+                  ;;
+              esac
+            fi
+
+            if [ "$failed" -eq 1 ]; then
+              echo "Library compatibility check FAILED for $lib"
+              overall_failed=1
+            else
+              echo "All checks passed for $lib"
+            fi
+          done
+
+          if [ "$overall_failed" -eq 1 ]; then
             exit 1
           fi
-          echo "All checks passed"
 
       - name: Verify Windows embeddings DLL loading
         if: ${{ inputs.distr == 'windows' }}
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
-          $dll = "build\lib_manticore_knn_embeddings.dll"
 
-          if (-not (Test-Path $dll)) {
-            throw "Embeddings DLL was not found at $dll"
+          # On x86_64 we ship two variants (baseline + _mkl). Probe each that exists.
+          $dlls = Get-ChildItem -Path "build" -Filter "lib_manticore_knn_embeddings*.dll" | ForEach-Object { $_.FullName }
+
+          if (-not $dlls) {
+            throw "Embeddings DLL was not found in build\"
           }
 
+          # The MKL variant on x86_64 depends on libiomp5md.dll — must be packaged.
           if ("${{ inputs.arch }}" -ne "aarch64" -and -not (Test-Path "build\libiomp5md.dll")) {
             throw "Required runtime DLL was not packaged: build\libiomp5md.dll"
           }
@@ -432,7 +550,6 @@ jobs:
           Write-Host "=== Packaged embeddings files ==="
           Get-ChildItem -Force build | Format-List Name,Length,FullName
 
-          Write-Host "=== dumpbin /dependents ==="
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $vsInstall = $null
           if (Test-Path $vswhere) {
@@ -447,24 +564,23 @@ jobs:
             throw "vcvars64.bat was not found at $vcvars"
           }
 
-          cmd /c "`"$vcvars`" >nul && dumpbin /dependents `"$dll`""
-          if ($LASTEXITCODE -ne 0) {
-            throw "dumpbin /dependents failed"
-          }
+          foreach ($dll in $dlls) {
+            Write-Host "=== dumpbin /dependents for $dll ==="
+            cmd /c "`"$vcvars`" >nul && dumpbin /dependents `"$dll`""
+            if ($LASTEXITCODE -ne 0) {
+              throw "dumpbin /dependents failed for $dll"
+            }
 
-          cmd /c "`"$vcvars`" >nul && dumpbin /exports `"$dll`" | findstr GetLibFuncs"
-          if ($LASTEXITCODE -ne 0) {
-            throw "GetLibFuncs export was not found"
+            cmd /c "`"$vcvars`" >nul && dumpbin /exports `"$dll`" | findstr GetLibFuncs"
+            if ($LASTEXITCODE -ne 0) {
+              throw "GetLibFuncs export was not found in $dll"
+            }
           }
 
           if ("${{ inputs.arch }}" -eq "aarch64") {
             Write-Host "Skipping direct LoadLibraryW probe for Windows aarch64; GitHub runner is x64 and cannot load an ARM64 DLL"
             exit 0
           }
-
-          Write-Host "=== Direct LoadLibraryW probe ==="
-          $buildDir = (Resolve-Path "build").Path
-          $env:PATH = "$buildDir;$env:PATH"
 
           Add-Type -TypeDefinition @'
           using System;
@@ -477,15 +593,19 @@ jobs:
           }
           '@
 
-          $fullDll = (Resolve-Path $dll).Path
-          $handle = [NativeDllProbe]::LoadLibraryW($fullDll)
-          if ($handle -eq [IntPtr]::Zero) {
-            $code = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
-            $message = (New-Object ComponentModel.Win32Exception($code)).Message
-            throw "LoadLibraryW($fullDll) failed: $code $message"
-          }
+          $buildDir = (Resolve-Path "build").Path
+          $env:PATH = "$buildDir;$env:PATH"
 
-          Write-Host "LoadLibraryW($fullDll) succeeded: $handle"
+          foreach ($dll in $dlls) {
+            Write-Host "=== Direct LoadLibraryW probe for $dll ==="
+            $handle = [NativeDllProbe]::LoadLibraryW($dll)
+            if ($handle -eq [IntPtr]::Zero) {
+              $code = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+              $message = (New-Object ComponentModel.Win32Exception($code)).Message
+              throw "LoadLibraryW($dll) failed: $code $message"
+            }
+            Write-Host "LoadLibraryW($dll) succeeded: $handle"
+          }
 
       - name: Install current Bash on macOS
         if: inputs.distr == 'macos'
