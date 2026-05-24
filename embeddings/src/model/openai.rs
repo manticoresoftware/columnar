@@ -73,22 +73,13 @@ impl OpenAIModel {
         validate_api_key_basic(api_key)
             .map_err(|_| LibError::RemoteInvalidAPIKey { status: None })?;
         let timeout_duration = api_timeout.map(std::time::Duration::from_secs);
-        let model = Self {
+        Ok(Self {
             client: Client::builder().timeout(timeout_duration).build()?,
             model,
             api_key: api_key.to_string(),
             api_url: api_url.map(|s| s.to_string()),
             hidden_size_cache: OnceLock::new(),
-        };
-        // Enforce the invariant: by the time the model is handed back, the
-        // hidden size is known. Built-in models have it hardcoded; passthrough
-        // models need one API round-trip to learn it. predict() populates the
-        // OnceLock on success. If probing fails the caller never gets a
-        // partially initialized model.
-        if model.known_hidden_size().is_none() {
-            model.predict(&["probe"])?;
-        }
-        Ok(model)
+        })
     }
 
     fn known_hidden_size(&self) -> Option<usize> {
