@@ -1,7 +1,7 @@
 use super::{ModelValidationMode, TextModel};
 use crate::LibError;
 use reqwest::blocking::Client;
-use std::sync::Mutex;
+use std::sync::OnceLock;
 
 #[derive(Debug)]
 pub struct OpenAIModel {
@@ -9,7 +9,7 @@ pub struct OpenAIModel {
     pub model: String,
     pub api_key: String,
     pub api_url: Option<String>,
-    hidden_size_cache: Mutex<Option<usize>>,
+    hidden_size_cache: OnceLock<usize>,
 }
 
 pub fn validate_model(model: &str) -> Result<(), String> {
@@ -73,13 +73,22 @@ impl OpenAIModel {
         validate_api_key_basic(api_key)
             .map_err(|_| LibError::RemoteInvalidAPIKey { status: None })?;
         let timeout_duration = api_timeout.map(std::time::Duration::from_secs);
-        Ok(Self {
+        let model = Self {
             client: Client::builder().timeout(timeout_duration).build()?,
             model,
             api_key: api_key.to_string(),
             api_url: api_url.map(|s| s.to_string()),
-            hidden_size_cache: Mutex::new(None),
-        })
+            hidden_size_cache: OnceLock::new(),
+        };
+        // Enforce the invariant: by the time the model is handed back, the
+        // hidden size is known. Built-in models have it hardcoded; passthrough
+        // models need one API round-trip to learn it. predict() populates the
+        // OnceLock on success. If probing fails the caller never gets a
+        // partially initialized model.
+        if model.known_hidden_size().is_none() {
+            model.predict(&["probe"])?;
+        }
+        Ok(model)
     }
 
     fn known_hidden_size(&self) -> Option<usize> {
@@ -199,16 +208,20 @@ impl TextModel for OpenAIModel {
             }));
         }
 
-        *self.hidden_size_cache.lock().unwrap() =
-            embeddings.first().map(|embedding| embedding.len());
+        if let Some(dim) = embeddings.first().map(|e| e.len()) {
+            let _ = self.hidden_size_cache.set(dim);
+        }
 
         Ok(embeddings)
     }
 
     fn get_hidden_size(&self) -> usize {
+        // Invariant: cache populated during new_with_validation_mode().
+        // A miss here is a construction bug; catch_unwind at the FFI
+        // boundary stops the panic from crossing into C++.
         self.known_hidden_size()
-            .or_else(|| *self.hidden_size_cache.lock().unwrap())
-            .unwrap_or_else(|| panic!("Unknown model"))
+            .or_else(|| self.hidden_size_cache.get().copied())
+            .expect("hidden size must be populated during model construction")
     }
 
     fn get_max_input_len(&self) -> usize {
