@@ -47,18 +47,22 @@ jobs:
       - name: Check if branch exists in manticoresoftware/manticoresearch
         id: check_branch
         if: github.ref_name != 'master'
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
           # Extract the actual branch name for pull requests
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            BRANCH_NAME="$PR_HEAD_REF"
             echo "Pull request detected, using head ref: $BRANCH_NAME"
           else
-            BRANCH_NAME="${{ github.ref_name }}"
+            BRANCH_NAME="$REF_NAME"
             echo "Direct push detected, using ref name: $BRANCH_NAME"
           fi
           
           echo "Checking if branch '$BRANCH_NAME' exists in manticoresoftware/manticoresearch..."
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://api.github.com/repos/manticoresoftware/manticoresearch/branches/$BRANCH_NAME)
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://api.github.com/repos/manticoresoftware/manticoresearch/branches/$BRANCH_NAME")
           echo "GitHub API response status: $HTTP_STATUS"
           
           if [ "$HTTP_STATUS" -eq "200" ]; then
@@ -95,31 +99,42 @@ jobs:
 
       - name: Detect ref for CLT tests
         id: ref
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          LOCATOR_REF: ${{ steps.locator_ref.outputs.ref }}
+          BRANCH_EXISTS: ${{ steps.check_branch.outputs.branch_exists }}
+          BRANCH_NAME: ${{ steps.check_branch.outputs.branch_name }}
         run: |
           set -e
-          if [[ "${{ github.ref_name }}" == "master" && -n "${{ steps.locator_ref.outputs.ref }}" ]]; then
-            REF="${{ steps.locator_ref.outputs.ref }}"
-          elif [[ "${{ github.ref_name }}" == "master" ]]; then
+          if [[ "$REF_NAME" == "master" && -n "$LOCATOR_REF" ]]; then
+            REF="$LOCATOR_REF"
+          elif [[ "$REF_NAME" == "master" ]]; then
             REF="master"
-          elif [[ "${{ steps.check_branch.outputs.branch_exists }}" == "true" ]]; then
-            REF="${{ steps.check_branch.outputs.branch_name }}"
+          elif [[ "$BRANCH_EXISTS" == "true" ]]; then
+            REF="$BRANCH_NAME"
           else
             REF="master"
           fi
-          echo "ref=${REF}" >> $GITHUB_OUTPUT
-          echo "Ref for CLT tests: ${REF}" >> $GITHUB_STEP_SUMMARY
+          echo "ref=${REF}" >> "$GITHUB_OUTPUT"
+          echo "Ref for CLT tests: ${REF}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set Manticore Locator
         id: set_locator
+        env:
+          EVENT_SCHEDULE: ${{ github.event.schedule }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          BRANCH_EXISTS: ${{ steps.check_branch.outputs.branch_exists }}
+          BRANCH_NAME: ${{ steps.check_branch.outputs.branch_name }}
         run: |
-          if [[ "${{ github.event.schedule }}" == "00 20 * * *" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "manticore_locator=GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG master GIT_SUBMODULES \"\"" >> $GITHUB_OUTPUT
+          if [[ "$EVENT_SCHEDULE" == "00 20 * * *" || "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "manticore_locator=GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG master GIT_SUBMODULES \"\"" >> "$GITHUB_OUTPUT"
             echo "Set manticore_locator: GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG master"
-          elif [[ "${{ github.ref_name }}" != "master" && "${{ steps.check_branch.outputs.branch_exists }}" == "true" ]]; then
-            echo "manticore_locator=GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG ${{ steps.check_branch.outputs.branch_name }} GIT_SUBMODULES \"\"" >> $GITHUB_OUTPUT
-            echo "Set manticore_locator: GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG ${{ steps.check_branch.outputs.branch_name }}"
+          elif [[ "$REF_NAME" != "master" && "$BRANCH_EXISTS" == "true" ]]; then
+            echo "manticore_locator=GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG $BRANCH_NAME GIT_SUBMODULES \"\"" >> "$GITHUB_OUTPUT"
+            echo "Set manticore_locator: GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG $BRANCH_NAME"
           else
-            echo "manticore_locator=" >> $GITHUB_OUTPUT
+            echo "manticore_locator=" >> "$GITHUB_OUTPUT"
             echo "Set manticore_locator: (empty)"
           fi
 
@@ -577,26 +592,33 @@ jobs:
 
       - name: Get current branch name
         id: current_branch
+        env:
+          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
         run: |
-          BRANCH=${{ github.head_ref || github.ref_name }}
-          echo "branch=${BRANCH}" >> $GITHUB_OUTPUT
+          BRANCH="$BRANCH_NAME"
+          echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
 
       - name: Check if branch exists in manticoresearch
         id: check_branch_exists
         working-directory: manticoresearch
+        env:
+          BRANCH_NAME: ${{ steps.current_branch.outputs.branch }}
         run: |
-          git ls-remote --heads origin ${{ steps.current_branch.outputs.branch }} | grep -q . && \
-          echo "exists=true" >> $GITHUB_OUTPUT || echo "exists=false" >> $GITHUB_OUTPUT
+          git ls-remote --heads origin "$BRANCH_NAME" | grep -q . && \
+          echo "exists=true" >> "$GITHUB_OUTPUT" || echo "exists=false" >> "$GITHUB_OUTPUT"
 
       - name: Determine base test-kit image
         id: base_image
+        env:
+          CURRENT_BRANCH: ${{ steps.current_branch.outputs.branch }}
+          BRANCH_EXISTS: ${{ steps.check_branch_exists.outputs.exists }}
         run: |
           set -e
           # Always use test-kit-latest when the branch is master
-          if [[ "${{ steps.current_branch.outputs.branch }}" == "master" ]]; then
+          if [[ "$CURRENT_BRANCH" == "master" ]]; then
             IMAGE="${GHCR_REPO}:test-kit-latest"
-          elif [[ "${{ steps.check_branch_exists.outputs.exists }}" == "true" ]]; then
-            BRANCH="${{ steps.current_branch.outputs.branch }}"
+          elif [[ "$BRANCH_EXISTS" == "true" ]]; then
+            BRANCH="$CURRENT_BRANCH"
             fix=$(echo "$BRANCH" | tr '/' '_')
             DOCKER_TAG=$(echo "$fix" | sed 's/[^a-zA-Z0-9_.-]//g')
             IMAGE="${GHCR_REPO}:test-kit-${DOCKER_TAG,,}"
