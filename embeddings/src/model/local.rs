@@ -103,7 +103,7 @@ impl SessionWrapper {
     /// and drop of SessionOutputs. Prevents the race where another thread calls
     /// run() while outputs are still being consumed.
     fn with_session<R>(&self, f: impl FnOnce(&mut ort::session::Session) -> R) -> R {
-        let guard = self.inner.lock().unwrap();
+        let guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         f(unsafe { &mut *guard.get() })
     }
 }
@@ -469,7 +469,7 @@ impl BertEmbeddingModel {
                 let token_ids = Tensor::new(chunk.as_slice(), &self.device)?.unsqueeze(0)?;
                 let token_type_ids = token_ids.zeros_like()?;
                 let emb = {
-                    let model = self.model.lock().unwrap();
+                    let model = self.model.lock().unwrap_or_else(|e| e.into_inner());
                     model.forward(&token_ids, &token_type_ids, None)?
                 };
                 let seq_len = token_ids.dims()[1];
@@ -502,7 +502,7 @@ impl BertEmbeddingModel {
             let token_type_ids = token_ids.zeros_like()?;
 
             let emb = {
-                let model = self.model.lock().unwrap();
+                let model = self.model.lock().unwrap_or_else(|e| e.into_inner());
                 model.forward(&token_ids, &token_type_ids, Some(&attention_mask))?
             };
             // emb: [batch_size, max_len, hidden_size]
@@ -1042,10 +1042,18 @@ impl OnnxEmbeddingModel {
                 .collect();
 
             for handle in handles {
-                match handle.join().unwrap() {
-                    Ok(embs) => ordered_results.push(embs),
-                    Err(e) => {
+                // `join().unwrap()` would panic if the worker thread itself
+                // panicked — and that panic would unwind through rayon's
+                // scope into the FFI caller. Convert a panicked worker into
+                // a normal Err instead.
+                match handle.join() {
+                    Ok(Ok(embs)) => ordered_results.push(embs),
+                    Ok(Err(e)) => {
                         error = Some(e);
+                        break;
+                    }
+                    Err(_) => {
+                        error = Some(LibError::OnnxModelEvalFailed);
                         break;
                     }
                 }
@@ -1202,7 +1210,7 @@ impl TextModel for LocalModel {
                     let token_ids = Tensor::new(ids, &m.device)?.unsqueeze(0)?;
                     let token_type_ids = token_ids.zeros_like()?;
                     let emb = {
-                        let model = m.model.lock().unwrap();
+                        let model = m.model.lock().unwrap_or_else(|e| e.into_inner());
                         model.forward(&token_ids, &token_type_ids, None)?
                     };
                     let seq_len = token_ids.dims()[1];
@@ -1265,7 +1273,7 @@ impl TextModel for LocalModel {
                 let token_ids = Tensor::new(&tokens[..], &device)?.unsqueeze(0)?;
                 let embeddings = match self {
                     LocalModel::T5(m) => {
-                        let mut model = m.model.lock().unwrap();
+                        let mut model = m.model.lock().unwrap_or_else(|e| e.into_inner());
                         let emb = model.forward(&token_ids)?;
                         let cls_emb = emb.i(0)?;
                         let first_token = cls_emb.i(0)?;
@@ -1313,7 +1321,7 @@ impl TextModel for LocalModel {
                     },
                     LocalModel::Quantized(m) => match &m.model {
                         QuantizedModelKind::Gemma { model } => {
-                            let mut model = model.lock().unwrap();
+                            let mut model = model.lock().unwrap_or_else(|e| e.into_inner());
                             let emb = model.forward(&token_ids, 0)?;
                             let (_, n_tokens, _) = emb.dims3()?;
                             let summed = emb.sum(1)?.to_dtype(DType::F32)?;
@@ -1321,7 +1329,7 @@ impl TextModel for LocalModel {
                             summed.broadcast_div(&divisor)?
                         }
                         QuantizedModelKind::Llama { model } => {
-                            let mut model = model.lock().unwrap();
+                            let mut model = model.lock().unwrap_or_else(|e| e.into_inner());
                             let emb = model.forward(&token_ids, 0)?;
                             let (_, n_tokens, _) = emb.dims3()?;
                             let summed = emb.sum(1)?.to_dtype(DType::F32)?;
