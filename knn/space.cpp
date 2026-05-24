@@ -1138,7 +1138,7 @@ static FORCE_INLINE float L2BinaryFloatDistanceFromHammingDist ( const Binary4Bi
 
 
 template<bool BUILD, int64_t (*DOTPRODUCT_FN)( const uint8_t * pVec4Bit, const uint8_t * pVec1Bit, int iBytes )>
-static float IPBinaryFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, size_t uRowID1, size_t uRowID2, const void * __restrict pParam )
+FORCE_INLINE static float IPBinaryFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, size_t uRowID1, size_t uRowID2, const void * __restrict pParam )
 {
 	const auto & tBinaryParam = *(const DistFuncParamBinary_t*)pParam;
 
@@ -1173,7 +1173,7 @@ static float IPBinaryFloatDistance ( const void * __restrict pVect1, const void 
 // in org.elasticsearch.index.codec.vectors.es816.ES816BinaryFlatVectorsScorer
 // Permalink: https://github.com/elastic/elasticsearch/blob/1dd41ec2b683a7b7c9c16af404b842cf85cbd5bc/server/src/main/java/org/elasticsearch/index/codec/vectors/es816/ES816BinaryFlatVectorsScorer.java
 template<bool BUILD, int64_t (*DOTPRODUCT_FN)( const uint8_t * pVec4Bit, const uint8_t * pVec1Bit, int iBytes )>
-static float L2BinaryFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, size_t uRowID1, size_t uRowID2, const void * __restrict pParam )
+FORCE_INLINE static float L2BinaryFloatDistance ( const void * __restrict pVect1, const void * __restrict pVect2, size_t uRowID1, size_t uRowID2, const void * __restrict pParam )
 {
 	const auto & tBinaryParam = *(const DistFuncParamBinary_t*)pParam;
 
@@ -1211,9 +1211,19 @@ float IPBinaryFloatDistanceGeneric ( const void * pVect1, const void * pVect2, s
 	return IPBinaryFloatDistance<false,BinaryDotProduct> ( pVect1, pVect2, uRowID1, uRowID2, pParam );
 }
 
+float IPBinaryFloatDistanceGenericBuild ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam )
+{
+	return IPBinaryFloatDistance<true,BinaryDotProduct> ( pVect1, pVect2, uRowID1, uRowID2, pParam );
+}
+
 float L2BinaryFloatDistanceGeneric ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam )
 {
 	return L2BinaryFloatDistance<false,BinaryDotProduct> ( pVect1, pVect2, uRowID1, uRowID2, pParam );
+}
+
+float L2BinaryFloatDistanceGenericBuild ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam )
+{
+	return L2BinaryFloatDistance<true,BinaryDotProduct> ( pVect1, pVect2, uRowID1, uRowID2, pParam );
 }
 
 #if !defined(USE_SIMDE)
@@ -1223,19 +1233,37 @@ float IPBinaryFloatDistanceSIMD16 ( const void * pVect1, const void * pVect2, si
 	return IPBinaryFloatDistance<false,BinaryDotProduct16<false>> ( pVect1, pVect2, uRowID1, uRowID2, pParam );
 }
 
+float IPBinaryFloatDistanceSIMD16Build ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam )
+{
+	return IPBinaryFloatDistance<true,BinaryDotProduct16<false>> ( pVect1, pVect2, uRowID1, uRowID2, pParam );
+}
+
 float IPBinaryFloatDistanceSIMD16Residuals ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam )
 {
 	return IPBinaryFloatDistance<false,BinaryDotProduct16<true>> ( pVect1, pVect2, uRowID1, uRowID2, pParam );
 }
 
-template <bool RESIDUALS>
-static void IPBinaryFloatDistanceBatch2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+float IPBinaryFloatDistanceSIMD16ResidualsBuild ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam )
+{
+	return IPBinaryFloatDistance<true,BinaryDotProduct16<true>> ( pVect1, pVect2, uRowID1, uRowID2, pParam );
+}
+
+template <bool BUILD, bool RESIDUALS>
+FORCE_INLINE static void IPBinaryFloatDistanceBatch2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
 {
 	const auto & tBinaryParam = *(const DistFuncParamBinary_t*)pParam;
 
 	auto pV1 = (const uint8_t *)pVect1;
 	auto pVA = (const uint8_t *)pVect2A;
 	auto pVB = (const uint8_t *)pVect2B;
+
+	// Build mode: source is 1-bit raw data; fetch its 4-bit representation from the pool
+	// using the source row id. Amortized over both candidates by doing this once.
+	if constexpr ( BUILD )
+	{
+		if ( uRowID1!=(size_t)-1 )
+			pV1 = tBinaryParam.m_fnFetcher(uRowID1);
+	}
 
 	assert ( uRowID2A!=(size_t)-1 );
 	assert ( uRowID2B!=(size_t)-1 );
@@ -1258,12 +1286,22 @@ static void IPBinaryFloatDistanceBatch2 ( const void * pVect1, const void * pVec
 
 void IPBinaryFloatDistanceSIMD16Batch2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
 {
-	IPBinaryFloatDistanceBatch2<false> ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
+	IPBinaryFloatDistanceBatch2<false,false> ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
+}
+
+void IPBinaryFloatDistanceSIMD16Batch2Build ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+{
+	IPBinaryFloatDistanceBatch2<true,false> ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
 }
 
 void IPBinaryFloatDistanceSIMD16ResidualsBatch2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
 {
-	IPBinaryFloatDistanceBatch2<true> ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
+	IPBinaryFloatDistanceBatch2<false,true> ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
+}
+
+void IPBinaryFloatDistanceSIMD16ResidualsBatch2Build ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+{
+	IPBinaryFloatDistanceBatch2<true,true> ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
 }
 
 float L2BinaryFloatDistanceSIMD16 ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam )
@@ -1271,19 +1309,35 @@ float L2BinaryFloatDistanceSIMD16 ( const void * pVect1, const void * pVect2, si
 	return L2BinaryFloatDistance<false,BinaryDotProduct16<false>> ( pVect1, pVect2, uRowID1, uRowID2, pParam );
 }
 
+float L2BinaryFloatDistanceSIMD16Build ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam )
+{
+	return L2BinaryFloatDistance<true,BinaryDotProduct16<false>> ( pVect1, pVect2, uRowID1, uRowID2, pParam );
+}
+
 float L2BinaryFloatDistanceSIMD16Residuals ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam )
 {
 	return L2BinaryFloatDistance<false,BinaryDotProduct16<true>> ( pVect1, pVect2, uRowID1, uRowID2, pParam );
 }
 
-template <bool RESIDUALS>
-static void L2BinaryFloatDistanceBatch2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+float L2BinaryFloatDistanceSIMD16ResidualsBuild ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam )
+{
+	return L2BinaryFloatDistance<true,BinaryDotProduct16<true>> ( pVect1, pVect2, uRowID1, uRowID2, pParam );
+}
+
+template <bool BUILD, bool RESIDUALS>
+static FORCE_INLINE void L2BinaryFloatDistanceBatch2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
 {
 	const auto & tBinaryParam = *(const DistFuncParamBinary_t*)pParam;
 
 	auto pV1 = (const uint8_t *)pVect1;
 	auto pVA = (const uint8_t *)pVect2A;
 	auto pVB = (const uint8_t *)pVect2B;
+
+	if constexpr ( BUILD )
+	{
+		if ( uRowID1!=(size_t)-1 )
+			pV1 = tBinaryParam.m_fnFetcher(uRowID1);
+	}
 
 	assert ( uRowID2A!=(size_t)-1 );
 	assert ( uRowID2B!=(size_t)-1 );
@@ -1306,12 +1360,22 @@ static void L2BinaryFloatDistanceBatch2 ( const void * pVect1, const void * pVec
 
 void L2BinaryFloatDistanceSIMD16Batch2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
 {
-	L2BinaryFloatDistanceBatch2<false> ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
+	L2BinaryFloatDistanceBatch2<false,false> ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
+}
+
+void L2BinaryFloatDistanceSIMD16Batch2Build ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+{
+	L2BinaryFloatDistanceBatch2<true,false> ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
 }
 
 void L2BinaryFloatDistanceSIMD16ResidualsBatch2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
 {
-	L2BinaryFloatDistanceBatch2<true> ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
+	L2BinaryFloatDistanceBatch2<false,true> ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
+}
+
+void L2BinaryFloatDistanceSIMD16ResidualsBatch2Build ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+{
+	L2BinaryFloatDistanceBatch2<true,true> ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
 }
 
 #endif // !USE_SIMDE
@@ -1341,13 +1405,10 @@ IPSpaceBinaryFloat_c::IPSpaceBinaryFloat_c ( size_t uDim, bool bBuild )
 	, m_tDistFuncParam ( uDim )
 {
 #if defined(USE_SIMDE)
-	if ( bBuild )
-		m_fnDist = IPBinaryFloatDistance<true,BinaryDotProduct>;
-	else
-	{
-		m_fnDist = IPBinaryFloatDistance<false,BinaryDotProduct>;
-		m_eDistFuncId = DistFuncId_e::IP_BINARY_GENERIC;
-	}
+	m_fnDist = bBuild
+		? IPBinaryFloatDistance<true,BinaryDotProduct>
+		: IPBinaryFloatDistance<false,BinaryDotProduct>;
+	m_eDistFuncId = DistFuncId_e::IP_BINARY_GENERIC;
 #else
 	int iBytes = ( uDim+7 ) >> 3;
 	bool bUseSSE = iBytes>=16;
@@ -1367,13 +1428,10 @@ IPSpaceBinaryFloat_c::IPSpaceBinaryFloat_c ( size_t uDim, bool bBuild )
 	case 7: m_fnDist = IPBinaryFloatDistance<true,	BinaryDotProduct16<true>>; break;
 	}
 
-	if ( !bBuild )
-	{
-		if ( bUseSSE )
-			m_eDistFuncId = bNeedResiduals ? DistFuncId_e::IP_BINARY_SIMD16_RESIDUALS : DistFuncId_e::IP_BINARY_SIMD16;
-		else
-			m_eDistFuncId = DistFuncId_e::IP_BINARY_GENERIC;
-	}
+	if ( bUseSSE )
+		m_eDistFuncId = bNeedResiduals ? DistFuncId_e::IP_BINARY_SIMD16_RESIDUALS : DistFuncId_e::IP_BINARY_SIMD16;
+	else
+		m_eDistFuncId = DistFuncId_e::IP_BINARY_GENERIC;
 #endif
 }
 
@@ -1391,13 +1449,10 @@ L2SpaceBinaryFloat_c::L2SpaceBinaryFloat_c ( size_t uDim, bool bBuild )
 	, m_tDistFuncParam ( uDim )
 {
 #if defined(USE_SIMDE)
-	if ( bBuild )
-		m_fnDist = L2BinaryFloatDistance<true,BinaryDotProduct>;
-	else
-	{
-		m_fnDist = L2BinaryFloatDistance<false,BinaryDotProduct>;
-		m_eDistFuncId = DistFuncId_e::L2_BINARY_GENERIC;
-	}
+	m_fnDist = bBuild
+		? L2BinaryFloatDistance<true,BinaryDotProduct>
+		: L2BinaryFloatDistance<false,BinaryDotProduct>;
+	m_eDistFuncId = DistFuncId_e::L2_BINARY_GENERIC;
 #else
 	int iBytes = ( uDim+7 ) >> 3;
 	bool bUseSSE = iBytes>=16;
@@ -1417,13 +1472,10 @@ L2SpaceBinaryFloat_c::L2SpaceBinaryFloat_c ( size_t uDim, bool bBuild )
 	case 7: m_fnDist = L2BinaryFloatDistance<true,	BinaryDotProduct16<true>>; break;
 	}
 
-	if ( !bBuild )
-	{
-		if ( bUseSSE )
-			m_eDistFuncId = bNeedResiduals ? DistFuncId_e::L2_BINARY_SIMD16_RESIDUALS : DistFuncId_e::L2_BINARY_SIMD16;
-		else
-			m_eDistFuncId = DistFuncId_e::L2_BINARY_GENERIC;
-	}
+	if ( bUseSSE )
+		m_eDistFuncId = bNeedResiduals ? DistFuncId_e::L2_BINARY_SIMD16_RESIDUALS : DistFuncId_e::L2_BINARY_SIMD16;
+	else
+		m_eDistFuncId = DistFuncId_e::L2_BINARY_GENERIC;
 #endif
 }
 

@@ -310,6 +310,48 @@ public:
 };
 #endif
 
+// build-mode DistFn classes
+using IPBinaryGenericBuildDistFn_c = DistFnDispatch_c<&IPBinaryFloatDistanceGenericBuild>;
+using L2BinaryGenericBuildDistFn_c = DistFnDispatch_c<&L2BinaryFloatDistanceGenericBuild>;
+
+#if !defined(USE_SIMDE)
+class IPBinarySIMD16BuildDistFn_c : public DistFnDispatch_c<&IPBinaryFloatDistanceSIMD16Build>
+{
+public:
+	static void Eval2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+	{
+		IPBinaryFloatDistanceSIMD16Batch2Build ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
+	}
+};
+
+class IPBinarySIMD16ResidualsBuildDistFn_c : public DistFnDispatch_c<&IPBinaryFloatDistanceSIMD16ResidualsBuild>
+{
+public:
+	static void Eval2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+	{
+		IPBinaryFloatDistanceSIMD16ResidualsBatch2Build ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
+	}
+};
+
+class L2BinarySIMD16BuildDistFn_c : public DistFnDispatch_c<&L2BinaryFloatDistanceSIMD16Build>
+{
+public:
+	static void Eval2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+	{
+		L2BinaryFloatDistanceSIMD16Batch2Build ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
+	}
+};
+
+class L2BinarySIMD16ResidualsBuildDistFn_c : public DistFnDispatch_c<&L2BinaryFloatDistanceSIMD16ResidualsBuild>
+{
+public:
+	static void Eval2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+	{
+		L2BinaryFloatDistanceSIMD16ResidualsBatch2Build ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
+	}
+};
+#endif
+
 template <typename DistFn = void>
 static void RunSearchPath ( const hnswlib::HierarchicalNSW<float> & tAlg, std::vector<DocDist_t> & dResults, const void * pData, int64_t iResults, HNSWFilterWrapper_c * pFilter, size_t * pSearchEf, int iSearchPath )
 {
@@ -558,10 +600,40 @@ public:
 	const QuantizationSettings_t & GetQuantizationSettings() const override { return m_pQuantizer->GetSettings(); }
 
 private:
-	AttrWithSettings_t			m_tAttr;
-	std::unique_ptr<ScalarQuantizer_i>					m_pQuantizer;
-	std::unique_ptr<hnswlib::HierarchicalNSW<float>>	m_pAlg;
+	using AddPoint_fn = void (*) ( hnswlib::HierarchicalNSW<float> &, const void *, uint32_t );
+
+	template <typename DistFn>
+	static void	AddPointTyped ( hnswlib::HierarchicalNSW<float> & tAlg, const void * pVec, uint32_t uRowID ) { tAlg.template addPoint<DistFn, false> ( pVec, (size_t)uRowID, -1 ); }
+	static void	AddPointFallback ( hnswlib::HierarchicalNSW<float> & tAlg, const void * pVec, uint32_t uRowID ) { tAlg.addPoint ( pVec, (size_t)uRowID ); }
+	AddPoint_fn SelectAddPointFn() const;
+
+	AttrWithSettings_t								m_tAttr;
+	std::unique_ptr<ScalarQuantizer_i>				m_pQuantizer;
+	std::unique_ptr<hnswlib::HierarchicalNSW<float>> m_pAlg;
+	AddPoint_fn										m_fnAddPoint = AddPointFallback;
 };
+
+
+HNSWIndexBuilder_c::AddPoint_fn HNSWIndexBuilder_c::SelectAddPointFn() const
+{
+	switch ( m_pSpace->GetDistFuncId() )
+	{
+	case DistFuncId_e::IP_FLOAT32:					return AddPointTyped<IPFloatDistFn_c>;
+	case DistFuncId_e::L2_FLOAT32:					return AddPointTyped<L2FloatDistFn_c>;
+	case DistFuncId_e::IP_BINARY_GENERIC:			return AddPointTyped<IPBinaryGenericBuildDistFn_c>;
+	case DistFuncId_e::L2_BINARY_GENERIC:			return AddPointTyped<L2BinaryGenericBuildDistFn_c>;
+
+#if !defined(USE_SIMDE)
+	case DistFuncId_e::IP_BINARY_SIMD16:			return AddPointTyped<IPBinarySIMD16BuildDistFn_c>;
+	case DistFuncId_e::IP_BINARY_SIMD16_RESIDUALS:	return AddPointTyped<IPBinarySIMD16ResidualsBuildDistFn_c>;
+	case DistFuncId_e::L2_BINARY_SIMD16:			return AddPointTyped<L2BinarySIMD16BuildDistFn_c>;
+	case DistFuncId_e::L2_BINARY_SIMD16_RESIDUALS:	return AddPointTyped<L2BinarySIMD16ResidualsBuildDistFn_c>;
+#endif
+
+	default:
+		return AddPointFallback;
+	}
+}
 
 
 HNSWIndexBuilder_c::HNSWIndexBuilder_c ( const AttrWithSettings_t & tAttr, int64_t iNumElements, ScalarQuantizer_i * pQuantizer )
@@ -570,6 +642,7 @@ HNSWIndexBuilder_c::HNSWIndexBuilder_c ( const AttrWithSettings_t & tAttr, int64
 	, m_pQuantizer ( pQuantizer )
 {
 	m_pAlg = std::make_unique<hnswlib::HierarchicalNSW<float>>( m_pSpace.get(), iNumElements, m_tAttr.m_iHNSWM, m_tAttr.m_iHNSWEFConstruction );
+	m_fnAddPoint = SelectAddPointFn();
 }
 
 
@@ -615,13 +688,16 @@ bool HNSWIndexBuilder_c::AddDoc ( uint32_t uRowID, const util::Span_T<float> & d
 		dToAdd = tBuildCtx.m_dNormalized;
 	}
 
+	const void * pVec = nullptr;
 	if ( m_pQuantizer )
 	{
 		m_pQuantizer->Encode ( uRowID, dToAdd, tBuildCtx.m_dQuantized, tBuildCtx.m_dQuantizedForQuery );
-		m_pAlg->addPoint ( (void*)tBuildCtx.m_dQuantized.data(), (size_t)uRowID );
+		pVec = (void*)tBuildCtx.m_dQuantized.data();
 	}
 	else
-		m_pAlg->addPoint ( (void*)dToAdd.data(), (size_t)uRowID );
+		pVec = (void*)dToAdd.data();
+
+	m_fnAddPoint ( *m_pAlg, pVec, uRowID );
 
 	return true;
 }
