@@ -86,7 +86,7 @@ const DIAG_LOG_PATH: &str = "/tmp/manticore-embeddings-diag.log";
 /// Append one line to DIAG_LOG_PATH plus a process-local stderr copy.
 /// Errors are intentionally swallowed — this is a diagnostics path, we
 /// must not panic from within it.
-fn diag_log(line: &str) {
+pub(crate) fn diag_log(line: &str) {
     use std::io::Write;
     eprintln!("{line}");
     if let Ok(mut f) = std::fs::OpenOptions::new()
@@ -96,6 +96,65 @@ fn diag_log(line: &str) {
     {
         let _ = writeln!(f, "{line}");
         let _ = f.flush();
+    }
+}
+
+/// Get the current thread's stack base address and stack size, via
+/// pthread_getattr_np + pthread_attr_getstack on Linux. Returns
+/// (base, size) where base is the lowest address of the stack and size
+/// is its total size in bytes. Returns None on platforms / failures.
+#[cfg(target_os = "linux")]
+fn thread_stack_info() -> Option<(usize, usize)> {
+    unsafe {
+        let mut attr: libc::pthread_attr_t = std::mem::zeroed();
+        if libc::pthread_getattr_np(libc::pthread_self(), &mut attr) != 0 {
+            return None;
+        }
+        let mut base: *mut libc::c_void = std::ptr::null_mut();
+        let mut size: libc::size_t = 0;
+        let rc = libc::pthread_attr_getstack(&attr, &mut base, &mut size);
+        libc::pthread_attr_destroy(&mut attr);
+        if rc != 0 || base.is_null() {
+            return None;
+        }
+        Some((base as usize, size as usize))
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn thread_stack_info() -> Option<(usize, usize)> {
+    None
+}
+
+/// Log a stack-usage snapshot at the current point. Captures:
+///   - current $sp (estimated via address of a stack-allocated local)
+///   - thread's stack base/top/size (from pthread_getattr_np)
+///   - bytes used (top - sp)
+///   - bytes remaining (sp - base)
+///
+/// Call this at suspected stack-pressure choke points (every FFI entry,
+/// before each candle op) to map out where exactly the budget is burnt.
+/// Safe to call from any thread; no global state mutation.
+pub(crate) fn stack_probe(label: &str) {
+    let probe: u8 = 0;
+    let sp = &probe as *const u8 as usize;
+    match thread_stack_info() {
+        Some((base, size)) => {
+            let top = base + size;
+            let used = top.saturating_sub(sp);
+            let remaining = sp.saturating_sub(base);
+            diag_log(&format!(
+                "[stack_probe] {label}: tid={tid} sp=0x{sp:016x} \
+                 base=0x{base:016x} top=0x{top:016x} size={size} \
+                 used={used} remaining={remaining}",
+                tid = unsafe { libc::gettid() },
+            ));
+        }
+        None => {
+            diag_log(&format!(
+                "[stack_probe] {label}: sp=0x{sp:016x} (stack info unavailable)"
+            ));
+        }
     }
 }
 
