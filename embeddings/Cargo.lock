@@ -1881,6 +1881,7 @@ dependencies = [
  "candle-transformers",
  "cbindgen",
  "hf-hub",
+ "libc",
  "ndarray 0.16.1",
  "ort",
  "rand 0.8.6",

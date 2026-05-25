@@ -1,5 +1,6 @@
 use super::TextModel;
 use crate::error::LibError;
+use crate::ffi::stack_probe;
 use crate::utils::{get_hidden_size, get_max_input_length, normalize, pre_truncate_text};
 use candle_core::quantized::gguf_file;
 use candle_core::{DType, Device, IndexOp, Tensor};
@@ -472,12 +473,15 @@ impl BertEmbeddingModel {
             // another thread re-enters forward. Holding the lock until the
             // f32 data has been copied into an owned Vec eliminates the race.
             if batch.len() == 1 {
+                stack_probe("predict_chunks_b1:entry");
                 let chunk = &batch[0];
                 let token_ids = Tensor::new(chunk.as_slice(), &self.device)?.unsqueeze(0)?;
                 let token_type_ids = token_ids.zeros_like()?;
                 let mut emb_vec: Vec<f32> = {
                     let model = self.model.lock().unwrap_or_else(|e| e.into_inner());
+                    stack_probe("predict_chunks_b1:before_forward");
                     let emb = model.forward(&token_ids, &token_type_ids, None)?;
+                    stack_probe("predict_chunks_b1:after_forward");
                     let seq_len = token_ids.dims()[1];
                     let summed = emb.sum(1)?.to_dtype(DType::F32)?;
                     let divisor = Tensor::new(seq_len as f32, &self.device)?;
@@ -1231,6 +1235,7 @@ impl TextModel for LocalModel {
                 // Lock scope covers the full candle pipeline through to_vec1; see
                 // BertEmbeddingModel::predict_chunks for the concurrency rationale.
                 if texts.len() == 1 {
+                    stack_probe("bert_predict_single:entry");
                     let text = pre_truncate_text(texts[0], m.max_input_len);
                     let enc = m
                         .tokenizer
@@ -1241,9 +1246,12 @@ impl TextModel for LocalModel {
 
                     let token_ids = Tensor::new(ids, &m.device)?.unsqueeze(0)?;
                     let token_type_ids = token_ids.zeros_like()?;
+                    stack_probe("bert_predict_single:before_lock");
                     let mut emb_vec: Vec<f32> = {
                         let model = m.model.lock().unwrap_or_else(|e| e.into_inner());
+                        stack_probe("bert_predict_single:before_forward");
                         let emb = model.forward(&token_ids, &token_type_ids, None)?;
+                        stack_probe("bert_predict_single:after_forward");
                         let seq_len = token_ids.dims()[1];
                         let summed = emb.sum(1)?.to_dtype(DType::F32)?;
                         let divisor = Tensor::new(seq_len as f32, &m.device)?;

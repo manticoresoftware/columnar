@@ -60,8 +60,26 @@ jobs:
         CTEST_START: ${{ inputs.CTEST_START }}
         CTEST_END: ${{ inputs.CTEST_END }}
         MANTICORE_LOCATOR: ${{ inputs.MANTICORE_LOCATOR }}
+        # ─── Heap-corruption diagnostics for the auto-embed crashes ───
+        # MALLOC_CHECK_=3 enables glibc's malloc consistency checks. On glibc
+        # < 2.34 the env var is read directly. On glibc >= 2.34 the env var
+        # is ignored for unprivileged binaries and you must use the tunable.
+        # Setting both makes us version-agnostic.
+        #
+        # Effect on next crash: glibc prints a diagnostic line to stderr
+        # naming the corruption kind (e.g. "double free or corruption",
+        # "free(): invalid pointer", "malloc(): memory corruption") BEFORE
+        # aborting. searchd's --log captures stderr, so the line will show
+        # up in searchd.log just above the crash dump.
+        #
+        # MALLOC_PERTURB_=204 fills new mallocs with 0xCC and freed memory
+        # with 0x33 (~0xCC). Catches use-after-free reads as garbage values
+        # propagating into downstream logic.
+        MALLOC_CHECK_: "3"
+        GLIBC_TUNABLES: "glibc.malloc.check=3"
+        MALLOC_PERTURB_: "204"
         # The following is useful to test a specific test, just uncomment it, no need to disable CTEST_START/END
-        # CTEST_REGEX: test_234
+        # CTEST_REGEX: test_481
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -174,10 +192,40 @@ jobs:
         continue-on-error: true
         run: ${{ inputs.xml_command }}
 
+      # ─── Capture embeddings lib diagnostics ──────────────────────────────
+      # The embeddings lib's GetLibFuncs() installs:
+      #   - a Rust panic hook that writes to /tmp/manticore-embeddings-diag.log
+      #   - an async-signal-safe SIGSEGV/SIGBUS/SIGABRT/SIGILL handler that
+      #     writes a marker line to the same file before re-raising
+      # so the next time the daemon crashes we get the actual panic site /
+      # signal that triggered it, NOT just the downstream malloc abort.
+      #
+      # Copy the file into the test build dir so the upload step picks it up,
+      # and also dump it to the step log for inline visibility.
+      - name: Collect embeddings diag log
+        if: always()
+        continue-on-error: true
+        run: |
+          mkdir -p build/_deps/manticore-build/test
+          if [ -f /tmp/manticore-embeddings-diag.log ]; then
+            cp /tmp/manticore-embeddings-diag.log build/_deps/manticore-build/test/embeddings-diag.log
+            echo "===== embeddings diag log ====="
+            cat /tmp/manticore-embeddings-diag.log
+            echo "===== end embeddings diag log ====="
+          else
+            echo "no embeddings diag log at /tmp/manticore-embeddings-diag.log" \
+              > build/_deps/manticore-build/test/embeddings-diag.log
+            echo "no embeddings diag log produced"
+          fi
+          # also search the test data dir for any diag logs the daemon may
+          # have produced inside per-test directories (in case /tmp is wiped
+          # between test runs)
+          find build/_deps/manticore-build/test -name 'manticore-embeddings-diag.log' -print -exec cat {} \; || true
+
       - name: Upload test artifacts
         if: always()
         continue-on-error: true
         uses: manticoresoftware/upload_artifact_with_retries@v4
         with:
           name: ${{ inputs.artifact_name }}
-          path: "build/junit*.xml build/_deps/manticore-build/test/test_*/report.* build/_deps/manticore-build/test/error*.txt build/_deps/manticore-build/test/*log build/status*"
+          path: "build/junit*.xml build/_deps/manticore-build/test/test_*/report.* build/_deps/manticore-build/test/error*.txt build/_deps/manticore-build/test/*log build/_deps/manticore-build/test/embeddings-diag.log build/status*"

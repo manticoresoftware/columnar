@@ -1,3 +1,4 @@
+use crate::ffi::stack_probe;
 use crate::model::{create_model, Model, ModelOptions, TextModel};
 use std::os::raw::c_char;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -111,6 +112,7 @@ impl TextModelWrapper {
         api_timeout: i32, // 0 = unlimited, >0 = timeout in seconds
         use_gpu: bool,
     ) -> TextModelResult {
+        stack_probe("load_model:entry");
         // catch_unwind: a Rust panic crossing into the C++ daemon is UB. Any
         // panic in create_model / HF Hub / candle config parsing / etc. must
         // be converted to a clean error-return TextModelResult.
@@ -221,6 +223,7 @@ impl TextModelWrapper {
         texts: *const StringItem,
         count: usize,
     ) -> FloatVecResult {
+        stack_probe("make_vect_embeddings:entry");
         // Hot path for `SELECT KNN(field, k, 'text')` and auto-embed INSERT.
         // Any panic in candle / tokenizers / our own `.unwrap()`s would unwind
         // across the C++ FFI boundary = undefined behaviour = daemon SIGSEGV.
@@ -252,7 +255,9 @@ impl TextModelWrapper {
                 .collect();
 
             let mut float_vec_list: Vec<FloatVec> = Vec::new();
+            stack_probe("make_vect_embeddings:before_predict");
             let embeddings_list = model.predict(&string_refs);
+            stack_probe("make_vect_embeddings:after_predict");
             let c_error = match embeddings_list {
                 Ok(embeddings_list) => {
                     for embeddings in embeddings_list.iter() {
