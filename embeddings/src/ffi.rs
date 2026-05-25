@@ -74,26 +74,154 @@ const LIB: EmbedLib = EmbedLib {
     free_string: TextModelWrapper::free_string,
 };
 
+/// Path the diagnostics hooks write to. The daemon's stderr is not captured
+/// by the test harness, so we write to a known file path that CI can upload
+/// as an artifact. CI step:
+///
+///   - name: Capture embeddings diagnostics
+///     if: always()
+///     run: cat /tmp/manticore-embeddings-diag.log || echo "no diag log"
+const DIAG_LOG_PATH: &str = "/tmp/manticore-embeddings-diag.log";
+
+/// Append one line to DIAG_LOG_PATH plus a process-local stderr copy.
+/// Errors are intentionally swallowed — this is a diagnostics path, we
+/// must not panic from within it.
+fn diag_log(line: &str) {
+    use std::io::Write;
+    eprintln!("{line}");
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(DIAG_LOG_PATH)
+    {
+        let _ = writeln!(f, "{line}");
+        let _ = f.flush();
+    }
+}
+
+/// One-shot installation of panic and signal diagnostics. Called from
+/// GetLibFuncs() — runs once when the daemon dlopens the lib.
+fn install_diagnostics() {
+    use std::sync::Once;
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        // RUST_BACKTRACE=full so std::backtrace::Backtrace::force_capture()
+        // produces a full unwind regardless of the daemon's env.
+        std::env::set_var("RUST_BACKTRACE", "full");
+
+        // Rust panic hook: write to file with full backtrace.
+        std::panic::set_hook(Box::new(|info| {
+            let loc = info
+                .location()
+                .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+                .unwrap_or_else(|| "<unknown>".to_string());
+            let payload = info
+                .payload()
+                .downcast_ref::<&str>()
+                .copied()
+                .or_else(|| info.payload().downcast_ref::<String>().map(|s| s.as_str()))
+                .unwrap_or("<non-string payload>");
+            let bt = std::backtrace::Backtrace::force_capture();
+            diag_log(&format!(
+                "===== manticore-embeddings PANIC =====\n\
+                 location: {loc}\n\
+                 payload: {payload}\n\
+                 backtrace:\n{bt}\n\
+                 ====================================="
+            ));
+        }));
+
+        // Native signal handler for SIGSEGV/SIGBUS/SIGILL/SIGABRT. These are
+        // what a stack overflow or heap-corruption abort looks like at the
+        // OS level. We write a marker to the diag log so we can correlate
+        // the OS-level event with the daemon's crash dump.
+        //
+        // Inside a signal handler we are *very* restricted (async-signal-safe
+        // only). We deliberately use the lowest-level write(2) syscall via
+        // libc and avoid Rust formatting / allocation.
+        install_signal_diag();
+
+        // Stamp on lib load so the file always has at least one line.
+        diag_log("===== manticore-embeddings loaded =====");
+    });
+}
+
+#[cfg(unix)]
+fn install_signal_diag() {
+    // We install handlers for the signals that wrap up our crash scenarios:
+    //   SIGSEGV / SIGBUS — bad memory access (stack overflow past guard,
+    //                       NULL deref, unmapped page, etc.)
+    //   SIGABRT          — glibc malloc consistency abort, assertion fail
+    //   SIGILL           — undefined-behaviour sanitiser trip on some setups
+    //
+    // The handler writes a short prefix to the diag log (via raw write(2),
+    // async-signal-safe) and then re-raises the signal with the default
+    // disposition so the daemon's own crash handler still runs.
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static INSTALLED: AtomicBool = AtomicBool::new(false);
+    if INSTALLED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+
+    extern "C" fn handler(signum: libc::c_int) {
+        // Async-signal-safe: no allocation, no formatted IO, just raw write.
+        let prefix: &[u8] = match signum {
+            libc::SIGSEGV => b"===== manticore-embeddings SIGSEGV =====\n",
+            libc::SIGBUS => b"===== manticore-embeddings SIGBUS =====\n",
+            libc::SIGABRT => b"===== manticore-embeddings SIGABRT =====\n",
+            libc::SIGILL => b"===== manticore-embeddings SIGILL =====\n",
+            _ => b"===== manticore-embeddings SIGNAL =====\n",
+        };
+        // O_WRONLY|O_CREAT|O_APPEND; mode 0644 — async-signal-safe via libc.
+        unsafe {
+            let path = b"/tmp/manticore-embeddings-diag.log\0";
+            let fd = libc::open(
+                path.as_ptr() as *const libc::c_char,
+                libc::O_WRONLY | libc::O_CREAT | libc::O_APPEND,
+                0o644,
+            );
+            if fd >= 0 {
+                let _ = libc::write(fd, prefix.as_ptr() as *const _, prefix.len());
+                let _ = libc::close(fd);
+            }
+        }
+
+        // Re-raise with default disposition so the daemon's own handler still
+        // runs (it produces the existing FATAL CRASH DUMP we already see).
+        unsafe {
+            libc::signal(signum, libc::SIG_DFL);
+            libc::raise(signum);
+        }
+    }
+
+    // sigaction with SA_ONSTACK so the handler runs even when the original
+    // stack is overflowed — vital for diagnosing stack overflow specifically.
+    unsafe {
+        // 8 KB alternate signal stack — enough for our 1-line write.
+        const ALT_STACK_SIZE: usize = 16 * 1024;
+        let stack_mem = Box::leak(Box::new([0u8; ALT_STACK_SIZE]));
+        let mut altstack: libc::stack_t = std::mem::zeroed();
+        altstack.ss_sp = stack_mem.as_mut_ptr() as *mut libc::c_void;
+        altstack.ss_size = ALT_STACK_SIZE;
+        altstack.ss_flags = 0;
+        let _ = libc::sigaltstack(&altstack, std::ptr::null_mut());
+
+        let mut sa: libc::sigaction = std::mem::zeroed();
+        sa.sa_sigaction = handler as usize;
+        sa.sa_flags = libc::SA_ONSTACK | libc::SA_RESETHAND;
+        libc::sigemptyset(&mut sa.sa_mask);
+
+        for sig in [libc::SIGSEGV, libc::SIGBUS, libc::SIGABRT, libc::SIGILL] {
+            libc::sigaction(sig, &sa, std::ptr::null_mut());
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn install_signal_diag() {}
+
 #[no_mangle]
 pub extern "C" fn GetLibFuncs() -> *const EmbedLib {
-    // Log panics to stderr (with location + payload) instead of silently
-    // discarding them. The previous no-op hook was hiding the root cause of
-    // FFI-boundary crashes; we still need catch_unwind at every extern "C"
-    // entry point (see text_model_wrapper.rs) to convert the unwind into a
-    // clean error return, but the hook here ensures the original panic site
-    // appears in the daemon's log before we swallow it.
-    std::panic::set_hook(Box::new(|info| {
-        let loc = info
-            .location()
-            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
-            .unwrap_or_else(|| "<unknown>".to_string());
-        let payload = info
-            .payload()
-            .downcast_ref::<&str>()
-            .copied()
-            .or_else(|| info.payload().downcast_ref::<String>().map(|s| s.as_str()))
-            .unwrap_or("<non-string payload>");
-        eprintln!("manticore-knn-embeddings: panic at {loc}: {payload}");
-    }));
+    install_diagnostics();
     &LIB
 }
