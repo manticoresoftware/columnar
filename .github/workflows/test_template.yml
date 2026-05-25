@@ -60,8 +60,26 @@ jobs:
         CTEST_START: ${{ inputs.CTEST_START }}
         CTEST_END: ${{ inputs.CTEST_END }}
         MANTICORE_LOCATOR: ${{ inputs.MANTICORE_LOCATOR }}
+        # ─── Heap-corruption diagnostics for the auto-embed crashes ───
+        # MALLOC_CHECK_=3 enables glibc's malloc consistency checks. On glibc
+        # < 2.34 the env var is read directly. On glibc >= 2.34 the env var
+        # is ignored for unprivileged binaries and you must use the tunable.
+        # Setting both makes us version-agnostic.
+        #
+        # Effect on next crash: glibc prints a diagnostic line to stderr
+        # naming the corruption kind (e.g. "double free or corruption",
+        # "free(): invalid pointer", "malloc(): memory corruption") BEFORE
+        # aborting. searchd's --log captures stderr, so the line will show
+        # up in searchd.log just above the crash dump.
+        #
+        # MALLOC_PERTURB_=204 fills new mallocs with 0xCC and freed memory
+        # with 0x33 (~0xCC). Catches use-after-free reads as garbage values
+        # propagating into downstream logic.
+        MALLOC_CHECK_: "3"
+        GLIBC_TUNABLES: "glibc.malloc.check=3"
+        MALLOC_PERTURB_: "204"
         # The following is useful to test a specific test, just uncomment it, no need to disable CTEST_START/END
-        # CTEST_REGEX: test_234
+        CTEST_REGEX: test_481
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
