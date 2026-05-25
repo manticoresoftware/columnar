@@ -318,11 +318,15 @@ impl TextModelWrapper {
     }
 
     pub extern "C" fn get_hidden_size(&self) -> usize {
-        // No error channel here; return 0 on a bad handle so the C++ caller
-        // sees an obviously-wrong dimension instead of UB. The handle is
-        // already validated before any real work, so a 0 here means the C++
-        // side handed us an invalid pointer.
-        self.as_model().map(|m| m.get_hidden_size()).unwrap_or(0)
+        // No error channel here; return 0 on a bad handle or unwind so the
+        // C++ caller sees an obviously-wrong dimension instead of UB. The
+        // remote model impls already return 0 instead of panicking when the
+        // dim is unknown; catch_unwind is a defense-in-depth guard so any
+        // future panic on this path can never unwind across FFI.
+        catch_unwind(AssertUnwindSafe(|| {
+            self.as_model().map(|m| m.get_hidden_size()).unwrap_or(0)
+        }))
+        .unwrap_or(0)
     }
 
     pub extern "C" fn get_max_input_len(&self) -> usize {

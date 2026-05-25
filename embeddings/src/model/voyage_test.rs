@@ -177,7 +177,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Unknown model")]
+    #[should_panic(expected = "hidden size must be populated during model construction")]
     fn test_get_hidden_size_unknown_model() {
         // This test verifies the panic behavior for unknown models
         // In practice, this shouldn't happen due to validation in new()
