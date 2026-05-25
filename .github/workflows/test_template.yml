@@ -79,7 +79,7 @@ jobs:
         GLIBC_TUNABLES: "glibc.malloc.check=3"
         MALLOC_PERTURB_: "204"
         # The following is useful to test a specific test, just uncomment it, no need to disable CTEST_START/END
-        CTEST_REGEX: test_481
+        # CTEST_REGEX: test_481
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
