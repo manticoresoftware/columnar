@@ -99,38 +99,56 @@ pub(crate) fn diag_log(line: &str) {
     }
 }
 
-/// Get the current thread's stack base address and stack size, via
-/// pthread_getattr_np + pthread_attr_getstack on Linux. Returns
-/// (base, size) where base is the lowest address of the stack and size
-/// is its total size in bytes. Returns None on platforms / failures.
+/// Find which mapped VMA in /proc/self/maps contains the given address.
+/// Returns (start, end, tag) of that mapping. Works for both pthread stacks
+/// AND boost-coroutine stacks. pthread stacks have the `[stack]` tag for
+/// the main thread or anonymous for spawned threads; boost-coroutine
+/// stacks are always anonymous rw-p mappings invisible to
+/// pthread_getattr_np. Either way /proc/self/maps shows them.
+///
+/// Reading /proc/self/maps is NOT async-signal-safe and may allocate. Do
+/// not call from signal handlers. From normal probe sites it's fine.
 #[cfg(target_os = "linux")]
-fn thread_stack_info() -> Option<(usize, usize)> {
-    unsafe {
-        let mut attr: libc::pthread_attr_t = std::mem::zeroed();
-        if libc::pthread_getattr_np(libc::pthread_self(), &mut attr) != 0 {
-            return None;
+fn stack_region_for(addr: usize) -> Option<(usize, usize, String)> {
+    let maps = std::fs::read_to_string("/proc/self/maps").ok()?;
+    for line in maps.lines() {
+        // Format: "7f277d95a000-7f277d97a000 rw-p 00000000 00:00 0   [stack]"
+        // or just "...rw-p ..." for anonymous (including boost coroutines).
+        let mut parts = line.splitn(2, ' ');
+        let range = parts.next()?;
+        let rest = parts.next().unwrap_or("");
+        let mut bounds = range.splitn(2, '-');
+        let start = usize::from_str_radix(bounds.next()?, 16).ok()?;
+        let end = usize::from_str_radix(bounds.next()?, 16).ok()?;
+        if addr >= start && addr < end {
+            // Tag: text after the last whitespace — "[stack]", "[heap]",
+            // a path, or treat empty as "[anon]" (= likely boost coroutine).
+            let tag = rest
+                .rsplit_whitespace()
+                .next()
+                .filter(|s| s.starts_with('[') || s.starts_with('/'))
+                .unwrap_or("[anon]")
+                .to_string();
+            return Some((start, end, tag));
         }
-        let mut base: *mut libc::c_void = std::ptr::null_mut();
-        let mut size: libc::size_t = 0;
-        let rc = libc::pthread_attr_getstack(&attr, &mut base, &mut size);
-        libc::pthread_attr_destroy(&mut attr);
-        if rc != 0 || base.is_null() {
-            return None;
-        }
-        Some((base as usize, size as usize))
     }
+    None
 }
 
 #[cfg(not(target_os = "linux"))]
-fn thread_stack_info() -> Option<(usize, usize)> {
+fn stack_region_for(_addr: usize) -> Option<(usize, usize, String)> {
     None
 }
 
 /// Log a stack-usage snapshot at the current point. Captures:
 ///   - current $sp (estimated via address of a stack-allocated local)
-///   - thread's stack base/top/size (from pthread_getattr_np)
-///   - bytes used (top - sp)
-///   - bytes remaining (sp - base)
+///   - the VMA from /proc/self/maps that currently contains $sp — i.e. the
+///     ACTUAL stack region we are on. For pthread workers this is the
+///     "[stack]"-tagged mapping; for boost-context coroutines it's an
+///     anonymous rw-p mapping. Either way the bounds are real.
+///   - bytes used (region_end - sp)
+///   - bytes remaining (sp - region_start)
+///   - the VMA tag so we can tell "[stack]" vs "[anon]" (= coroutine)
 ///
 /// Call this at suspected stack-pressure choke points (every FFI entry,
 /// before each candle op) to map out where exactly the budget is burnt.
@@ -138,21 +156,22 @@ fn thread_stack_info() -> Option<(usize, usize)> {
 pub(crate) fn stack_probe(label: &str) {
     let probe: u8 = 0;
     let sp = &probe as *const u8 as usize;
-    match thread_stack_info() {
-        Some((base, size)) => {
-            let top = base + size;
-            let used = top.saturating_sub(sp);
-            let remaining = sp.saturating_sub(base);
+    let tid = unsafe { libc::gettid() };
+    match stack_region_for(sp) {
+        Some((start, end, tag)) => {
+            let size = end - start;
+            let used = end.saturating_sub(sp);
+            let remaining = sp.saturating_sub(start);
             diag_log(&format!(
                 "[stack_probe] {label}: tid={tid} sp=0x{sp:016x} \
-                 base=0x{base:016x} top=0x{top:016x} size={size} \
-                 used={used} remaining={remaining}",
-                tid = unsafe { libc::gettid() },
+                 region=0x{start:016x}-0x{end:016x} tag={tag} \
+                 size={size} used={used} remaining={remaining}"
             ));
         }
         None => {
             diag_log(&format!(
-                "[stack_probe] {label}: sp=0x{sp:016x} (stack info unavailable)"
+                "[stack_probe] {label}: tid={tid} sp=0x{sp:016x} \
+                 (no /proc/self/maps match — sp may be in a freshly-allocated region)"
             ));
         }
     }
