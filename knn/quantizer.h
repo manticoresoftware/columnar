@@ -67,7 +67,8 @@ public:
 
 	virtual void	Train ( const util::Span_T<float> & dPoint ) = 0;
 	virtual bool	FinalizeTraining ( std::string & sError ) = 0;
-	virtual void	Encode ( uint32_t uRowID, const util::Span_T<float> & dPoint, std::vector<uint8_t> & dQuantized ) = 0;
+	virtual bool	IsFinalized () const = 0;
+	virtual void	Encode ( uint32_t uRowID, const util::Span_T<float> & dPoint, std::vector<uint8_t> & dQuantized, std::vector<uint8_t> & dQuantizedForQuery ) = 0;
 	virtual void	FinalizeEncoding() = 0;
 	virtual const QuantizationSettings_t & GetSettings() = 0;
 
