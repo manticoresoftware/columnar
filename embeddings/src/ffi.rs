@@ -124,8 +124,8 @@ fn stack_region_for(addr: usize) -> Option<(usize, usize, String)> {
             // Tag: text after the last whitespace — "[stack]", "[heap]",
             // a path, or treat empty as "[anon]" (= likely boost coroutine).
             let tag = rest
-                .rsplit_whitespace()
-                .next()
+                .split_whitespace()
+                .last()
                 .filter(|s| s.starts_with('[') || s.starts_with('/'))
                 .unwrap_or("[anon]")
                 .to_string();
