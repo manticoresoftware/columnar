@@ -207,7 +207,7 @@ fn install_signal_diag() {
         let _ = libc::sigaltstack(&altstack, std::ptr::null_mut());
 
         let mut sa: libc::sigaction = std::mem::zeroed();
-        sa.sa_sigaction = handler as usize;
+        sa.sa_sigaction = handler as *const () as usize;
         sa.sa_flags = libc::SA_ONSTACK | libc::SA_RESETHAND;
         libc::sigemptyset(&mut sa.sa_mask);
 
