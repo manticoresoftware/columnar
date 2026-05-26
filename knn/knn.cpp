@@ -310,6 +310,48 @@ public:
 };
 #endif
 
+// build-mode DistFn classes
+using IPBinaryGenericBuildDistFn_c = DistFnDispatch_c<&IPBinaryFloatDistanceGenericBuild>;
+using L2BinaryGenericBuildDistFn_c = DistFnDispatch_c<&L2BinaryFloatDistanceGenericBuild>;
+
+#if !defined(USE_SIMDE)
+class IPBinarySIMD16BuildDistFn_c : public DistFnDispatch_c<&IPBinaryFloatDistanceSIMD16Build>
+{
+public:
+	static void Eval2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+	{
+		IPBinaryFloatDistanceSIMD16Batch2Build ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
+	}
+};
+
+class IPBinarySIMD16ResidualsBuildDistFn_c : public DistFnDispatch_c<&IPBinaryFloatDistanceSIMD16ResidualsBuild>
+{
+public:
+	static void Eval2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+	{
+		IPBinaryFloatDistanceSIMD16ResidualsBatch2Build ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
+	}
+};
+
+class L2BinarySIMD16BuildDistFn_c : public DistFnDispatch_c<&L2BinaryFloatDistanceSIMD16Build>
+{
+public:
+	static void Eval2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+	{
+		L2BinaryFloatDistanceSIMD16Batch2Build ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
+	}
+};
+
+class L2BinarySIMD16ResidualsBuildDistFn_c : public DistFnDispatch_c<&L2BinaryFloatDistanceSIMD16ResidualsBuild>
+{
+public:
+	static void Eval2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+	{
+		L2BinaryFloatDistanceSIMD16ResidualsBatch2Build ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
+	}
+};
+#endif
+
 template <typename DistFn = void>
 static void RunSearchPath ( const hnswlib::HierarchicalNSW<float> & tAlg, std::vector<DocDist_t> & dResults, const void * pData, int64_t iResults, HNSWFilterWrapper_c * pFilter, size_t * pSearchEf, int iSearchPath )
 {
@@ -359,7 +401,8 @@ void HNSWIndex_c::Search ( std::vector<DocDist_t> & dResults, const Span_T<float
 	const void * pData = dData.begin();
 	if ( m_pQuantizer )
 	{
-		m_pQuantizer->Encode ( 0, dData, dQuantized );
+		std::vector<uint8_t> dUnusedQuantizedForQuery;
+		m_pQuantizer->Encode ( 0, dData, dQuantized, dUnusedQuantizedForQuery );
 		pData = dQuantized.data();
 	}
 
@@ -536,7 +579,8 @@ public:
 	virtual			~HNSWIndexBuilder_i() = default;
 
 	virtual void	Train ( const util::Span_T<float> & dData ) = 0;
-	virtual bool	AddDoc ( uint32_t uRowID, const util::Span_T<float> & dData, std::string & sError ) = 0;
+	virtual bool	FinalizeTraining ( std::string & sError ) = 0;
+	virtual bool	AddDoc ( uint32_t uRowID, const util::Span_T<float> & dData, BuildContext_t & tBuildCtx, std::string & sError ) = 0;
 	virtual void	Save ( FileWriter_c & tWriter ) = 0;
 	virtual const AttrWithSettings_t & GetAttr() const = 0;
 	virtual const QuantizationSettings_t & GetQuantizationSettings() const = 0;
@@ -549,19 +593,47 @@ public:
 			HNSWIndexBuilder_c ( const AttrWithSettings_t & tAttr, int64_t iNumElements, ScalarQuantizer_i * pQuantizer );
 
 	void	Train ( const util::Span_T<float> & dData ) override;
-	bool	AddDoc ( uint32_t uRowID, const util::Span_T<float> & dData, std::string & sError ) override;
+	bool	FinalizeTraining ( std::string & sError ) override;
+	bool	AddDoc ( uint32_t uRowID, const util::Span_T<float> & dData, BuildContext_t & tBuildCtx, std::string & sError ) override;
 	void	Save ( FileWriter_c & tWriter ) override;
 	const AttrWithSettings_t & GetAttr() const override						{ return m_tAttr; }
 	const QuantizationSettings_t & GetQuantizationSettings() const override { return m_pQuantizer->GetSettings(); }
 
 private:
-	AttrWithSettings_t			m_tAttr;
-	bool						m_bFirstDoc = true;
-	SpanResizeable_T<float>		m_dNormalized;
-	std::vector<uint8_t>		m_dQuantized;
-	std::unique_ptr<ScalarQuantizer_i>					m_pQuantizer;
-	std::unique_ptr<hnswlib::HierarchicalNSW<float>>	m_pAlg;
+	using AddPoint_fn = void (*) ( hnswlib::HierarchicalNSW<float> &, const void *, uint32_t );
+
+	template <typename DistFn>
+	static void	AddPointTyped ( hnswlib::HierarchicalNSW<float> & tAlg, const void * pVec, uint32_t uRowID ) { tAlg.template addPoint<DistFn, false> ( pVec, (size_t)uRowID, -1 ); }
+	static void	AddPointFallback ( hnswlib::HierarchicalNSW<float> & tAlg, const void * pVec, uint32_t uRowID ) { tAlg.addPoint ( pVec, (size_t)uRowID ); }
+	AddPoint_fn SelectAddPointFn() const;
+
+	AttrWithSettings_t								m_tAttr;
+	std::unique_ptr<ScalarQuantizer_i>				m_pQuantizer;
+	std::unique_ptr<hnswlib::HierarchicalNSW<float>> m_pAlg;
+	AddPoint_fn										m_fnAddPoint = AddPointFallback;
 };
+
+
+HNSWIndexBuilder_c::AddPoint_fn HNSWIndexBuilder_c::SelectAddPointFn() const
+{
+	switch ( m_pSpace->GetDistFuncId() )
+	{
+	case DistFuncId_e::IP_FLOAT32:					return AddPointTyped<IPFloatDistFn_c>;
+	case DistFuncId_e::L2_FLOAT32:					return AddPointTyped<L2FloatDistFn_c>;
+	case DistFuncId_e::IP_BINARY_GENERIC:			return AddPointTyped<IPBinaryGenericBuildDistFn_c>;
+	case DistFuncId_e::L2_BINARY_GENERIC:			return AddPointTyped<L2BinaryGenericBuildDistFn_c>;
+
+#if !defined(USE_SIMDE)
+	case DistFuncId_e::IP_BINARY_SIMD16:			return AddPointTyped<IPBinarySIMD16BuildDistFn_c>;
+	case DistFuncId_e::IP_BINARY_SIMD16_RESIDUALS:	return AddPointTyped<IPBinarySIMD16ResidualsBuildDistFn_c>;
+	case DistFuncId_e::L2_BINARY_SIMD16:			return AddPointTyped<L2BinarySIMD16BuildDistFn_c>;
+	case DistFuncId_e::L2_BINARY_SIMD16_RESIDUALS:	return AddPointTyped<L2BinarySIMD16ResidualsBuildDistFn_c>;
+#endif
+
+	default:
+		return AddPointFallback;
+	}
+}
 
 
 HNSWIndexBuilder_c::HNSWIndexBuilder_c ( const AttrWithSettings_t & tAttr, int64_t iNumElements, ScalarQuantizer_i * pQuantizer )
@@ -570,7 +642,7 @@ HNSWIndexBuilder_c::HNSWIndexBuilder_c ( const AttrWithSettings_t & tAttr, int64
 	, m_pQuantizer ( pQuantizer )
 {
 	m_pAlg = std::make_unique<hnswlib::HierarchicalNSW<float>>( m_pSpace.get(), iNumElements, m_tAttr.m_iHNSWM, m_tAttr.m_iHNSWEFConstruction );
-	m_dNormalized.resize ( tAttr.m_iDims );
+	m_fnAddPoint = SelectAddPointFn();
 }
 
 
@@ -581,39 +653,51 @@ void HNSWIndexBuilder_c::Train ( const util::Span_T<float> & dData )
 }
 
 
-bool HNSWIndexBuilder_c::AddDoc ( uint32_t uRowID, const util::Span_T<float> & dData, std::string & sError )
+bool HNSWIndexBuilder_c::FinalizeTraining ( std::string & sError )
 {
-	if ( dData.size()!=m_tAttr.m_iDims )
+	if ( !m_pQuantizer )
+		return true;
+
+	if ( m_pQuantizer->IsFinalized() )
+		return true;
+
+	if ( !m_pQuantizer->FinalizeTraining ( sError ) )
+		return false;
+
+	m_pSpace->SetQuantizationSettings ( *m_pQuantizer );
+	return true;
+}
+
+
+bool HNSWIndexBuilder_c::AddDoc ( uint32_t uRowID, const util::Span_T<float> & dData, BuildContext_t & tBuildCtx, std::string & sError )
+{
+	if ( dData.size()!=(size_t)m_tAttr.m_iDims )
 	{
 		sError = FormatStr ( "HNSW error: data has %llu values, index '%s' needs %d values", dData.size(), m_tAttr.m_sName.c_str(), m_tAttr.m_iDims );
 		return false;
 	}
 
+	assert ( !m_pQuantizer || m_pQuantizer->IsFinalized() );
+
 	Span_T<float> dToAdd = dData;
 	if ( m_tAttr.m_eHNSWSimilarity==HNSWSimilarity_e::COSINE )
 	{
-		memcpy ( m_dNormalized.data(), dData.data(), dData.size()*sizeof(dData[0] ) );
-		VecNormalize(m_dNormalized);
-		dToAdd = m_dNormalized;
+		tBuildCtx.m_dNormalized.resize ( dData.size() );
+		memcpy ( tBuildCtx.m_dNormalized.data(), dData.data(), dData.size()*sizeof(dData[0] ) );
+		VecNormalize ( tBuildCtx.m_dNormalized );
+		dToAdd = tBuildCtx.m_dNormalized;
 	}
 
+	const void * pVec = nullptr;
 	if ( m_pQuantizer )
 	{
-		if ( m_bFirstDoc )
-		{
-			m_bFirstDoc = false;
-
-			if ( !m_pQuantizer->FinalizeTraining(sError) )
-				return false;
-
-			m_pSpace->SetQuantizationSettings ( *m_pQuantizer );
-		}
-
-		m_pQuantizer->Encode ( uRowID, dToAdd, m_dQuantized );
-		m_pAlg->addPoint ( (void*)m_dQuantized.data(), (size_t)uRowID );
+		m_pQuantizer->Encode ( uRowID, dToAdd, tBuildCtx.m_dQuantized, tBuildCtx.m_dQuantizedForQuery );
+		pVec = (void*)tBuildCtx.m_dQuantized.data();
 	}
 	else
-		m_pAlg->addPoint ( (void*)dToAdd.data(), (size_t)uRowID );
+		pVec = (void*)dToAdd.data();
+
+	m_fnAddPoint ( *m_pAlg, pVec, uRowID );
 
 	return true;
 }
@@ -634,14 +718,13 @@ class HNSWBuilder_c : public Builder_i
 public:
 			HNSWBuilder_c ( const Schema_t & tSchema, int64_t iNumElements, const std::string & sTmpFilename );
 
-	void	Train ( int iAttr, uint32_t uRowID, const util::Span_T<float> & dData ) override	{ m_dIndexes[iAttr]->Train(dData); }
-	bool	SetAttr ( int iAttr, uint32_t uRowID, const util::Span_T<float> & dData ) override	{ return m_dIndexes[iAttr]->AddDoc ( uRowID, dData, m_sError ); }
+	void	Train ( int iAttr, uint32_t uRowID, const util::Span_T<float> & dData ) override								{ m_dIndexes[iAttr]->Train(dData); }
+	bool	SetAttr ( int iAttr, uint32_t uRowID, const util::Span_T<float> & dData, BuildContext_t & tBuildCtx ) override	{ return m_dIndexes[iAttr]->AddDoc ( uRowID, dData, tBuildCtx, tBuildCtx.m_sError ); }
+	bool	FinalizeTraining ( std::string & sError ) override;
 	bool	Save ( const std::string & sFilename, size_t tBufferSize, std::string & sError ) override;
-	const std::string & GetError() const override									{ return m_sError; }
 
 private:
 	std::vector<std::unique_ptr<HNSWIndexBuilder_i>> m_dIndexes;
-	std::string m_sError;
 };
 
 
@@ -650,6 +733,16 @@ HNSWBuilder_c::HNSWBuilder_c ( const Schema_t & tSchema, int64_t iNumElements, c
 	int iFile = 0;
 	for ( const auto & i : tSchema )
 		m_dIndexes.push_back ( std::make_unique<HNSWIndexBuilder_c> ( i, iNumElements, CreateQuantizer ( i.m_eQuantization, i.m_eHNSWSimilarity, iNumElements, FormatStr ( "%s.%d", sTmpFilename.c_str(), iFile++ ) ) ) );
+}
+
+
+bool HNSWBuilder_c::FinalizeTraining ( std::string & sError )
+{
+	for ( auto & i : m_dIndexes )
+		if ( !i->FinalizeTraining(sError) )
+			return false;
+
+	return true;
 }
 
 
