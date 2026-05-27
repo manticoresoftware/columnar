@@ -85,18 +85,10 @@ function(build_embeddings_lib)
 		if(APPLE)
 			list(APPEND EMBEDDINGS_FEATURE_LIST accelerate)
 		elseif(UNIX AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64)$")
-			# Linux x86_64: enable mkl feature only when MKL is already on the
-			# host (CI Docker image bakes it in; for a local dev box, install
-			# once per ../rust-min-libc/Dockerfile lines 87-105). Missing MKL
-			# is not an error — the build falls back to baseline candle gemm.
-			# aarch64 has no MKL equivalent — skip.
 			embeddings_mkl_detect_linux ( _mklroot )
 			if ( _mklroot )
 				set ( ENV{MKLROOT} "${_mklroot}" )
-				message ( STATUS "Using MKLROOT=${_mklroot}" )
 				list(APPEND EMBEDDINGS_FEATURE_LIST mkl)
-			else()
-				message ( STATUS "MKL not detected — building without mkl feature. See ../rust-min-libc/Dockerfile to install locally." )
 			endif()
 		endif()
 		list(JOIN EMBEDDINGS_FEATURE_LIST "," EMBEDDINGS_FEATURES_CSV)
