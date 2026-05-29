@@ -76,24 +76,6 @@ const LIB: EmbedLib = EmbedLib {
 
 #[no_mangle]
 pub extern "C" fn GetLibFuncs() -> *const EmbedLib {
-    // Log panics to stderr (with location + payload) instead of silently
-    // discarding them. The previous no-op hook was hiding the root cause of
-    // FFI-boundary crashes; we still need catch_unwind at every extern "C"
-    // entry point (see text_model_wrapper.rs) to convert the unwind into a
-    // clean error return, but the hook here ensures the original panic site
-    // appears in the daemon's log before we swallow it.
-    std::panic::set_hook(Box::new(|info| {
-        let loc = info
-            .location()
-            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
-            .unwrap_or_else(|| "<unknown>".to_string());
-        let payload = info
-            .payload()
-            .downcast_ref::<&str>()
-            .copied()
-            .or_else(|| info.payload().downcast_ref::<String>().map(|s| s.as_str()))
-            .unwrap_or("<non-string payload>");
-        eprintln!("manticore-knn-embeddings: panic at {loc}: {payload}");
-    }));
+    std::panic::set_hook(Box::new(|_| {}));
     &LIB
 }
