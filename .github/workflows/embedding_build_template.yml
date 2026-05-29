@@ -232,19 +232,19 @@ jobs:
       - name: Build for Linux
         if: ${{ inputs.distr == 'linux' }}
         run: |
-          # Set Docker image based on architecture
-          # Download glibc2_17-compatible ORT static lib (avoids __isoc23_strtoll from pyke.io builds)
-          ORT_VERSION="1.24.2"
+          # Pick the rust-min-libc docker image (glibc baseline) for this arch.
+          # ORT static lib is fetched via cmake/embeddings_ort.cmake — the same
+          # script local host builds use, so there's no version/URL drift.
           if [[ "${{ inputs.arch }}" == "aarch64" ]]; then
             docker_image="ghcr.io/manticoresoftware/rust-min-libc:aarch64-rust1.95.0-glibc2.27-openssl1.1.1k"
-            ort_asset="onnxruntime-linux-aarch64-static_lib-${ORT_VERSION}-glibc2_17"
+            ort_arch="aarch64"
           else
             docker_image="ghcr.io/manticoresoftware/rust-min-libc:amd64-rust1.95.0-glibc2.27-openssl1.1.1k"
-            ort_asset="onnxruntime-linux-x64-static_lib-${ORT_VERSION}-glibc2_17"
+            ort_arch="x64"
           fi
 
-          curl -sL "https://github.com/csukuangfj/onnxruntime-libs/releases/download/v${ORT_VERSION}/${ort_asset}.zip" -o /tmp/ort.zip
-          unzip -q /tmp/ort.zip -d /tmp/ort
+          cmake -DORT_PLATFORM=linux -DORT_ARCH=${ort_arch} -DORT_OUT_DIR="${RUNNER_TEMP}/ort" -P cmake/GetONNXRuntime.cmake
+          ort_lib="$(cat "${RUNNER_TEMP}/ort/lib_path.txt")"
 
           target="${{ steps.vars.outputs.target }}"
           # Each flavor gets its own --target-dir so cargo doesn't relink between
@@ -256,11 +256,11 @@ jobs:
             docker run --rm  \
               -v $(pwd):/src \
               -v $(pwd)/.cargo-cache:/cargo-cache \
-              -v /tmp/ort/${ort_asset}/lib:/ort-lib \
+              -v ${ort_lib}:/ort-lib \
               -w /src \
               -u root \
               -e CARGO_HOME=/cargo-cache \
-              -e ORT_LIB_PATH=/ort-lib \
+              -e ORT_LIB_LOCATION=/ort-lib \
               -e MKLROOT=/opt/intel/oneapi/mkl/latest \
               -e GIT_COMMIT_ID="${{ steps.git_meta.outputs.commit }}" \
               -e GIT_TIMESTAMP_ID="${{ steps.git_meta.outputs.timestamp }}" \
@@ -316,27 +316,20 @@ jobs:
         if: ${{ inputs.distr == 'macos' || inputs.distr == 'windows' }}
         shell: bash
         run: |
-          ort_version="1.24.2"
-          if [[ "${{ inputs.distr }}" == "macos" ]]; then
-            if [[ "${{ inputs.arch }}" == "aarch64" ]]; then
-              ort_name="onnxruntime-osx-arm64-static_lib-${ort_version}"
-            else
-              ort_name="onnxruntime-osx-x86_64-static_lib-${ort_version}"
-            fi
-            curl -sL "https://github.com/csukuangfj/onnxruntime-libs/releases/download/v${ort_version}/${ort_name}.zip" -o /tmp/ort.zip
-            unzip -q /tmp/ort.zip -d /tmp/ort
-            echo "ORT_LIB_LOCATION=/tmp/ort/${ort_name}/lib" >> $GITHUB_ENV
+          # Single source of truth for version + asset naming lives in
+          # cmake/embeddings_ort.cmake (same script local host builds use).
+          case "${{ inputs.distr }}" in
+            macos)   ort_platform=macos ;;
+            windows) ort_platform=windows ;;
+          esac
+          if [[ "${{ inputs.arch }}" == "aarch64" ]]; then
+            ort_arch=aarch64
           else
-            if [[ "${{ inputs.arch }}" == "aarch64" ]]; then
-              ort_name="onnxruntime-win-arm64-static_lib-MD-Release-${ort_version}"
-            else
-              ort_name="onnxruntime-win-x64-static_lib-MD-Release-${ort_version}"
-            fi
-            curl -sL "https://github.com/csukuangfj/onnxruntime-libs/releases/download/v${ort_version}/${ort_name}.tar.bz2" -o ort.tar.bz2
-            mkdir -p ort-lib
-            tar xjf ort.tar.bz2 -C ort-lib
-            echo "ORT_LIB_LOCATION=${{ github.workspace }}/ort-lib/${ort_name}/lib" >> $GITHUB_ENV
+            ort_arch=x64
           fi
+
+          cmake -DORT_PLATFORM=${ort_platform} -DORT_ARCH=${ort_arch} -DORT_OUT_DIR="${RUNNER_TEMP}/ort" -P cmake/GetONNXRuntime.cmake
+          echo "ORT_LIB_LOCATION=$(cat "${RUNNER_TEMP}/ort/lib_path.txt")" >> $GITHUB_ENV
 
       - name: Build native
         if: ${{ inputs.distr == 'windows' || inputs.distr == 'macos' }}
@@ -423,32 +416,21 @@ jobs:
 
           if [[ "${{ inputs.distr }}" == "windows" && "${{ inputs.arch }}" != "aarch64" ]]; then
             echo "=== Package Windows runtime DLL dependencies ==="
-            openmp_redist_version="2025.3.3.31"
-            openmp_redist_dir=".openmp-redist"
-            for dll in libiomp5md.dll; do
-              # MKL flavor lives under target-mkl; also check it.
-              dep=$(find ./embeddings/target ./embeddings/target-mkl "$HOME/.cargo" -type f -iname "$dll" 2>/dev/null | head -1)
-              if [[ -z "$dep" ]]; then
-                echo "$dll was not found in the Cargo build tree; downloading Intel OpenMP redist ${openmp_redist_version}"
-                rm -rf "$openmp_redist_dir"
-                mkdir -p "$openmp_redist_dir/pkg"
-                curl -fsSL \
-                  "https://api.nuget.org/v3-flatcontainer/intelopenmp.redist.win/${openmp_redist_version}/intelopenmp.redist.win.${openmp_redist_version}.nupkg" \
-                  -o "$openmp_redist_dir/intelopenmp.redist.win.zip"
-                powershell -NoProfile -NonInteractive -Command \
-                  "Expand-Archive -LiteralPath '$(cygpath -w "$openmp_redist_dir/intelopenmp.redist.win.zip")' -DestinationPath '$(cygpath -w "$openmp_redist_dir/pkg")' -Force"
-                dep=$(find "$openmp_redist_dir/pkg" -type f -iname "$dll" | head -1)
-              fi
-
-              if [[ -z "$dep" ]]; then
-                echo "Required Windows runtime dependency was not found after redist download: $dll"
-                find ./embeddings/target ./embeddings/target-mkl "$HOME/.cargo" "$openmp_redist_dir" -type f -iname "*.dll" 2>/dev/null | sort || true
-                exit 1
-              fi
-
-              cp "$dep" build/
-              echo "Packaged $dll from $dep"
-            done
+            # Prefer the DLL already in the cargo build tree (intel-mkl-src may
+            # have fetched it); otherwise let cmake/GetMKL.cmake fetch the same
+            # intelopenmp.redist nuget the inline shell used to download.
+            dep=$(find ./embeddings/target ./embeddings/target-mkl "$HOME/.cargo" -type f -iname libiomp5md.dll 2>/dev/null | head -1)
+            if [[ -z "$dep" ]]; then
+              cmake -DMKL_PLATFORM=windows -DMKL_ARCH=x64 -DMKL_OUT_DIR="${RUNNER_TEMP}/mkl" -P cmake/GetMKL.cmake
+              dep=$(cat "${RUNNER_TEMP}/mkl/libiomp5md_dll_path.txt")
+            fi
+            if [[ -z "$dep" || ! -f "$dep" ]]; then
+              echo "libiomp5md.dll was not located after GetMKL.cmake fallback"
+              find ./embeddings/target ./embeddings/target-mkl "$HOME/.cargo" "${RUNNER_TEMP}/mkl" -type f -iname "*.dll" 2>/dev/null | sort || true
+              exit 1
+            fi
+            cp "$dep" build/
+            echo "Packaged libiomp5md.dll from $dep"
           elif [[ "${{ inputs.distr }}" == "windows" ]]; then
             echo "Skipping Intel OpenMP runtime packaging for Windows ${{ inputs.arch }}; Intel OpenMP redist currently ships win-x64 DLLs only"
           fi

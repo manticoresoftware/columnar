@@ -20,6 +20,32 @@ if (__build_embeddings_included)
 endif ()
 set ( __build_embeddings_included YES )
 
+include ( ${CMAKE_CURRENT_LIST_DIR}/GetONNXRuntime.cmake )
+include ( ${CMAKE_CURRENT_LIST_DIR}/GetMKL.cmake )
+
+function(prepare_embeddings_ort)
+	if ( APPLE )
+		set ( _platform "macos" )
+	elseif ( WIN32 )
+		set ( _platform "windows" )
+	elseif ( UNIX )
+		set ( _platform "linux" )
+	else()
+		message ( FATAL_ERROR "prepare_embeddings_ort: unsupported host platform" )
+	endif()
+
+	if ( CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$" )
+		set ( _arch "aarch64" )
+	else()
+		set ( _arch "x64" )
+	endif()
+
+	embeddings_ort_download ( _lib_dir "${_platform}" "${_arch}" "${CMAKE_CURRENT_BINARY_DIR}/embeddings/ort" )
+
+	set ( ENV{ORT_LIB_LOCATION} "${_lib_dir}" )
+	message ( STATUS "Using ORT_LIB_LOCATION=${_lib_dir}" )
+endfunction()
+
 function(build_embeddings_lib)
 	message ( STATUS "building embeddings locally..." )
 
@@ -49,21 +75,41 @@ function(build_embeddings_lib)
 	# This matches the format used by other Manticore libraries for consistent version display
 	set(ENV{GIT_COMMIT_ID} "${GIT_COMMIT_ID}")
 	set(ENV{GIT_TIMESTAMP_ID} "${GIT_TIMESTAMP_ID}")
+	prepare_embeddings_ort()
 
-	# Enable platform-specific BLAS acceleration for candle when available
-	set(EMBEDDINGS_CARGO_FEATURES "")
-	if(APPLE)
-		set(EMBEDDINGS_CARGO_FEATURES "--features" "accelerate")
-	elseif(UNIX)
-		# MKL provides multi-threaded BLAS on Linux; skip if not available
-		execute_process(COMMAND pkg-config --exists mkl-dynamic-lp64-seq RESULT_VARIABLE MKL_FOUND OUTPUT_QUIET ERROR_QUIET)
-		if(MKL_FOUND EQUAL 0)
-			set(EMBEDDINGS_CARGO_FEATURES "--features" "mkl")
+	# Enable platform-specific BLAS acceleration for candle when available.
+	if (DEFINED EMBEDDINGS_CARGO_FEATURES)
+		set(EMBEDDINGS_FEATURES_CSV "${EMBEDDINGS_CARGO_FEATURES}")
+	else()
+		set(EMBEDDINGS_FEATURE_LIST)
+		if(APPLE)
+			list(APPEND EMBEDDINGS_FEATURE_LIST accelerate)
+		elseif(UNIX AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64)$")
+			embeddings_mkl_detect_linux ( _mklroot )
+			if ( _mklroot )
+				set ( ENV{MKLROOT} "${_mklroot}" )
+				list(APPEND EMBEDDINGS_FEATURE_LIST mkl)
+			endif()
 		endif()
+		list(JOIN EMBEDDINGS_FEATURE_LIST "," EMBEDDINGS_FEATURES_CSV)
+	endif()
+
+	# When the static lib is in scope, drop any caller-supplied download-ort
+	# feature so cargo doesn't fetch a duplicate dynamic lib on top of the
+	# static one. The auto-detected feature lists above never include it; this
+	# only matters when the caller passes EMBEDDINGS_CARGO_FEATURES explicitly.
+	if (DEFINED ENV{ORT_LIB_LOCATION} AND NOT "$ENV{ORT_LIB_LOCATION}" STREQUAL "" AND EMBEDDINGS_FEATURES_CSV)
+		string(REPLACE "," ";" EMBEDDINGS_FEATURE_LIST "${EMBEDDINGS_FEATURES_CSV}")
+		list(REMOVE_ITEM EMBEDDINGS_FEATURE_LIST download-ort)
+		list(JOIN EMBEDDINGS_FEATURE_LIST "," EMBEDDINGS_FEATURES_CSV)
+	endif()
+
+	if (EMBEDDINGS_FEATURES_CSV)
+		set(EMBEDDINGS_CARGO_FEATURE_ARGS "--features" "${EMBEDDINGS_FEATURES_CSV}")
 	endif()
 
 	execute_process (
-			COMMAND cargo build --manifest-path ${CMAKE_SOURCE_DIR}/embeddings/Cargo.toml --lib --release ${EMBEDDINGS_CARGO_FEATURES} --target-dir ${CMAKE_CURRENT_BINARY_DIR}/embeddings
+			COMMAND cargo build --manifest-path ${CMAKE_SOURCE_DIR}/embeddings/Cargo.toml --lib --release ${EMBEDDINGS_CARGO_FEATURE_ARGS} --target-dir ${CMAKE_CURRENT_BINARY_DIR}/embeddings
 			RESULT_VARIABLE CMD_RESULT
 	)
 
@@ -86,4 +132,3 @@ function(build_embeddings_lib)
 		file(RENAME "${CMAKE_CURRENT_BINARY_DIR}/embeddings/release/${EMBEDDINGS_LIB_NAME}.pdb" "${CMAKE_CURRENT_BINARY_DIR}/embeddings/release/lib_${EMBEDDINGS_LIB_NAME}.pdb")
 	endif()
 endfunction ()
-
