@@ -1,5 +1,5 @@
 name: 🔬 Test
-run-name: "🔬 Test ${{ (github.event.schedule == '00 20 * * *' || github.event_name == 'workflow_dispatch') && 'master HEAD in daemon + ' || 'commit' }} ${{ github.sha }}"
+run-name: "🔬 Test ${{ (github.event.schedule == '00 20 * * *' || github.event_name == 'workflow_dispatch') && 'main HEAD in daemon + ' || 'commit' }} ${{ github.sha }}"
 
 #on: workflow_call
 
@@ -28,7 +28,7 @@ jobs:
     steps:
       - run: |
           echo "# Automated Tests of commit ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          [[ "${{ github.event.schedule }}" == "00 20 * * *" || "${{ github.event_name }}" == "workflow_dispatch" ]] && echo "* **Nightly/manual test, testing master's head with the daemon's master head**" >> $GITHUB_STEP_SUMMARY
+          [[ "${{ github.event.schedule }}" == "00 20 * * *" || "${{ github.event_name }}" == "workflow_dispatch" ]] && echo "* **Nightly/manual test, testing columnar's master head with the daemon's main head**" >> $GITHUB_STEP_SUMMARY
           echo "* Commit URL: [${{ github.sha }}](/${{ github.repository }}/commit/${{ github.sha }})" >> $GITHUB_STEP_SUMMARY
           echo "* Initiated by: [@${{ github.actor }}](https://github.com/${{ github.actor }})" >> $GITHUB_STEP_SUMMARY
           echo "* Ref: ${{ github.ref_type }} \"${{ github.ref_name }}\"" >> $GITHUB_STEP_SUMMARY
@@ -100,11 +100,11 @@ jobs:
           if [[ "${{ github.ref_name }}" == "master" && -n "${{ steps.locator_ref.outputs.ref }}" ]]; then
             REF="${{ steps.locator_ref.outputs.ref }}"
           elif [[ "${{ github.ref_name }}" == "master" ]]; then
-            REF="master"
+            REF="main"
           elif [[ "${{ steps.check_branch.outputs.branch_exists }}" == "true" ]]; then
             REF="${{ steps.check_branch.outputs.branch_name }}"
           else
-            REF="master"
+            REF="main"
           fi
           echo "ref=${REF}" >> $GITHUB_OUTPUT
           echo "Ref for CLT tests: ${REF}" >> $GITHUB_STEP_SUMMARY
@@ -113,8 +113,8 @@ jobs:
         id: set_locator
         run: |
           if [[ "${{ github.event.schedule }}" == "00 20 * * *" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "manticore_locator=GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG master GIT_SUBMODULES \"\"" >> $GITHUB_OUTPUT
-            echo "Set manticore_locator: GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG master"
+            echo "manticore_locator=GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG main GIT_SUBMODULES \"\"" >> $GITHUB_OUTPUT
+            echo "Set manticore_locator: GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG main"
           elif [[ "${{ github.ref_name }}" != "master" && "${{ steps.check_branch.outputs.branch_exists }}" == "true" ]]; then
             echo "manticore_locator=GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG ${{ steps.check_branch.outputs.branch_name }} GIT_SUBMODULES \"\"" >> $GITHUB_OUTPUT
             echo "Set manticore_locator: GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG ${{ steps.check_branch.outputs.branch_name }}"

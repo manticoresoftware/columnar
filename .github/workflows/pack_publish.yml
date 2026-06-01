@@ -110,7 +110,7 @@ jobs:
         id: set_locator
         run: |
           if [[ "${{ github.event.schedule }}" == "00 20 * * *" ]]; then
-            echo "manticore_locator=GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG master GIT_SUBMODULES \"\"" >> $GITHUB_OUTPUT
+            echo "manticore_locator=GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG main GIT_SUBMODULES \"\"" >> $GITHUB_OUTPUT
           elif [[ "${{ github.ref_name }}" != "master" && "${{ steps.check_branch.outputs.branch_exists }}" == "true" ]]; then
             echo "manticore_locator=GIT_REPOSITORY https://github.com/manticoresoftware/manticoresearch.git GIT_TAG ${{ steps.check_branch.outputs.branch_name }} GIT_SUBMODULES \"\"" >> $GITHUB_OUTPUT
           else
@@ -356,7 +356,7 @@ jobs:
     if: needs.publish.outputs.target != 'release'
     steps:
       - name: Update deps
-        uses: manticoresoftware/manticoresearch/actions/update-deps@master
+        uses: manticoresoftware/manticoresearch/actions/update-deps@main
         with:
           name: mcl
           version: ${{ needs.pack.outputs.version_full }}
