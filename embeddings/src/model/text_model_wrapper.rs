@@ -1,4 +1,5 @@
 use crate::model::{create_model, Model, ModelOptions, TextModel};
+use crate::panic_guard;
 use std::os::raw::c_char;
 use std::{ffi::c_void, ptr};
 
@@ -74,6 +75,16 @@ pub struct StringItem {
     pub len: usize,
 }
 
+/// Build a heap CString for the FFI error channel. Panic messages can contain
+/// interior NULs; strip them rather than fail — a panic on this path would
+/// unwind out of the catch handler and abort the process.
+fn to_c_error(msg: &str) -> *mut c_char {
+    std::ffi::CString::new(msg.replace('\0', "?"))
+        .map(|c| c.into_raw())
+        // Unreachable after the NUL strip, but never panic on this path.
+        .unwrap_or(ptr::null_mut())
+}
+
 impl TextModelWrapper {
     pub extern "C" fn load_model(
         name_ptr: *const c_char,
@@ -87,68 +98,76 @@ impl TextModelWrapper {
         api_timeout: i32, // 0 = unlimited, >0 = timeout in seconds
         use_gpu: bool,
     ) -> TextModelResult {
-        let name = unsafe {
-            let slice = std::slice::from_raw_parts(name_ptr as *mut u8, name_len);
-            std::str::from_utf8_unchecked(slice)
-        };
+        panic_guard::catch_panic(|| {
+            let name = unsafe {
+                let slice = std::slice::from_raw_parts(name_ptr as *mut u8, name_len);
+                std::str::from_utf8_unchecked(slice)
+            };
 
-        let cache_path = unsafe {
-            let slice = std::slice::from_raw_parts(cache_path_ptr as *mut u8, cache_path_len);
-            std::str::from_utf8_unchecked(slice)
-        };
+            let cache_path = unsafe {
+                let slice = std::slice::from_raw_parts(cache_path_ptr as *mut u8, cache_path_len);
+                std::str::from_utf8_unchecked(slice)
+            };
 
-        let api_key = unsafe {
-            let slice = std::slice::from_raw_parts(api_key_ptr as *mut u8, api_key_len);
-            std::str::from_utf8_unchecked(slice)
-        };
+            let api_key = unsafe {
+                let slice = std::slice::from_raw_parts(api_key_ptr as *mut u8, api_key_len);
+                std::str::from_utf8_unchecked(slice)
+            };
 
-        let api_url = unsafe {
-            let slice = std::slice::from_raw_parts(api_url_ptr as *mut u8, api_url_len);
-            std::str::from_utf8_unchecked(slice)
-        };
+            let api_url = unsafe {
+                let slice = std::slice::from_raw_parts(api_url_ptr as *mut u8, api_url_len);
+                std::str::from_utf8_unchecked(slice)
+            };
 
-        let options = ModelOptions {
-            model_id: name.to_string(),
-            cache_path: if cache_path.is_empty() {
-                None
-            } else {
-                Some(cache_path.to_string())
-            },
-            api_key: if api_key.is_empty() {
-                None
-            } else {
-                Some(api_key.to_string())
-            },
-            api_url: if api_url.is_empty() {
-                None
-            } else {
-                Some(api_url.to_string())
-            },
-            api_timeout: if api_timeout > 0 {
-                Some(api_timeout as u64) // Specific timeout
-            } else {
-                None // Unlimited (no timeout)
-            },
-            use_gpu: Some(use_gpu),
-        };
+            let options = ModelOptions {
+                model_id: name.to_string(),
+                cache_path: if cache_path.is_empty() {
+                    None
+                } else {
+                    Some(cache_path.to_string())
+                },
+                api_key: if api_key.is_empty() {
+                    None
+                } else {
+                    Some(api_key.to_string())
+                },
+                api_url: if api_url.is_empty() {
+                    None
+                } else {
+                    Some(api_url.to_string())
+                },
+                api_timeout: if api_timeout > 0 {
+                    Some(api_timeout as u64) // Specific timeout
+                } else {
+                    None // Unlimited (no timeout)
+                },
+                use_gpu: Some(use_gpu),
+            };
 
-        match create_model(options) {
-            Ok(model) => TextModelResult {
-                model: Box::into_raw(Box::new(ModelHandle::new(model))) as *mut c_void,
-                error: ptr::null_mut(),
-            },
-            Err(e) => {
-                let c_error = std::ffi::CString::new(e.to_string()).unwrap();
-                TextModelResult {
-                    model: ptr::null_mut(),
-                    error: c_error.into_raw(),
+            match create_model(options) {
+                Ok(model) => TextModelResult {
+                    model: Box::into_raw(Box::new(ModelHandle::new(model))) as *mut c_void,
+                    error: ptr::null_mut(),
+                },
+                Err(e) => {
+                    let c_error = std::ffi::CString::new(e.to_string()).unwrap();
+                    TextModelResult {
+                        model: ptr::null_mut(),
+                        error: c_error.into_raw(),
+                    }
                 }
             }
-        }
+        })
+        .unwrap_or_else(|msg| TextModelResult {
+            model: ptr::null_mut(),
+            error: to_c_error(&format!("embeddings: internal error (panic): {msg}")),
+        })
     }
 
     pub extern "C" fn free_model_result(res: TextModelResult) {
-        unsafe {
+        // A panic mid-free leaks the allocation; that beats unwinding into
+        // C++, which aborts the daemon. The panic hook has already logged it.
+        let _ = panic_guard::catch_panic(|| unsafe {
             if !res.model.is_null() {
                 // Drop runs ModelHandle::drop first (tombstones magic to
                 // MODEL_DEAD), then destroys the inner Model.
@@ -158,7 +177,7 @@ impl TextModelWrapper {
             if !res.error.is_null() {
                 let _ = std::ffi::CString::from_raw(res.error);
             }
-        }
+        });
     }
 
     /// Validate the handle pointer before dereferencing. Returns a static error
@@ -187,65 +206,75 @@ impl TextModelWrapper {
         texts: *const StringItem,
         count: usize,
     ) -> FloatVecResult {
-        let model = match self.as_model() {
-            Ok(m) => m,
-            Err(msg) => {
-                let c_error = std::ffi::CString::new(msg).unwrap();
-                return FloatVecResult {
-                    error: c_error.into_raw(),
-                    ptr: ptr::null(),
-                    len: 0,
-                    cap: 0,
-                };
-            }
-        };
-
-        let string_slice = unsafe { std::slice::from_raw_parts(texts, count) };
-
-        // Zero-copy: borrow C++ strings directly as &str.
-        // Input is already valid UTF-8 (passed through SQL parser on the C++ side).
-        let string_refs: Vec<&str> = string_slice
-            .iter()
-            .map(|item| unsafe {
-                let bytes = std::slice::from_raw_parts(item.ptr as *const u8, item.len);
-                std::str::from_utf8_unchecked(bytes)
-            })
-            .collect();
-
-        let mut float_vec_list: Vec<FloatVec> = Vec::new();
-        let embeddings_list = model.predict(&string_refs);
-        let c_error = match embeddings_list {
-            Ok(embeddings_list) => {
-                for embeddings in embeddings_list.iter() {
-                    let ptr = embeddings.as_ptr();
-                    let len = embeddings.len();
-                    let cap = embeddings.capacity();
-                    let vec = FloatVec { ptr, len, cap };
-                    float_vec_list.push(vec);
+        panic_guard::catch_panic(|| {
+            let model = match self.as_model() {
+                Ok(m) => m,
+                Err(msg) => {
+                    let c_error = std::ffi::CString::new(msg).unwrap();
+                    return FloatVecResult {
+                        error: c_error.into_raw(),
+                        ptr: ptr::null(),
+                        len: 0,
+                        cap: 0,
+                    };
                 }
+            };
 
-                std::mem::forget(embeddings_list);
-                ptr::null_mut()
-            }
-            Err(e) => {
-                // Don't push empty vector on error - return error through szError pattern
-                let c_error = std::ffi::CString::new(e.to_string()).unwrap();
-                c_error.into_raw()
-            }
-        };
+            let string_slice = unsafe { std::slice::from_raw_parts(texts, count) };
 
-        let vec_result = FloatVecResult {
-            ptr: float_vec_list.as_ptr(),
-            len: float_vec_list.len(),
-            cap: float_vec_list.capacity(),
-            error: c_error,
-        };
-        std::mem::forget(float_vec_list);
-        vec_result
+            // Zero-copy: borrow C++ strings directly as &str.
+            // Input is already valid UTF-8 (passed through SQL parser on the C++ side).
+            let string_refs: Vec<&str> = string_slice
+                .iter()
+                .map(|item| unsafe {
+                    let bytes = std::slice::from_raw_parts(item.ptr as *const u8, item.len);
+                    std::str::from_utf8_unchecked(bytes)
+                })
+                .collect();
+
+            let mut float_vec_list: Vec<FloatVec> = Vec::new();
+            let embeddings_list = model.predict(&string_refs);
+            let c_error = match embeddings_list {
+                Ok(embeddings_list) => {
+                    for embeddings in embeddings_list.iter() {
+                        let ptr = embeddings.as_ptr();
+                        let len = embeddings.len();
+                        let cap = embeddings.capacity();
+                        let vec = FloatVec { ptr, len, cap };
+                        float_vec_list.push(vec);
+                    }
+
+                    std::mem::forget(embeddings_list);
+                    ptr::null_mut()
+                }
+                Err(e) => {
+                    // Don't push empty vector on error - return error through szError pattern
+                    let c_error = std::ffi::CString::new(e.to_string()).unwrap();
+                    c_error.into_raw()
+                }
+            };
+
+            let vec_result = FloatVecResult {
+                ptr: float_vec_list.as_ptr(),
+                len: float_vec_list.len(),
+                cap: float_vec_list.capacity(),
+                error: c_error,
+            };
+            std::mem::forget(float_vec_list);
+            vec_result
+        })
+        .unwrap_or_else(|msg| FloatVecResult {
+            error: to_c_error(&format!("embeddings: internal error (panic): {msg}")),
+            ptr: ptr::null(),
+            len: 0,
+            cap: 0,
+        })
     }
 
     pub extern "C" fn free_vec_result(result: FloatVecResult) {
-        unsafe {
+        // A panic mid-free leaks the buffers; that beats unwinding into C++,
+        // which aborts the daemon. The panic hook has already logged it.
+        let _ = panic_guard::catch_panic(|| unsafe {
             // Only process if we have valid data
             if !result.ptr.is_null() && result.len > 0 {
                 let slice = std::slice::from_raw_parts(result.ptr, result.len);
@@ -265,46 +294,51 @@ impl TextModelWrapper {
             if !result.error.is_null() {
                 let _ = std::ffi::CString::from_raw(result.error);
             }
-        }
+        });
     }
 
     pub extern "C" fn get_hidden_size(&self) -> usize {
-        // No error channel here; return 0 on a bad handle so the C++ caller
-        // sees an obviously-wrong dimension instead of UB. The handle is
-        // already validated before any real work, so a 0 here means the C++
-        // side handed us an invalid pointer.
-        self.as_model().map(|m| m.get_hidden_size()).unwrap_or(0)
+        // No error channel here; return 0 on a bad handle or a panic so the
+        // C++ caller sees an obviously-wrong dimension instead of UB or an
+        // abort. The handle is already validated before any real work, so a 0
+        // here means the C++ side handed us an invalid pointer.
+        panic_guard::catch_panic(|| self.as_model().map(|m| m.get_hidden_size()).unwrap_or(0))
+            .unwrap_or(0)
     }
 
     pub extern "C" fn get_max_input_len(&self) -> usize {
-        self.as_model().map(|m| m.get_max_input_len()).unwrap_or(0)
+        panic_guard::catch_panic(|| self.as_model().map(|m| m.get_max_input_len()).unwrap_or(0))
+            .unwrap_or(0)
     }
 
     /// Validates the API key by making a minimal test request to the API.
     /// Returns null on success, or an error message string on failure.
     /// The caller is responsible for freeing the error string using free_string().
     pub extern "C" fn validate_api_key(&self) -> *mut c_char {
-        let model = match self.as_model() {
-            Ok(m) => m,
-            Err(msg) => {
-                return std::ffi::CString::new(msg)
-                    .map(|c| c.into_raw())
-                    .unwrap_or(ptr::null_mut());
+        panic_guard::catch_panic(|| {
+            let model = match self.as_model() {
+                Ok(m) => m,
+                Err(msg) => {
+                    return std::ffi::CString::new(msg)
+                        .map(|c| c.into_raw())
+                        .unwrap_or(ptr::null_mut());
+                }
+            };
+            match model.validate_api_key() {
+                Ok(()) => ptr::null_mut(),
+                Err(e) => {
+                    let error_str = e.to_string();
+                    let c_error = match std::ffi::CString::new(error_str) {
+                        Ok(cstr) => cstr,
+                        Err(_) => {
+                            return ptr::null_mut();
+                        }
+                    };
+                    c_error.into_raw()
+                }
             }
-        };
-        match model.validate_api_key() {
-            Ok(()) => ptr::null_mut(),
-            Err(e) => {
-                let error_str = e.to_string();
-                let c_error = match std::ffi::CString::new(error_str) {
-                    Ok(cstr) => cstr,
-                    Err(_) => {
-                        return ptr::null_mut();
-                    }
-                };
-                c_error.into_raw()
-            }
-        }
+        })
+        .unwrap_or_else(|msg| to_c_error(&format!("embeddings: internal error (panic): {msg}")))
     }
 
     /// Frees a string returned by validate_api_key().
@@ -318,9 +352,9 @@ impl TextModelWrapper {
     /// This follows the standard Rust FFI pattern for returning owned strings to C/C++.
     pub extern "C" fn free_string(s: *mut c_char) {
         if !s.is_null() {
-            unsafe {
+            let _ = panic_guard::catch_panic(|| unsafe {
                 let _ = std::ffi::CString::from_raw(s);
-            }
+            });
         }
     }
 }
