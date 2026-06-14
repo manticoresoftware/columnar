@@ -103,6 +103,24 @@ impl TextModel for Model {
     }
 }
 
+/// Refuse local (candle) inference on an emulated x86 CPU. Rosetta 2 and QEMU
+/// advertise FMA without AVX — a combination that exists on no real x86 chip
+/// (FMA3 shipped with Haswell alongside AVX2; AVX predates both). candle/gemm
+/// crash on that broken SIMD profile, taking the daemon with them. Fail fast
+/// with a clear message; API models don't run local inference so they skip this.
+fn ensure_local_inference_supported() -> Result<(), Box<dyn Error>> {
+    #[cfg(target_arch = "x86_64")]
+    if std::arch::is_x86_feature_detected!("fma") && !std::arch::is_x86_feature_detected!("avx") {
+        return Err(
+            "local embedding models are not supported under x86 emulation \
+            (Rosetta/QEMU on Apple Silicon): the emulated CPU lacks AVX and inference \
+            would crash. Use a native arm64 build, or use an API model (openai/voyage/jina)"
+                .into(),
+        );
+    }
+    Ok(())
+}
+
 pub fn create_model(options: ModelOptions) -> Result<Model, Box<dyn Error>> {
     let model_id = options.model_id.as_str();
     let api_key = options.api_key.unwrap_or_default();
@@ -159,6 +177,7 @@ pub fn create_model(options: ModelOptions) -> Result<Model, Box<dyn Error>> {
         // Local models - auto-detect architecture from config
         // Supports: BERT, SentenceTransformers, Qwen, Llama, Mistral, Gemma, etc.
         // For gated models, api_key is used as HuggingFace token
+        ensure_local_inference_supported()?;
         let cache_path = PathBuf::from(
             options
                 .cache_path
