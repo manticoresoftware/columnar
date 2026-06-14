@@ -76,6 +76,9 @@ const LIB: EmbedLib = EmbedLib {
 
 #[no_mangle]
 pub extern "C" fn GetLibFuncs() -> *const EmbedLib {
-    std::panic::set_hook(Box::new(|_| {}));
+    // First call C++ makes after dlopen, so the hook is in place before any
+    // model call can panic. The hook records the panic site for the error
+    // strings returned by the catch_panic guards at every entry point.
+    crate::panic_guard::install_hook();
     &LIB
 }
