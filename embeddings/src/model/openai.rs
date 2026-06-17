@@ -94,6 +94,15 @@ impl OpenAIModel {
 
 impl TextModel for OpenAIModel {
     fn predict(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, Box<dyn std::error::Error>> {
+        // Pre-validate: filter out empty texts and check we have at least one non-empty input
+        let non_empty_count = texts.iter().filter(|t| !t.trim().is_empty()).count();
+        if non_empty_count == 0 {
+            return Err(Box::new(LibError::RemoteHttpError {
+                status: 400,
+                message: Some("all input texts are empty - at least one non-empty text is required for embeddings".to_string()),
+            }));
+        }
+
         let url = self
             .api_url
             .as_deref()
@@ -118,10 +127,20 @@ impl TextModel for OpenAIModel {
 
         let response_text = response.text().map_err(|_| LibError::RemoteHttpError {
             status: status_code,
+            message: None,
         })?;
+
+        // Helper to extract error message from JSON response
+        let extract_error_message = |text: &str| -> Option<String> {
+            serde_json::from_str::<serde_json::Value>(text)
+                .ok()
+                .and_then(|body| body.get("error")?.get("message")?.as_str().map(|s| s.to_string()))
+        };
 
         // Check HTTP status code first
         if !status.is_success() {
+            let error_message = extract_error_message(&response_text);
+
             // Try to parse JSON error response for more details
             if let Ok(response_body) = serde_json::from_str::<serde_json::Value>(&response_text) {
                 if let Some(error) = response_body.get("error") {
@@ -143,6 +162,7 @@ impl TextModel for OpenAIModel {
                         }
                         _ => LibError::RemoteHttpError {
                             status: status_code,
+                            message: error_message,
                         },
                     };
 
@@ -160,6 +180,7 @@ impl TextModel for OpenAIModel {
                 429 => LibError::RemoteRequestSendFailed,
                 _ => LibError::RemoteHttpError {
                     status: status_code,
+                    message: error_message,
                 },
             };
             return Err(Box::new(lib_error));
@@ -169,12 +190,14 @@ impl TextModel for OpenAIModel {
         let response_body: serde_json::Value =
             serde_json::from_str(&response_text).map_err(|_| LibError::RemoteHttpError {
                 status: status_code,
+                message: Some("failed to parse successful response as JSON".to_string()),
             })?;
 
         let data_array = response_body["data"].as_array();
         if data_array.is_none() {
             return Err(Box::new(LibError::RemoteHttpError {
                 status: status_code,
+                message: Some("response missing 'data' array".to_string()),
             }));
         }
 
@@ -196,6 +219,7 @@ impl TextModel for OpenAIModel {
         if embeddings.is_empty() {
             return Err(Box::new(LibError::RemoteHttpError {
                 status: status_code,
+                message: Some("API returned no embeddings in response".to_string()),
             }));
         }
 

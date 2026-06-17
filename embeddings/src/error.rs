@@ -28,6 +28,7 @@ pub enum LibError {
     HuggingFaceTokenInvalid,
     RemoteHttpError {
         status: u16,
+        message: Option<String>,
     },
     OnnxModelEvalFailed,
 }
@@ -91,8 +92,12 @@ impl std::fmt::Display for LibError {
             LibError::HuggingFaceTokenInvalid => {
                 write!(f, "Invalid or expired HuggingFace token")
             }
-            LibError::RemoteHttpError { status } => {
-                write!(f, "HTTP error from remote model: status code {}", status)
+            LibError::RemoteHttpError { status, message } => {
+                if let Some(msg) = message {
+                    write!(f, "HTTP error from remote model: status code {}: {}", status, msg)
+                } else {
+                    write!(f, "HTTP error from remote model: status code {}", status)
+                }
             }
             LibError::OnnxModelEvalFailed => write!(f, "Failed to evaluate ONNX model"),
         }
