@@ -50,6 +50,8 @@ private:
 };
 
 
+const int RowidIteratorKNN_c::DOCS_PER_CHUNK;
+
 static void SortByRowID ( std::vector<DocDist_t> & dData )
 {
 	static constexpr int RADIX_THRESHOLD = 128;
