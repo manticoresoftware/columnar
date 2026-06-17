@@ -112,6 +112,15 @@ impl JinaModel {
 
 impl TextModel for JinaModel {
     fn predict(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, Box<dyn std::error::Error>> {
+        // Pre-validate: filter out empty texts and check we have at least one non-empty input
+        let non_empty_count = texts.iter().filter(|t| !t.trim().is_empty()).count();
+        if non_empty_count == 0 {
+            return Err(Box::new(LibError::RemoteHttpError {
+                status: 400,
+                message: Some("all input texts are empty - at least one non-empty text is required for embeddings".to_string()),
+            }));
+        }
+
         let url = self
             .api_url
             .as_deref()
@@ -136,10 +145,30 @@ impl TextModel for JinaModel {
 
         let response_text = response.text().map_err(|_| LibError::RemoteHttpError {
             status: status_code,
+            message: None,
         })?;
+
+        // Helper to extract error message from JSON response
+        let extract_error_message = |text: &str| -> Option<String> {
+            serde_json::from_str::<serde_json::Value>(text)
+                .ok()
+                .and_then(|body| {
+                    // Try standard error.message format first
+                    if let Some(msg) = body.get("error")?.get("message")?.as_str() {
+                        return Some(msg.to_string());
+                    }
+                    // Try Jina's detail format
+                    if let Some(detail) = body.get("detail")?.as_str() {
+                        return Some(detail.to_string());
+                    }
+                    None
+                })
+        };
 
         // Check HTTP status code first
         if !status.is_success() {
+            let error_message = extract_error_message(&response_text);
+
             // Try to parse JSON error response for more details
             if let Ok(response_body) = serde_json::from_str::<serde_json::Value>(&response_text) {
                 if let Some(error) = response_body.get("error") {
@@ -166,6 +195,7 @@ impl TextModel for JinaModel {
                         }
                         _ => LibError::RemoteHttpError {
                             status: status_code,
+                            message: error_message,
                         },
                     };
 
@@ -199,6 +229,7 @@ impl TextModel for JinaModel {
                                 429 => LibError::RemoteRequestSendFailed,
                                 _ => LibError::RemoteHttpError {
                                     status: status_code,
+                                    message: error_message,
                                 },
                             }
                         };
@@ -217,6 +248,7 @@ impl TextModel for JinaModel {
                 429 => LibError::RemoteRequestSendFailed,
                 _ => LibError::RemoteHttpError {
                     status: status_code,
+                    message: error_message,
                 },
             };
             return Err(Box::new(lib_error));
@@ -225,6 +257,7 @@ impl TextModel for JinaModel {
         let response_body: serde_json::Value =
             serde_json::from_str(&response_text).map_err(|_| LibError::RemoteHttpError {
                 status: status_code,
+                message: Some("failed to parse successful response as JSON".to_string()),
             })?;
 
         // Check if there's an error in the response (shouldn't happen if status was success, but check anyway)
@@ -247,6 +280,7 @@ impl TextModel for JinaModel {
                 "rate_limit_exceeded" | "quota_exceeded" => LibError::RemoteRequestSendFailed,
                 _ => LibError::RemoteHttpError {
                     status: status_code,
+                    message: error.get("message").and_then(|m| m.as_str()).map(|s| s.to_string()),
                 },
             };
 
@@ -271,6 +305,7 @@ impl TextModel for JinaModel {
                 } else {
                     LibError::RemoteHttpError {
                         status: status_code,
+                        message: Some(detail_str.to_string()),
                     }
                 };
                 return Err(Box::new(lib_error));
@@ -295,6 +330,7 @@ impl TextModel for JinaModel {
         if embeddings.is_empty() {
             return Err(Box::new(LibError::RemoteHttpError {
                 status: status_code,
+                message: Some("API returned no embeddings in response".to_string()),
             }));
         }
 
@@ -306,6 +342,7 @@ impl TextModel for JinaModel {
             if embedding.is_empty() {
                 return Err(Box::new(LibError::RemoteHttpError {
                     status: status_code,
+                    message: Some("API returned an empty embedding vector".to_string()),
                 }));
             }
             if embedding.len() != inferred_dim {
