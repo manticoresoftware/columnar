@@ -417,7 +417,7 @@ mod tests {
 
         for sentence in &test_sentences {
             let local_model = LocalModel::new(model_id, cache_path.clone(), false, None).unwrap();
-            let embedding = local_model.predict(&[sentence]).unwrap();
+            let embedding = local_model.predict(&[sentence], 0).unwrap();
             check_embedding_properties(&embedding[0], local_model.get_hidden_size());
         }
     }
@@ -429,8 +429,8 @@ mod tests {
         let local_model = LocalModel::new(model_id, cache_path, false, None).unwrap();
 
         let sentence = &["This is a test sentence."];
-        let embedding1 = local_model.predict(sentence).unwrap();
-        let embedding2 = local_model.predict(sentence).unwrap();
+        let embedding1 = local_model.predict(sentence, 0).unwrap();
+        let embedding2 = local_model.predict(sentence, 0).unwrap();
 
         for (e1, e2) in embedding1[0].iter().zip(embedding2[0].iter()) {
             assert_abs_diff_eq!(e1, e2, epsilon = 1e-6);
@@ -466,7 +466,7 @@ mod tests {
 
         let test_text = &["This is a test sentence for Qwen embedding model."];
         let embeddings = local_model
-            .predict(test_text)
+            .predict(test_text, 0)
             .expect("Qwen model should generate embeddings");
 
         check_embedding_properties(&embeddings[0], local_model.get_hidden_size());
@@ -482,7 +482,7 @@ mod tests {
             .expect("Llama model should load");
 
         let test_text = &["This is a test sentence for Llama embedding model."];
-        let embeddings = local_model.predict(test_text).unwrap();
+        let embeddings = local_model.predict(test_text, 0).unwrap();
 
         check_embedding_properties(&embeddings[0], local_model.get_hidden_size());
     }
@@ -496,7 +496,7 @@ mod tests {
         let local_model = LocalModel::new(model_id, cache_path.clone(), false, None)
             .expect("Mistral model should load");
         let test_text = &["This is a test sentence for Mistral embedding model."];
-        let embeddings = local_model.predict(test_text).unwrap();
+        let embeddings = local_model.predict(test_text, 0).unwrap();
         check_embedding_properties(&embeddings[0], local_model.get_hidden_size());
     }
 
@@ -510,7 +510,7 @@ mod tests {
             .expect("Gemma model should load");
 
         let test_text = &["This is a test sentence for Gemma embedding model."];
-        let embeddings = local_model.predict(test_text).unwrap();
+        let embeddings = local_model.predict(test_text, 0).unwrap();
         check_embedding_properties(&embeddings[0], local_model.get_hidden_size());
     }
 
@@ -536,7 +536,7 @@ mod tests {
             "Third sentence for batch processing verification.",
         ];
 
-        let embeddings = local_model.predict(test_texts).unwrap();
+        let embeddings = local_model.predict(test_texts, 0).unwrap();
 
         assert_eq!(embeddings.len(), test_texts.len());
 
@@ -660,7 +660,7 @@ mod tests {
         // Test embedding generation
         let test_text = &["This is a test sentence for FRIDA embedding model."];
         let embeddings = local_model
-            .predict(test_text)
+            .predict(test_text, 0)
             .expect("FRIDA model should generate embeddings");
 
         assert_eq!(embeddings.len(), 1, "Should return one embedding");
@@ -697,7 +697,7 @@ mod tests {
         // Test embedding generation
         let test_text = &["This is a test sentence for Google embeddinggemma model."];
         let embeddings = local_model
-            .predict(test_text)
+            .predict(test_text, 0)
             .expect("Google embeddinggemma should generate embeddings");
 
         assert_eq!(embeddings.len(), 1, "Should return one embedding");
@@ -739,7 +739,7 @@ mod tests {
 
         let test_text = &["This is a test sentence for ONNX embedding model."];
         let embeddings = local_model
-            .predict(test_text)
+            .predict(test_text, 0)
             .expect("ONNX model should generate embeddings");
 
         assert_eq!(embeddings.len(), 1);
@@ -761,8 +761,8 @@ mod tests {
         };
 
         let sentence = &["This is a test sentence."];
-        let embedding1 = local_model.predict(sentence).unwrap();
-        let embedding2 = local_model.predict(sentence).unwrap();
+        let embedding1 = local_model.predict(sentence, 0).unwrap();
+        let embedding2 = local_model.predict(sentence, 0).unwrap();
 
         for (e1, e2) in embedding1[0].iter().zip(embedding2[0].iter()) {
             assert_abs_diff_eq!(e1, e2, epsilon = 1e-6);
@@ -789,7 +789,7 @@ mod tests {
             "Third sentence for batch processing.",
         ];
 
-        let embeddings = local_model.predict(test_texts).unwrap();
+        let embeddings = local_model.predict(test_texts, 0).unwrap();
         assert_eq!(embeddings.len(), test_texts.len());
 
         for embedding in &embeddings {
@@ -850,20 +850,20 @@ mod tests {
         };
 
         // Warmup
-        let _ = st.predict(sentences).unwrap();
-        let _ = onnx.predict(sentences).unwrap();
+        let _ = st.predict(sentences, 0).unwrap();
+        let _ = onnx.predict(sentences, 0).unwrap();
 
         // Safetensors timing
         let start = Instant::now();
         for _ in 0..iterations {
-            let _ = st.predict(sentences).unwrap();
+            let _ = st.predict(sentences, 0).unwrap();
         }
         let st_ms = start.elapsed().as_millis() as f64 / iterations as f64;
 
         // ONNX timing
         let start = Instant::now();
         for _ in 0..iterations {
-            let _ = onnx.predict(sentences).unwrap();
+            let _ = onnx.predict(sentences, 0).unwrap();
         }
         let onnx_ms = start.elapsed().as_millis() as f64 / iterations as f64;
 
