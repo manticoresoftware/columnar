@@ -1,3 +1,4 @@
+use crate::chunk::ChunkSettings;
 use crate::model::{create_model, Model, ModelOptions, TextModel};
 use crate::panic_guard;
 use std::os::raw::c_char;
@@ -75,6 +76,39 @@ pub struct StringItem {
     pub len: usize,
 }
 
+/// One emitted chunk's byte span into the original input document.
+#[repr(C)]
+pub struct ChunkSpan {
+    pub start: usize,
+    pub end: usize,
+}
+
+/// Maps one input document to its run of chunks in the flat embeddings/spans
+/// arrays: the document's chunks are `[first, first + count)`.
+#[repr(C)]
+pub struct DocChunks {
+    pub first: usize,
+    pub count: usize,
+}
+
+/// Result of [`TextModelWrapper::make_vect_embeddings_chunked`]: a flat array of
+/// chunk embeddings, a parallel array of byte spans, and a per-input-document
+/// grouping so the C++ caller can rebuild "these N chunks belong to document i".
+///
+/// cbindgen:field-names=[m_szError,m_tEmbedding,emb_len,emb_cap,m_tSpans,spans_cap,m_tDocs,docs_len,docs_cap]
+#[repr(C)]
+pub struct ChunkedVecResult {
+    pub error: *mut c_char,
+    pub embeddings: *const FloatVec,
+    pub emb_len: usize,
+    pub emb_cap: usize,
+    pub spans: *const ChunkSpan,
+    pub spans_cap: usize,
+    pub docs: *const DocChunks,
+    pub docs_len: usize,
+    pub docs_cap: usize,
+}
+
 /// Build a heap CString for the FFI error channel. Panic messages can contain
 /// interior NULs; strip them rather than fail — a panic on this path would
 /// unwind out of the catch handler and abort the process.
@@ -83,6 +117,21 @@ fn to_c_error(msg: &str) -> *mut c_char {
         .map(|c| c.into_raw())
         // Unreachable after the NUL strip, but never panic on this path.
         .unwrap_or(ptr::null_mut())
+}
+
+/// An all-null [`ChunkedVecResult`] carrying only an error string.
+fn chunked_error(msg: &str) -> ChunkedVecResult {
+    ChunkedVecResult {
+        error: to_c_error(msg),
+        embeddings: ptr::null(),
+        emb_len: 0,
+        emb_cap: 0,
+        spans: ptr::null(),
+        spans_cap: 0,
+        docs: ptr::null(),
+        docs_len: 0,
+        docs_cap: 0,
+    }
 }
 
 impl TextModelWrapper {
@@ -359,5 +408,139 @@ impl TextModelWrapper {
                 let _ = std::ffi::CString::from_raw(s);
             });
         }
+    }
+
+    /// Chunk each input document into embedding-sized pieces, embed every chunk,
+    /// and return the flat embeddings + per-chunk byte spans + per-document
+    /// grouping. A null or `STRATEGY_NONE` `settings` yields exactly one chunk
+    /// per document (the whole text), i.e. the same shape as `make_vect_embeddings`.
+    /// `predict` is reused unchanged: every chunk is embedded in one batched call.
+    /// `threads` matches `make_vect_embeddings`: 0 = all CPUs, >0 = cap.
+    pub extern "C" fn make_vect_embeddings_chunked(
+        &self,
+        texts: *const StringItem,
+        count: usize,
+        settings: *const ChunkSettings,
+        threads: i32,
+    ) -> ChunkedVecResult {
+        panic_guard::catch_panic(|| {
+            let model = match self.as_model() {
+                Ok(m) => m,
+                Err(msg) => return chunked_error(msg),
+            };
+
+            let string_slice = unsafe { std::slice::from_raw_parts(texts, count) };
+            // Zero-copy: borrow C++ strings directly as &str (already valid UTF-8).
+            let string_refs: Vec<&str> = string_slice
+                .iter()
+                .map(|item| unsafe {
+                    let bytes = std::slice::from_raw_parts(item.ptr as *const u8, item.len);
+                    std::str::from_utf8_unchecked(bytes)
+                })
+                .collect();
+
+            let settings_ref = unsafe { settings.as_ref() };
+            let enabled = settings_ref.map(ChunkSettings::enabled).unwrap_or(false);
+            let max_chunks = settings_ref.map(|s| s.max_chunks as usize).unwrap_or(0);
+            let threads = if threads > 0 { threads as usize } else { 0 };
+
+            // 1. chunk every document, recording per-doc spans + grouping.
+            let mut flat_chunks: Vec<&str> = Vec::new();
+            let mut spans: Vec<ChunkSpan> = Vec::new();
+            let mut docs: Vec<DocChunks> = Vec::with_capacity(string_refs.len());
+            for &text in &string_refs {
+                let doc_spans = if enabled {
+                    crate::chunk::cap_chunks(model.chunk(text, settings_ref.unwrap()), max_chunks)
+                } else {
+                    vec![(0usize, text.len())]
+                };
+                let first = flat_chunks.len();
+                for (start, end) in doc_spans {
+                    flat_chunks.push(&text[start..end]);
+                    spans.push(ChunkSpan { start, end });
+                }
+                docs.push(DocChunks {
+                    first,
+                    count: flat_chunks.len() - first,
+                });
+            }
+
+            // 2. one batched predict over every chunk (predict itself is untouched).
+            let embeddings_list = match model.predict(&flat_chunks, threads) {
+                Ok(e) => e,
+                Err(e) => return chunked_error(&e.to_string()),
+            };
+
+            // 3. hand the flat FloatVec[] + spans + docs to C++. Same ownership
+            //    pattern as make_vect_embeddings: forget the buffers here, free
+            //    them in free_chunked_result.
+            let mut float_vec_list: Vec<FloatVec> = Vec::with_capacity(embeddings_list.len());
+            for embeddings in embeddings_list.iter() {
+                float_vec_list.push(FloatVec {
+                    ptr: embeddings.as_ptr(),
+                    len: embeddings.len(),
+                    cap: embeddings.capacity(),
+                });
+            }
+            std::mem::forget(embeddings_list);
+
+            let result = ChunkedVecResult {
+                error: ptr::null_mut(),
+                embeddings: float_vec_list.as_ptr(),
+                emb_len: float_vec_list.len(),
+                emb_cap: float_vec_list.capacity(),
+                spans: spans.as_ptr(),
+                spans_cap: spans.capacity(),
+                docs: docs.as_ptr(),
+                docs_len: docs.len(),
+                docs_cap: docs.capacity(),
+            };
+            std::mem::forget(float_vec_list);
+            std::mem::forget(spans);
+            std::mem::forget(docs);
+            result
+        })
+        .unwrap_or_else(|msg| chunked_error(&format!("embeddings: internal error (panic): {msg}")))
+    }
+
+    pub extern "C" fn free_chunked_result(result: ChunkedVecResult) {
+        // A panic mid-free leaks the buffers; that beats unwinding into C++,
+        // which aborts the daemon. The panic hook has already logged it.
+        let _ = panic_guard::catch_panic(|| unsafe {
+            if !result.embeddings.is_null() && result.emb_len > 0 {
+                let slice = std::slice::from_raw_parts(result.embeddings, result.emb_len);
+                for vec in slice {
+                    if !vec.ptr.is_null() && vec.len > 0 {
+                        let _ = Vec::from_raw_parts(vec.ptr as *mut f32, vec.len, vec.cap);
+                    }
+                }
+                let _ = Vec::from_raw_parts(
+                    result.embeddings as *mut FloatVec,
+                    result.emb_len,
+                    result.emb_cap,
+                );
+            }
+
+            // spans is parallel to embeddings, so its length is emb_len.
+            if !result.spans.is_null() && result.spans_cap > 0 {
+                let _ = Vec::from_raw_parts(
+                    result.spans as *mut ChunkSpan,
+                    result.emb_len,
+                    result.spans_cap,
+                );
+            }
+
+            if !result.docs.is_null() && result.docs_cap > 0 {
+                let _ = Vec::from_raw_parts(
+                    result.docs as *mut DocChunks,
+                    result.docs_len,
+                    result.docs_cap,
+                );
+            }
+
+            if !result.error.is_null() {
+                let _ = std::ffi::CString::from_raw(result.error);
+            }
+        });
     }
 }
