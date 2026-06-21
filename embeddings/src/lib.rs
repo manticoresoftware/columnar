@@ -1,3 +1,4 @@
+mod chunk;
 mod error;
 mod ffi;
 mod model;
@@ -19,6 +20,7 @@ mod error_handling_test;
 #[cfg(test)]
 mod panic_guard_test;
 
+pub use chunk::ChunkSettings;
 pub use error::LibError;
 pub use ffi::{EmbedLib, GetLibFuncs};
 pub use model::TextModel;
