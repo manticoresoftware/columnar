@@ -1784,6 +1784,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokenizers",
+ "unicode-segmentation",
 ]
 
 [[package]]
