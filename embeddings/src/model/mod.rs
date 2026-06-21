@@ -43,7 +43,13 @@ pub trait TextModel {
     /// chunking via its loaded tokenizer.
     fn chunk(&self, text: &str, settings: &crate::chunk::ChunkSettings) -> Vec<(usize, usize)> {
         let max = crate::chunk::effective_max(settings, self.get_max_input_len());
-        crate::chunk::chunk_chars(text, max, settings.overlap_tokens as usize)
+        crate::chunk::chunk_text(
+            text,
+            max,
+            settings.overlap_tokens as usize,
+            settings.strategy,
+            None,
+        )
     }
 }
 

@@ -1444,17 +1444,13 @@ impl TextModel for LocalModel {
     }
 
     fn chunk(&self, text: &str, settings: &crate::chunk::ChunkSettings) -> Vec<(usize, usize)> {
-        use crate::chunk::{chunk_local, effective_max, STRATEGY_RECURSIVE, STRATEGY_SENTENCE};
-        let max = effective_max(settings, self.get_max_input_len());
-        // recursive/sentence snap to natural boundaries; fixed uses raw token windows
-        let snap =
-            settings.strategy == STRATEGY_RECURSIVE || settings.strategy == STRATEGY_SENTENCE;
-        chunk_local(
+        let max = crate::chunk::effective_max(settings, self.get_max_input_len());
+        crate::chunk::chunk_text(
             text,
-            self.tokenizer(),
             max,
             settings.overlap_tokens as usize,
-            snap,
+            settings.strategy,
+            Some(self.tokenizer()),
         )
     }
 }
