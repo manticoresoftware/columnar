@@ -1393,6 +1393,19 @@ impl LocalModel {
     }
 }
 
+impl LocalModel {
+    /// Borrow the loaded tokenizer for token-accurate document chunking.
+    fn tokenizer(&self) -> &Tokenizer {
+        match self {
+            LocalModel::Bert(m) => &m.tokenizer,
+            LocalModel::T5(m) => &m.tokenizer,
+            LocalModel::Causal(m) => &m.tokenizer,
+            LocalModel::Quantized(m) => &m.tokenizer,
+            LocalModel::Onnx(m) => &m.tokenizer,
+        }
+    }
+}
+
 impl TextModel for LocalModel {
     fn predict(&self, texts: &[&str], threads: usize) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
         // ONNX manages its own worker count internally — no rayon pool involved.
@@ -1428,6 +1441,21 @@ impl TextModel for LocalModel {
     fn validate_api_key(&self) -> Result<(), Box<dyn std::error::Error>> {
         // Local models don't use API keys, so validation is always successful
         Ok(())
+    }
+
+    fn chunk(&self, text: &str, settings: &crate::chunk::ChunkSettings) -> Vec<(usize, usize)> {
+        use crate::chunk::{chunk_local, effective_max, STRATEGY_RECURSIVE, STRATEGY_SENTENCE};
+        let max = effective_max(settings, self.get_max_input_len());
+        // recursive/sentence snap to natural boundaries; fixed uses raw token windows
+        let snap =
+            settings.strategy == STRATEGY_RECURSIVE || settings.strategy == STRATEGY_SENTENCE;
+        chunk_local(
+            text,
+            self.tokenizer(),
+            max,
+            settings.overlap_tokens as usize,
+            snap,
+        )
     }
 }
 

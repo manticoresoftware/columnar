@@ -36,6 +36,15 @@ pub trait TextModel {
     /// Validates the API key by making a minimal test request to the API.
     /// For remote models, this makes an actual HTTP request. For local models, this is a no-op.
     fn validate_api_key(&self) -> Result<(), Box<dyn Error>>;
+
+    /// Split one document into chunk byte spans `(start, end)` per `settings`.
+    /// Default impl is the char/byte heuristic for remote API models (which have
+    /// no local tokenizer); `LocalModel` overrides it with token-accurate
+    /// chunking via its loaded tokenizer.
+    fn chunk(&self, text: &str, settings: &crate::chunk::ChunkSettings) -> Vec<(usize, usize)> {
+        let max = crate::chunk::effective_max(settings, self.get_max_input_len());
+        crate::chunk::chunk_chars(text, max, settings.overlap_tokens as usize)
+    }
 }
 
 #[repr(C)]
@@ -103,6 +112,15 @@ impl TextModel for Model {
             Model::Voyage(m) => m.validate_api_key(),
             Model::Jina(m) => m.validate_api_key(),
             Model::Local(m) => m.validate_api_key(),
+        }
+    }
+
+    fn chunk(&self, text: &str, settings: &crate::chunk::ChunkSettings) -> Vec<(usize, usize)> {
+        match self {
+            Model::OpenAI(m) => m.chunk(text, settings),
+            Model::Voyage(m) => m.chunk(text, settings),
+            Model::Jina(m) => m.chunk(text, settings),
+            Model::Local(m) => m.chunk(text, settings),
         }
     }
 }
