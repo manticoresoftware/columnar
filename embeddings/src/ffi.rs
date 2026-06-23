@@ -19,7 +19,7 @@ type LoadModelFn = extern "C" fn(
 type FreeModelResultFn = extern "C" fn(TextModelResult);
 
 type MakeVectEmbeddingsFn =
-    extern "C" fn(&TextModelWrapper, *const StringItem, usize) -> FloatVecResult;
+    extern "C" fn(&TextModelWrapper, *const StringItem, usize, i32) -> FloatVecResult;
 
 type FreeVecResultFn = extern "C" fn(FloatVecResult);
 
@@ -62,7 +62,7 @@ pub struct EmbedLib {
 const VERSION_STR: &[u8] = concat!(env!("EMBEDDINGS_VERSION_STR"), "\0").as_bytes();
 
 const LIB: EmbedLib = EmbedLib {
-    version: 3usize,
+    version: 4usize,
     version_str: VERSION_STR.as_ptr() as *const c_char,
     load_model: TextModelWrapper::load_model,
     free_model_result: TextModelWrapper::free_model_result,
