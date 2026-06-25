@@ -265,7 +265,9 @@ bool TextToEmbeddings_c::Convert ( const std::vector<std::string_view> & dTexts,
 	assert(pFuncs);
 
 	// iThreads: 0 = use all available CPUs (default), >0 = cap worker count in the embeddings lib
-	FloatVecResult tVecResult = pFuncs->make_vect_embeddings ( &m_pModel, dStringItems.data(), dStringItems.size(), iThreads );
+	// nullptr ChunkSettings = truncate strategy (today's behavior). Pass a populated
+	// ChunkSettings (e.g. STRATEGY_MEAN) once the table DDL exposes a chunking option.
+	FloatVecResult tVecResult = pFuncs->make_vect_embeddings ( &m_pModel, dStringItems.data(), dStringItems.size(), nullptr, iThreads );
 	if ( tVecResult.m_szError )
 	{
 		sError = tVecResult.m_szError;
@@ -273,6 +275,9 @@ bool TextToEmbeddings_c::Convert ( const std::vector<std::string_view> & dTexts,
 		return false;
 	}
 
+	// truncate/mean return one vector per input row, so tVecResult.len == rows
+	// and this 1:1 copy is correct. A future multi-vector strategy (N vectors
+	// per row) would instead group via tVecResult.m_pRowOffsets[i..i+1].
 	dEmbeddings.resize ( tVecResult.len );
 	for ( size_t i = 0; i < tVecResult.len; i++ )
 	{
@@ -312,7 +317,7 @@ knn::EmbeddingsLib_i * LoadEmbeddingsLib ( const std::string & sLibPath, std::st
 	if ( !pLib->Load(sError) )
 		return nullptr;
 
-	const int SUPPORTED_EMBEDDINGS_LIB_VER = 5;
+	const int SUPPORTED_EMBEDDINGS_LIB_VER = 8;
 	if ( pLib->GetVersion()!=SUPPORTED_EMBEDDINGS_LIB_VER )
 	{
 		sError = util::FormatStr ( "Unsupported embeddings library version %d (expected %d)", pLib->GetVersion(), SUPPORTED_EMBEDDINGS_LIB_VER );

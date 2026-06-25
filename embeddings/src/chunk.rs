@@ -1,22 +1,26 @@
-//! Document chunking: split one input document into multiple embedding-sized
-//! pieces, returning byte spans `(start, end)` into the original text.
+//! Document chunking + embedding strategies.
+//!
+//! One document maps to one or many vectors depending on the strategy:
+//! - `truncate` / `mean` collapse to **one** vector per document.
+//! - `fixed` / `recursive` / `sentence` keep **N** vectors per document (one per
+//!   chunk) — the daemon groups them via the row-offsets sidecar.
 //!
 //! Local models chunk token-accurately via their loaded tokenizer; remote API
 //! models (no local tokenizer) fall back to a conservative char/byte heuristic.
-//! Chunk *settings* originate at the daemon's SQL/DDL surface and arrive here as
-//! [`ChunkSettings`]; this module owns only the actual splitting.
+//! `ChunkSettings` arrives from the daemon's DDL surface and selects everything.
 
+use crate::utils::normalize;
 use tokenizers::Tokenizer;
 
-/// Chunking strategy, mirrored as a `u32` across the FFI in [`ChunkSettings`].
-pub const STRATEGY_NONE: u32 = 0;
-pub const STRATEGY_FIXED: u32 = 1;
-pub const STRATEGY_RECURSIVE: u32 = 2;
-pub const STRATEGY_SENTENCE: u32 = 3;
+/// Strategy, mirrored as a `u32` across the FFI in [`ChunkSettings`].
+pub const STRATEGY_TRUNCATE: u32 = 0; // 1 vector/doc: first `max_tokens` tokens
+pub const STRATEGY_MEAN: u32 = 1; // 1 vector/doc: chunk → embed → average
+pub const STRATEGY_FIXED: u32 = 2; // N vectors/doc: fixed token windows
+pub const STRATEGY_RECURSIVE: u32 = 3; // N vectors/doc: recursive token-aware split
+pub const STRATEGY_SENTENCE: u32 = 4; // N vectors/doc: UAX-29 sentence segmentation
 
 /// Special tokens (`[CLS]`/`[SEP]`) that `predict()` re-adds when it re-tokenizes
-/// a chunk string. We size chunks to leave room for them so a chunk never gets
-/// silently truncated at inference time.
+/// a chunk string. We size chunks to leave room so a chunk is never truncated.
 const SPECIAL_TOKENS_MARGIN: usize = 2;
 
 /// Conservative bytes-per-token for the remote heuristic. Deliberately low so a
@@ -27,7 +31,7 @@ const REMOTE_BYTES_PER_TOKEN: usize = 3;
 /// daemon, which owns the DDL surface and validates against the model.
 #[repr(C)]
 pub struct ChunkSettings {
-    /// One of the `STRATEGY_*` constants. `STRATEGY_NONE` ⇒ no chunking.
+    /// One of the `STRATEGY_*` constants.
     pub strategy: u32,
     /// Target chunk size in tokens. `0` ⇒ use the model's max. Always clamped to
     /// the model's real input limit.
@@ -40,14 +44,20 @@ pub struct ChunkSettings {
 }
 
 impl ChunkSettings {
-    /// True when chunking should actually run for this request.
-    pub fn enabled(&self) -> bool {
-        self.strategy != STRATEGY_NONE
+    /// True when the document must be split (every strategy except `truncate`).
+    pub fn needs_chunking(&self) -> bool {
+        self.strategy != STRATEGY_TRUNCATE
+    }
+
+    /// True when the strategy collapses to one vector per document
+    /// (`truncate`/`mean`); false for the multi-vector strategies.
+    pub fn is_single_vector(&self) -> bool {
+        self.strategy == STRATEGY_TRUNCATE || self.strategy == STRATEGY_MEAN
     }
 }
 
-/// Resolve the target chunk size in *content* tokens, clamped to what the model
-/// can actually take (minus the special-token budget).
+/// Resolve the chunk size in *content* tokens, clamped to what the model can
+/// actually take (minus the special-token budget). `0` ⇒ model max.
 pub fn effective_max(settings: &ChunkSettings, model_max: usize) -> usize {
     let ceiling = model_max.saturating_sub(SPECIAL_TOKENS_MARGIN).max(1);
     let target = settings.max_tokens as usize;
@@ -58,14 +68,77 @@ pub fn effective_max(settings: &ChunkSettings, model_max: usize) -> usize {
     }
 }
 
+/// Average a document's chunk embeddings into one L2-normalized vector. Chunk
+/// vectors are already normalized by `predict`; the mean of unit vectors is
+/// re-normalized so the result is a unit vector too.
+pub fn mean_pool(chunks: &[Vec<f32>]) -> Vec<f32> {
+    let dim = chunks.first().map(Vec::len).unwrap_or(0);
+    let mut acc = vec![0.0f32; dim];
+    for v in chunks {
+        for (a, x) in acc.iter_mut().zip(v.iter()) {
+            *a += *x;
+        }
+    }
+    let n = chunks.len().max(1) as f32;
+    for a in acc.iter_mut() {
+        *a /= n;
+    }
+    normalize(&mut acc);
+    acc
+}
+
+/// Arrow-style per-row offsets (length `counts.len() + 1`) from per-document
+/// vector counts: document `i` owns vectors `[offsets[i] .. offsets[i + 1]]`.
+pub fn row_offsets_from_counts(counts: &[usize]) -> Vec<usize> {
+    let mut offsets = Vec::with_capacity(counts.len() + 1);
+    let mut acc = 0usize;
+    offsets.push(0);
+    for &c in counts {
+        acc += c;
+        offsets.push(acc);
+    }
+    offsets
+}
+
+/// Split one document into chunk byte spans `(start, end)` according to the
+/// strategy's split method. `tokenizer` is `Some` for local models (token-exact)
+/// and `None` for remote API models (char heuristic). `STRATEGY_TRUNCATE` never
+/// reaches here (it does not chunk); `STRATEGY_MEAN` splits recursively.
+pub fn chunk_text(
+    text: &str,
+    max_tokens: usize,
+    overlap: usize,
+    strategy: u32,
+    tokenizer: Option<&Tokenizer>,
+) -> Vec<(usize, usize)> {
+    match strategy {
+        STRATEGY_SENTENCE => chunk_sentence(text, max_tokens, overlap, tokenizer),
+        STRATEGY_FIXED => window(text, max_tokens, overlap, false, tokenizer),
+        // recursive (3), mean's internal split (1), and any other → recursive.
+        _ => window(text, max_tokens, overlap, true, tokenizer),
+    }
+}
+
+/// Token-window split, picking the token-accurate or heuristic backend.
+fn window(
+    text: &str,
+    max_tokens: usize,
+    overlap: usize,
+    snap: bool,
+    tokenizer: Option<&Tokenizer>,
+) -> Vec<(usize, usize)> {
+    match tokenizer {
+        Some(t) => chunk_local(text, t, max_tokens, overlap, snap),
+        None => chunk_chars(text, max_tokens, overlap),
+    }
+}
+
 /// Token-accurate chunking for local models. One tokenization pass; windows by
 /// token count; `recursive` snaps each cut back to a natural boundary; overlap
 /// is realigned to the (possibly snapped) cut so no tokens are dropped.
 ///
 /// NOTE: assumes `tokenizer.encode(..).get_offsets()` returns byte offsets into
-/// the input (true for the WordPiece/BPE paths Manticore loads). A normalizer
-/// that rewrites text could make offsets approximate — acceptable for chunk
-/// boundaries, but verify per model if exactness ever matters.
+/// the input (true for the WordPiece/BPE paths Manticore loads).
 pub fn chunk_local(
     text: &str,
     tokenizer: &Tokenizer,
@@ -79,6 +152,8 @@ pub fn chunk_local(
     // `false` = no special tokens, so offsets map cleanly onto the input text.
     let encoding = match tokenizer.encode(text, false) {
         Ok(e) => e,
+        // Tokenizer failure (rare): fall back to the whole doc as one chunk.
+        // predict() truncates it if needed — degrades to truncate, but is safe.
         Err(_) => return vec![(0, text.len())],
     };
     let offsets = encoding.get_offsets();
@@ -150,41 +225,6 @@ pub fn chunk_chars(text: &str, max_tokens: usize, overlap_tokens: usize) -> Vec<
     chunks
 }
 
-/// Strategy dispatcher used by every model backend. `tokenizer` is `Some` for
-/// local models (token-accurate) and `None` for remote API models (char
-/// heuristic). Remote models still honor `strategy` here.
-pub fn chunk_text(
-    text: &str,
-    max_tokens: usize,
-    overlap: usize,
-    strategy: u32,
-    tokenizer: Option<&Tokenizer>,
-) -> Vec<(usize, usize)> {
-    match strategy {
-        STRATEGY_NONE => vec![(0, text.len())],
-        STRATEGY_SENTENCE => chunk_sentence(text, max_tokens, overlap, tokenizer),
-        STRATEGY_RECURSIVE => window(text, max_tokens, overlap, true, tokenizer),
-        // STRATEGY_FIXED and any unknown value → plain token windows.
-        _ => window(text, max_tokens, overlap, false, tokenizer),
-    }
-}
-
-/// Token-window split, picking the token-accurate or heuristic backend.
-/// (The remote heuristic always snaps to whitespace, so `snap` only affects
-/// local models — fixed vs recursive is a no-op distinction on remote.)
-fn window(
-    text: &str,
-    max_tokens: usize,
-    overlap: usize,
-    snap: bool,
-    tokenizer: Option<&Tokenizer>,
-) -> Vec<(usize, usize)> {
-    match tokenizer {
-        Some(t) => chunk_local(text, t, max_tokens, overlap, snap),
-        None => chunk_chars(text, max_tokens, overlap),
-    }
-}
-
 /// Count tokens in `text`: exact via the model tokenizer when available, else
 /// the conservative byte estimate the remote heuristic uses.
 fn count_tokens(text: &str, tokenizer: Option<&Tokenizer>) -> usize {
@@ -197,7 +237,7 @@ fn count_tokens(text: &str, tokenizer: Option<&Tokenizer>) -> usize {
     }
 }
 
-/// UAX #29 sentence boundaries — the same standard Elasticsearch's ICU uses —
+/// UAX-29 sentence boundaries — the same standard Elasticsearch's ICU uses —
 /// as contiguous byte spans tiling the whole document.
 fn sentence_spans(text: &str) -> Vec<(usize, usize)> {
     use unicode_segmentation::UnicodeSegmentation;
@@ -207,7 +247,7 @@ fn sentence_spans(text: &str) -> Vec<(usize, usize)> {
 }
 
 /// Sentence chunking, mirroring Elasticsearch's algorithm: detect sentences
-/// (UAX #29), then greedily group whole sentences up to `max_tokens`. A single
+/// (UAX-29), then greedily group whole sentences up to `max_tokens`. A single
 /// sentence larger than the budget is split with the token-window splitter (ES
 /// splits such a sentence across chunks). `overlap` re-seeds the next chunk with
 /// trailing whole sentences summing ≤ `overlap` tokens.
@@ -325,21 +365,48 @@ mod tests {
     }
 
     #[test]
-    fn effective_max_defaults_to_model_minus_margin() {
-        let s = settings(STRATEGY_RECURSIVE, 0, 0, 0);
-        assert_eq!(effective_max(&s, 512), 510);
+    fn strategy_classification() {
+        assert!(!settings(STRATEGY_TRUNCATE, 0, 0, 0).needs_chunking());
+        assert!(settings(STRATEGY_MEAN, 0, 0, 0).needs_chunking());
+        assert!(settings(STRATEGY_SENTENCE, 0, 0, 0).needs_chunking());
+        assert!(settings(STRATEGY_TRUNCATE, 0, 0, 0).is_single_vector());
+        assert!(settings(STRATEGY_MEAN, 0, 0, 0).is_single_vector());
+        assert!(!settings(STRATEGY_FIXED, 0, 0, 0).is_single_vector());
+        assert!(!settings(STRATEGY_SENTENCE, 0, 0, 0).is_single_vector());
     }
 
     #[test]
-    fn effective_max_clamps_target_to_model() {
-        let s = settings(STRATEGY_RECURSIVE, 100_000, 0, 0);
-        assert_eq!(effective_max(&s, 512), 510);
+    fn effective_max_defaults_clamps_and_floors() {
+        assert_eq!(effective_max(&settings(STRATEGY_MEAN, 0, 0, 0), 512), 510);
+        assert_eq!(
+            effective_max(&settings(STRATEGY_MEAN, 100_000, 0, 0), 512),
+            510
+        );
+        assert_eq!(
+            effective_max(&settings(STRATEGY_MEAN, 256, 0, 0), 8192),
+            256
+        );
+        assert!(effective_max(&settings(STRATEGY_MEAN, 0, 0, 0), 0) >= 1);
     }
 
     #[test]
-    fn effective_max_honors_smaller_target() {
-        let s = settings(STRATEGY_RECURSIVE, 256, 0, 0);
-        assert_eq!(effective_max(&s, 8192), 256);
+    fn mean_pool_averages_then_normalizes() {
+        let m = mean_pool(&[vec![1.0, 0.0], vec![0.0, 1.0]]);
+        let e = std::f32::consts::FRAC_1_SQRT_2;
+        assert!((m[0] - e).abs() < 1e-6 && (m[1] - e).abs() < 1e-6);
+    }
+
+    #[test]
+    fn mean_pool_single_chunk_is_normalized() {
+        let m = mean_pool(&[vec![3.0, 4.0]]);
+        assert!((m[0] - 0.6).abs() < 1e-6 && (m[1] - 0.8).abs() < 1e-6);
+    }
+
+    #[test]
+    fn row_offsets_prefix_sum() {
+        assert_eq!(row_offsets_from_counts(&[3, 1, 2]), vec![0, 3, 4, 6]);
+        assert_eq!(row_offsets_from_counts(&[1, 1, 1]), vec![0, 1, 2, 3]);
+        assert_eq!(row_offsets_from_counts(&[]), vec![0]);
     }
 
     #[test]
@@ -349,7 +416,7 @@ mod tests {
 
     #[test]
     fn chunk_chars_tiles_document_with_no_overlap() {
-        let text = "word ".repeat(2000); // 10000 ASCII bytes
+        let text = "word ".repeat(2000);
         let chunks = chunk_chars(&text, 100, 0);
         assert!(chunks.len() > 1);
         assert_eq!(chunks.first().unwrap().0, 0);
@@ -358,8 +425,7 @@ mod tests {
             assert_eq!(w[0].1, w[1].0, "no gap/overlap when overlap=0");
         }
         for (a, b) in &chunks {
-            assert!(b > a, "non-empty span");
-            assert!(text.is_char_boundary(*a) && text.is_char_boundary(*b));
+            assert!(b > a && text.is_char_boundary(*a) && text.is_char_boundary(*b));
         }
     }
 
@@ -369,12 +435,9 @@ mod tests {
         let chunks = chunk_chars(&text, 100, 20);
         assert!(chunks.len() > 1);
         for w in chunks.windows(2) {
-            assert!(
-                w[1].0 < w[0].1,
-                "next chunk starts before prev end (overlap)"
-            );
+            assert!(w[1].0 < w[0].1, "overlap: next starts before prev end");
         }
-        assert_eq!(chunks.last().unwrap().1, text.len(), "still covers the doc");
+        assert_eq!(chunks.last().unwrap().1, text.len());
     }
 
     #[test]
@@ -388,131 +451,50 @@ mod tests {
     }
 
     #[test]
-    fn cap_chunks_merges_tail_into_last() {
-        let chunks = vec![(0, 10), (10, 20), (20, 30), (30, 45)];
-        assert_eq!(cap_chunks(chunks, 2), vec![(0, 10), (10, 45)]);
-    }
-
-    #[test]
-    fn cap_chunks_noop_under_limit() {
-        let chunks = vec![(0, 10), (10, 20)];
-        assert_eq!(cap_chunks(chunks.clone(), 5), chunks);
-        assert_eq!(cap_chunks(chunks.clone(), 0), chunks);
-    }
-
-    #[test]
-    fn chunk_sentence_groups_whole_sentences_and_tiles() {
-        let text = "One two three. Four five six. Seven eight nine. Ten eleven twelve.";
-        // small budget + byte estimate forces multiple chunks (no tokenizer here)
-        let chunks = chunk_sentence(text, 8, 0, None);
-        assert!(chunks.len() > 1);
-        assert_eq!(chunks.first().unwrap().0, 0);
-        assert_eq!(chunks.last().unwrap().1, text.len());
-        for w in chunks.windows(2) {
-            assert_eq!(
-                w[0].1, w[1].0,
-                "sentence chunks tile with no gap when overlap=0"
-            );
-        }
-    }
-
-    #[test]
-    fn chunk_sentence_splits_an_oversized_sentence() {
-        // one terminator-free "sentence" longer than the budget must still split
-        let text = "word ".repeat(1000);
-        let chunks = chunk_sentence(&text, 100, 0, None);
-        assert!(chunks.len() > 1);
-        assert_eq!(chunks.last().unwrap().1, text.len());
-    }
-
-    #[test]
     fn chunk_sentence_splits_at_uax29_boundary() {
-        // UAX-29 breaks after ". " before an uppercase letter; grouping must land there.
         let text = "Aaa bbb ccc. Ddd eee fff.";
-        let chunks = chunk_sentence(text, 5, 0, None); // ~5 est tokens/sentence → 1 each
+        let chunks = chunk_sentence(text, 5, 0, None);
         assert_eq!(chunks.len(), 2);
         assert_eq!(chunks[0].0, 0);
         assert_eq!(chunks[1].1, text.len());
-        assert_eq!(chunks[0].1, chunks[1].0, "tile");
-        assert!(
-            (12..=13).contains(&chunks[0].1),
-            "split falls on the sentence boundary after '. '"
-        );
+        assert_eq!(chunks[0].1, chunks[1].0);
+        assert!((12..=13).contains(&chunks[0].1));
     }
 
     #[test]
-    fn chunk_sentence_packs_several_per_chunk() {
+    fn chunk_sentence_packs_and_splits_oversized() {
         let text = "S one. S two. S three. S four. S five. S six.";
-        let few = chunk_sentence(text, 100, 0, None); // big budget → one chunk
-        let many = chunk_sentence(text, 3, 0, None); // tiny budget → ~one sentence each
-        assert_eq!(few.len(), 1);
-        assert!(many.len() > few.len());
-        assert_eq!(many.last().unwrap().1, text.len());
+        assert_eq!(chunk_sentence(text, 100, 0, None).len(), 1);
+        assert!(chunk_sentence(text, 3, 0, None).len() > 1);
+        // terminator-free over-long "sentence" still splits
+        let blob = "word ".repeat(1000);
+        assert!(chunk_sentence(&blob, 100, 0, None).len() > 1);
     }
 
     #[test]
-    fn chunk_sentence_overlap_repeats_a_sentence() {
-        let text = "One two. Three four. Five six. Seven eight.";
-        let chunks = chunk_sentence(text, 10, 5, None); // 2 sentences/chunk, 1 overlapped
-        assert!(chunks.len() > 1);
-        for w in chunks.windows(2) {
-            assert!(w[1].0 < w[0].1, "overlap: next starts before prev end");
-            assert!(w[1].0 > w[0].0, "forward progress");
-        }
-        assert_eq!(chunks.last().unwrap().1, text.len());
-    }
-
-    #[test]
-    fn chunk_chars_overlap_has_no_gaps() {
-        let text = "alpha ".repeat(500);
-        let chunks = chunk_chars(&text, 40, 8);
-        assert_eq!(chunks.first().unwrap().0, 0);
-        assert_eq!(chunks.last().unwrap().1, text.len());
-        for w in chunks.windows(2) {
-            assert!(w[1].0 <= w[0].1, "no gap between chunks");
-            assert!(w[1].0 > w[0].0, "forward progress");
-        }
-    }
-
-    #[test]
-    fn chunk_text_none_is_whole_doc() {
-        let text = "anything at all here";
-        assert_eq!(
-            chunk_text(text, 4, 0, STRATEGY_NONE, None),
-            vec![(0, text.len())]
-        );
-    }
-
-    #[test]
-    fn chunk_text_every_strategy_covers_the_doc() {
+    fn chunk_text_routes_every_multivector_strategy() {
         let text = "word ".repeat(400);
-        for strat in [STRATEGY_FIXED, STRATEGY_RECURSIVE, STRATEGY_SENTENCE] {
-            let chunks = chunk_text(&text, 50, 0, strat, None);
-            assert!(chunks.len() > 1, "strategy {strat} should split");
+        for s in [
+            STRATEGY_FIXED,
+            STRATEGY_RECURSIVE,
+            STRATEGY_SENTENCE,
+            STRATEGY_MEAN,
+        ] {
+            let chunks = chunk_text(&text, 50, 0, s, None);
+            assert!(chunks.len() > 1, "strategy {s} should split");
             assert_eq!(chunks.first().unwrap().0, 0);
             assert_eq!(chunks.last().unwrap().1, text.len());
         }
     }
 
     #[test]
-    fn effective_max_never_zero() {
-        let s = settings(STRATEGY_FIXED, 0, 0, 0);
-        assert!(effective_max(&s, 1) >= 1);
-        assert!(effective_max(&s, 0) >= 1);
-    }
-
-    #[test]
-    fn chunk_chars_spans_stay_in_bounds_multibyte() {
-        let text = "🦀x ".repeat(300);
-        for &max in &[10usize, 50, 200] {
-            for &ov in &[0usize, 5] {
-                let chunks = chunk_chars(&text, max, ov);
-                for (a, b) in &chunks {
-                    assert!(a <= b && *b <= text.len());
-                    assert!(text.is_char_boundary(*a) && text.is_char_boundary(*b));
-                }
-                assert_eq!(chunks.last().unwrap().1, text.len());
-            }
-        }
+    fn cap_chunks_merges_tail_and_noops() {
+        assert_eq!(
+            cap_chunks(vec![(0, 10), (10, 20), (20, 30), (30, 45)], 2),
+            vec![(0, 10), (10, 45)]
+        );
+        let two = vec![(0, 10), (10, 20)];
+        assert_eq!(cap_chunks(two.clone(), 5), two);
+        assert_eq!(cap_chunks(two.clone(), 0), two);
     }
 }

@@ -20,7 +20,10 @@ mod error_handling_test;
 #[cfg(test)]
 mod panic_guard_test;
 
-pub use chunk::ChunkSettings;
+pub use chunk::{
+    ChunkSettings, STRATEGY_FIXED, STRATEGY_MEAN, STRATEGY_RECURSIVE, STRATEGY_SENTENCE,
+    STRATEGY_TRUNCATE,
+};
 pub use error::LibError;
 pub use ffi::{EmbedLib, GetLibFuncs};
 pub use model::TextModel;
