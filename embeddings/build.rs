@@ -76,10 +76,9 @@ fn main() {
     // Generate C header file for FFI bindings. Write through OUT_DIR first so
     // an unchanged header does not dirty the source tree and invalidate Cargo
     // fingerprints for sibling CMake build directories.
-    let generated_header_path = PathBuf::from(
-        env::var("OUT_DIR").expect("OUT_DIR env var is not defined"),
-    )
-    .join("manticoresearch_text_embeddings.h");
+    let generated_header_path =
+        PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR env var is not defined"))
+            .join("manticoresearch_text_embeddings.h");
     let source_header_path = crate_dir.join("manticoresearch_text_embeddings.h");
     cbindgen::generate_with_config(&crate_dir, config)
         .expect("Unable to generate bindings")
