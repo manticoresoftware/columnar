@@ -1,6 +1,7 @@
 extern crate cbindgen;
 
 use std::env;
+use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -72,10 +73,25 @@ fn main() {
     let config = cbindgen::Config::from_file("cbindgen.toml")
         .expect("Unable to find cbindgen.toml configuration file");
 
-    // Generate C header file for FFI bindings
+    // Generate C header file for FFI bindings. Write through OUT_DIR first so
+    // an unchanged header does not dirty the source tree and invalidate Cargo
+    // fingerprints for sibling CMake build directories.
+    let generated_header_path = PathBuf::from(
+        env::var("OUT_DIR").expect("OUT_DIR env var is not defined"),
+    )
+    .join("manticoresearch_text_embeddings.h");
+    let source_header_path = crate_dir.join("manticoresearch_text_embeddings.h");
     cbindgen::generate_with_config(&crate_dir, config)
         .expect("Unable to generate bindings")
-        .write_to_file(crate_dir.join("manticoresearch_text_embeddings.h"));
+        .write_to_file(&generated_header_path);
+
+    let generated_header = fs::read(&generated_header_path)
+        .expect("Unable to read generated manticoresearch_text_embeddings.h");
+    let current_header = fs::read(&source_header_path).unwrap_or_default();
+    if generated_header != current_header {
+        fs::write(&source_header_path, generated_header)
+            .expect("Unable to update manticoresearch_text_embeddings.h");
+    }
 
     // Generate version string with commit and timestamp in format: "VERSION commit@timestamp"
     // This matches the format used by other Manticore libraries (columnar, secondary, knn)
