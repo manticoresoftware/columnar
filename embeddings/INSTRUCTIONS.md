@@ -53,7 +53,7 @@ src/
 
 1. **`src/model/text_model_wrapper.rs`** - The heart of FFI
    - `load_model()` - Creates model instances
-   - `make_vect_embeddings()` - Generates embeddings (FIXED: no empty vectors on error)
+   - `make_vect_embeddings()` - Generates embeddings; takes an optional `ChunkSettings*` selecting the strategy (truncate / mean / fixed / recursive / sentence). Returns a flat `FloatVecResult` grouped per document by `m_pRowOffsets`. **Contract + strategy reference: [`CHUNKING.md`](CHUNKING.md).**
    - `free_model_result()` / `free_vec_result()` - Memory cleanup
 
 2. **`manticoresearch_text_embeddings.h`** - Auto-generated C header

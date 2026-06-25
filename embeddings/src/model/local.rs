@@ -1443,15 +1443,16 @@ impl TextModel for LocalModel {
         Ok(())
     }
 
-    fn chunk(&self, text: &str, settings: &crate::chunk::ChunkSettings) -> Vec<(usize, usize)> {
-        let max = crate::chunk::effective_max(settings, self.get_max_input_len());
-        crate::chunk::chunk_text(
-            text,
-            max,
-            settings.overlap_tokens as usize,
-            settings.strategy,
-            Some(self.tokenizer()),
-        )
+    fn chunk(
+        &self,
+        text: &str,
+        max_tokens: usize,
+        overlap: usize,
+        strategy: u32,
+    ) -> Vec<(usize, usize)> {
+        // Token-accurate split via the loaded tokenizer; chunk_text picks the
+        // split method (fixed/recursive/sentence) from the strategy.
+        crate::chunk::chunk_text(text, max_tokens, overlap, strategy, Some(self.tokenizer()))
     }
 }
 
