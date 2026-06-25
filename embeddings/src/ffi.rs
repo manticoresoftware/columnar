@@ -1,6 +1,6 @@
 use crate::chunk::ChunkSettings;
 use crate::model::text_model_wrapper::{
-    ChunkedVecResult, FloatVecResult, StringItem, TextModelResult, TextModelWrapper,
+    FloatVecResult, StringItem, TextModelResult, TextModelWrapper,
 };
 use std::os::raw::c_char;
 
@@ -19,8 +19,13 @@ type LoadModelFn = extern "C" fn(
 
 type FreeModelResultFn = extern "C" fn(TextModelResult);
 
-type MakeVectEmbeddingsFn =
-    extern "C" fn(&TextModelWrapper, *const StringItem, usize, i32) -> FloatVecResult;
+type MakeVectEmbeddingsFn = extern "C" fn(
+    &TextModelWrapper,
+    *const StringItem,
+    usize,
+    *const ChunkSettings,
+    i32,
+) -> FloatVecResult;
 
 type FreeVecResultFn = extern "C" fn(FloatVecResult);
 
@@ -35,16 +40,6 @@ type ValidateApiKeyFn = extern "C" fn(&TextModelWrapper) -> *mut c_char;
 /// for returning owned strings to C/C++.
 type FreeStringFn = extern "C" fn(*mut c_char);
 
-type MakeVectEmbeddingsChunkedFn = extern "C" fn(
-    &TextModelWrapper,
-    *const StringItem,
-    usize,
-    *const ChunkSettings,
-    i32,
-) -> ChunkedVecResult;
-
-type FreeChunkedResultFn = extern "C" fn(ChunkedVecResult);
-
 #[repr(C)]
 pub struct EmbedLib {
     version: usize,
@@ -57,8 +52,6 @@ pub struct EmbedLib {
     get_max_input_size: GetLenFn,
     validate_api_key: ValidateApiKeyFn,
     free_string: FreeStringFn,
-    make_vect_embeddings_chunked: MakeVectEmbeddingsChunkedFn,
-    free_chunked_result: FreeChunkedResultFn,
 }
 /// Version string with commit hash and timestamp, generated at compile time by build.rs.
 ///
@@ -75,7 +68,7 @@ pub struct EmbedLib {
 const VERSION_STR: &[u8] = concat!(env!("EMBEDDINGS_VERSION_STR"), "\0").as_bytes();
 
 const LIB: EmbedLib = EmbedLib {
-    version: 5usize,
+    version: 8usize,
     version_str: VERSION_STR.as_ptr() as *const c_char,
     load_model: TextModelWrapper::load_model,
     free_model_result: TextModelWrapper::free_model_result,
@@ -85,8 +78,6 @@ const LIB: EmbedLib = EmbedLib {
     get_max_input_size: TextModelWrapper::get_max_input_len,
     validate_api_key: TextModelWrapper::validate_api_key,
     free_string: TextModelWrapper::free_string,
-    make_vect_embeddings_chunked: TextModelWrapper::make_vect_embeddings_chunked,
-    free_chunked_result: TextModelWrapper::free_chunked_result,
 };
 
 #[no_mangle]

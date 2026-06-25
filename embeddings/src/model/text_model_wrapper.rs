@@ -4,6 +4,11 @@ use crate::panic_guard;
 use std::os::raw::c_char;
 use std::{ffi::c_void, ptr};
 
+/// Per-document output vectors (flat across all documents) plus per-document
+/// vector counts, used to build the row-offsets sidecar. One inner `Vec<f32>`
+/// per emitted vector.
+type EmbedResult = Result<(Vec<Vec<f32>>, Vec<usize>), Box<dyn std::error::Error>>;
+
 /// Sentinel written at offset 0 of every live model handle. Lets FFI entry
 /// points detect garbage, null, or freed pointers handed in by the C++ caller
 /// and return a clean error instead of dereferencing into UB.
@@ -61,52 +66,33 @@ pub struct FloatVec {
     pub cap: usize,
 }
 
-/// cbindgen:field-names=[m_szError,m_tEmbedding,len,cap]
+/// Embedding result for one `make_vect_embeddings` call.
+///
+/// `m_tEmbedding` is a FLAT array of `len` vectors — every input document's
+/// vectors concatenated. `m_pRowOffsets` (length `rows + 1`) groups them per
+/// input document, Arrow-style: document `i` owns
+/// `m_tEmbedding[m_pRowOffsets[i] .. m_pRowOffsets[i + 1]]`. For the v1
+/// strategies (truncate / mean) every document yields exactly one vector, so
+/// `len == rows` and the offsets are `[0, 1, ..., rows]`. The sidecar lets a
+/// future multi-vector strategy return N vectors per document through this same
+/// struct — no second method, cardinality carried as data.
+///
+/// cbindgen:field-names=[m_szError,m_tEmbedding,len,cap,m_pRowOffsets,rows,offsets_cap]
 #[repr(C)]
 pub struct FloatVecResult {
     pub error: *mut c_char,
     pub ptr: *const FloatVec,
     pub len: usize,
     pub cap: usize,
+    pub row_offsets: *const usize,
+    pub rows: usize,
+    pub offsets_cap: usize,
 }
 
 #[repr(C)]
 pub struct StringItem {
     pub ptr: *const c_char,
     pub len: usize,
-}
-
-/// One emitted chunk's byte span into the original input document.
-#[repr(C)]
-pub struct ChunkSpan {
-    pub start: usize,
-    pub end: usize,
-}
-
-/// Maps one input document to its run of chunks in the flat embeddings/spans
-/// arrays: the document's chunks are `[first, first + count)`.
-#[repr(C)]
-pub struct DocChunks {
-    pub first: usize,
-    pub count: usize,
-}
-
-/// Result of [`TextModelWrapper::make_vect_embeddings_chunked`]: a flat array of
-/// chunk embeddings, a parallel array of byte spans, and a per-input-document
-/// grouping so the C++ caller can rebuild "these N chunks belong to document i".
-///
-/// cbindgen:field-names=[m_szError,m_tEmbedding,emb_len,emb_cap,m_tSpans,spans_cap,m_tDocs,docs_len,docs_cap]
-#[repr(C)]
-pub struct ChunkedVecResult {
-    pub error: *mut c_char,
-    pub embeddings: *const FloatVec,
-    pub emb_len: usize,
-    pub emb_cap: usize,
-    pub spans: *const ChunkSpan,
-    pub spans_cap: usize,
-    pub docs: *const DocChunks,
-    pub docs_len: usize,
-    pub docs_cap: usize,
 }
 
 /// Build a heap CString for the FFI error channel. Panic messages can contain
@@ -117,21 +103,6 @@ fn to_c_error(msg: &str) -> *mut c_char {
         .map(|c| c.into_raw())
         // Unreachable after the NUL strip, but never panic on this path.
         .unwrap_or(ptr::null_mut())
-}
-
-/// An all-null [`ChunkedVecResult`] carrying only an error string.
-fn chunked_error(msg: &str) -> ChunkedVecResult {
-    ChunkedVecResult {
-        error: to_c_error(msg),
-        embeddings: ptr::null(),
-        emb_len: 0,
-        emb_cap: 0,
-        spans: ptr::null(),
-        spans_cap: 0,
-        docs: ptr::null(),
-        docs_len: 0,
-        docs_cap: 0,
-    }
 }
 
 impl TextModelWrapper {
@@ -250,10 +221,20 @@ impl TextModelWrapper {
         }
     }
 
+    /// Generate embeddings for a batch of documents. `settings` selects the
+    /// strategy (null ⇒ `truncate`):
+    /// - `truncate` — embed the first `max_tokens` tokens (one vector/doc).
+    /// - `mean` — split the doc, embed every chunk, average into one vector/doc.
+    /// - `fixed`/`recursive`/`sentence` — split the doc and keep every chunk
+    ///   vector (N vectors/doc).
+    ///
+    /// Output is a flat `FloatVec[]`; `m_pRowOffsets` groups it per document
+    /// (1 vector/doc for truncate/mean, N for the rest). `threads`: 0 = all CPUs.
     pub extern "C" fn make_vect_embeddings(
         &self,
         texts: *const StringItem,
         count: usize,
+        settings: *const ChunkSettings,
         threads: i32, // 0 = use all available CPUs, >0 = cap thread count
     ) -> FloatVecResult {
         panic_guard::catch_panic(|| {
@@ -266,6 +247,9 @@ impl TextModelWrapper {
                         ptr: ptr::null(),
                         len: 0,
                         cap: 0,
+                        row_offsets: ptr::null(),
+                        rows: 0,
+                        offsets_cap: 0,
                     };
                 }
             };
@@ -283,43 +267,112 @@ impl TextModelWrapper {
                 .collect();
 
             let threads = if threads > 0 { threads as usize } else { 0 };
+            let settings_ref = unsafe { settings.as_ref() };
 
-            let mut float_vec_list: Vec<FloatVec> = Vec::new();
-            let embeddings_list = model.predict(&string_refs, threads);
-            let c_error = match embeddings_list {
-                Ok(embeddings_list) => {
-                    for embeddings in embeddings_list.iter() {
-                        let ptr = embeddings.as_ptr();
-                        let len = embeddings.len();
-                        let cap = embeddings.capacity();
-                        let vec = FloatVec { ptr, len, cap };
-                        float_vec_list.push(vec);
+            let strategy = settings_ref
+                .map(|s| s.strategy)
+                .unwrap_or(crate::chunk::STRATEGY_TRUNCATE);
+
+            // Each strategy yields a flat Vec<Vec<f32>> (all documents' output
+            // vectors) plus per-document output counts. truncate/mean emit one
+            // vector/doc; fixed/recursive/sentence emit one vector per chunk.
+            let computed: EmbedResult =
+                if strategy == crate::chunk::STRATEGY_TRUNCATE {
+                    model.predict(&string_refs, threads).map(|vecs| {
+                        let counts = vec![1usize; vecs.len()];
+                        (vecs, counts)
+                    })
+                } else {
+                    let s = settings_ref.unwrap();
+                    let max = crate::chunk::effective_max(s, model.get_max_input_len());
+                    let overlap = s.overlap_tokens as usize;
+                    let max_chunks = s.max_chunks as usize;
+
+                    // Split every document; remember each document's chunk count.
+                    let mut flat: Vec<&str> = Vec::new();
+                    let mut chunk_counts: Vec<usize> = Vec::with_capacity(string_refs.len());
+                    for &text in &string_refs {
+                        let spans = crate::chunk::cap_chunks(
+                            model.chunk(text, max, overlap, strategy),
+                            max_chunks,
+                        );
+                        chunk_counts.push(spans.len());
+                        for (start, end) in spans {
+                            flat.push(&text[start..end]);
+                        }
                     }
 
-                    std::mem::forget(embeddings_list);
-                    ptr::null_mut()
-                }
-                Err(e) => {
-                    // Don't push empty vector on error - return error through szError pattern
-                    let c_error = std::ffi::CString::new(e.to_string()).unwrap();
-                    c_error.into_raw()
-                }
-            };
+                    model.predict(&flat, threads).map(|chunk_vecs| {
+                        if strategy == crate::chunk::STRATEGY_MEAN {
+                            // pool each document's chunks into one vector
+                            let mut out = Vec::with_capacity(chunk_counts.len());
+                            let mut idx = 0usize;
+                            for c in &chunk_counts {
+                                let end = idx + c;
+                                out.push(crate::chunk::mean_pool(&chunk_vecs[idx..end]));
+                                idx = end;
+                            }
+                            let counts = vec![1usize; out.len()];
+                            (out, counts)
+                        } else {
+                            // fixed/recursive/sentence: keep every chunk vector.
+                            (chunk_vecs, chunk_counts)
+                        }
+                    })
+                };
 
-            let vec_result = FloatVecResult {
-                ptr: float_vec_list.as_ptr(),
-                len: float_vec_list.len(),
-                cap: float_vec_list.capacity(),
-                error: c_error,
-            };
-            std::mem::forget(float_vec_list);
-            vec_result
+            match computed {
+                Ok((embeddings_list, counts)) => {
+                    let mut float_vec_list: Vec<FloatVec> =
+                        Vec::with_capacity(embeddings_list.len());
+                    for embeddings in embeddings_list.iter() {
+                        float_vec_list.push(FloatVec {
+                            ptr: embeddings.as_ptr(),
+                            len: embeddings.len(),
+                            cap: embeddings.capacity(),
+                        });
+                    }
+                    std::mem::forget(embeddings_list);
+
+                    // Group the flat vectors per document: truncate/mean → one
+                    // vector/doc (offsets [0,1,..]); fixed/recursive/sentence →
+                    // N vectors/doc, offsets = prefix sums of per-doc counts.
+                    let row_offsets = crate::chunk::row_offsets_from_counts(&counts);
+                    let rows = counts.len();
+
+                    let result = FloatVecResult {
+                        error: ptr::null_mut(),
+                        ptr: float_vec_list.as_ptr(),
+                        len: float_vec_list.len(),
+                        cap: float_vec_list.capacity(),
+                        row_offsets: row_offsets.as_ptr(),
+                        rows,
+                        offsets_cap: row_offsets.capacity(),
+                    };
+                    std::mem::forget(float_vec_list);
+                    std::mem::forget(row_offsets);
+                    result
+                }
+                // Don't push empty vectors on error — surface it via szError.
+                Err(e) => FloatVecResult {
+                    error: to_c_error(&e.to_string()),
+                    ptr: ptr::null(),
+                    len: 0,
+                    cap: 0,
+                    row_offsets: ptr::null(),
+                    rows: 0,
+                    offsets_cap: 0,
+                },
+            }
         })
         .unwrap_or_else(|msg| FloatVecResult {
             error: to_c_error(&format!("embeddings: internal error (panic): {msg}")),
             ptr: ptr::null(),
             len: 0,
             cap: 0,
+            row_offsets: ptr::null(),
+            rows: 0,
+            offsets_cap: 0,
         })
     }
 
@@ -340,6 +393,15 @@ impl TextModelWrapper {
 
                 // Free the FloatVecList's array of FloatVecResult
                 let _ = Vec::from_raw_parts(result.ptr as *mut FloatVec, result.len, result.cap);
+            }
+
+            // Free the per-row offsets sidecar (length = rows + 1).
+            if !result.row_offsets.is_null() && result.offsets_cap > 0 {
+                let _ = Vec::from_raw_parts(
+                    result.row_offsets as *mut usize,
+                    result.rows + 1,
+                    result.offsets_cap,
+                );
             }
 
             // Free the error string if it exists
@@ -408,139 +470,5 @@ impl TextModelWrapper {
                 let _ = std::ffi::CString::from_raw(s);
             });
         }
-    }
-
-    /// Chunk each input document into embedding-sized pieces, embed every chunk,
-    /// and return the flat embeddings + per-chunk byte spans + per-document
-    /// grouping. A null or `STRATEGY_NONE` `settings` yields exactly one chunk
-    /// per document (the whole text), i.e. the same shape as `make_vect_embeddings`.
-    /// `predict` is reused unchanged: every chunk is embedded in one batched call.
-    /// `threads` matches `make_vect_embeddings`: 0 = all CPUs, >0 = cap.
-    pub extern "C" fn make_vect_embeddings_chunked(
-        &self,
-        texts: *const StringItem,
-        count: usize,
-        settings: *const ChunkSettings,
-        threads: i32,
-    ) -> ChunkedVecResult {
-        panic_guard::catch_panic(|| {
-            let model = match self.as_model() {
-                Ok(m) => m,
-                Err(msg) => return chunked_error(msg),
-            };
-
-            let string_slice = unsafe { std::slice::from_raw_parts(texts, count) };
-            // Zero-copy: borrow C++ strings directly as &str (already valid UTF-8).
-            let string_refs: Vec<&str> = string_slice
-                .iter()
-                .map(|item| unsafe {
-                    let bytes = std::slice::from_raw_parts(item.ptr as *const u8, item.len);
-                    std::str::from_utf8_unchecked(bytes)
-                })
-                .collect();
-
-            let settings_ref = unsafe { settings.as_ref() };
-            let enabled = settings_ref.map(ChunkSettings::enabled).unwrap_or(false);
-            let max_chunks = settings_ref.map(|s| s.max_chunks as usize).unwrap_or(0);
-            let threads = if threads > 0 { threads as usize } else { 0 };
-
-            // 1. chunk every document, recording per-doc spans + grouping.
-            let mut flat_chunks: Vec<&str> = Vec::new();
-            let mut spans: Vec<ChunkSpan> = Vec::new();
-            let mut docs: Vec<DocChunks> = Vec::with_capacity(string_refs.len());
-            for &text in &string_refs {
-                let doc_spans = if enabled {
-                    crate::chunk::cap_chunks(model.chunk(text, settings_ref.unwrap()), max_chunks)
-                } else {
-                    vec![(0usize, text.len())]
-                };
-                let first = flat_chunks.len();
-                for (start, end) in doc_spans {
-                    flat_chunks.push(&text[start..end]);
-                    spans.push(ChunkSpan { start, end });
-                }
-                docs.push(DocChunks {
-                    first,
-                    count: flat_chunks.len() - first,
-                });
-            }
-
-            // 2. one batched predict over every chunk (predict itself is untouched).
-            let embeddings_list = match model.predict(&flat_chunks, threads) {
-                Ok(e) => e,
-                Err(e) => return chunked_error(&e.to_string()),
-            };
-
-            // 3. hand the flat FloatVec[] + spans + docs to C++. Same ownership
-            //    pattern as make_vect_embeddings: forget the buffers here, free
-            //    them in free_chunked_result.
-            let mut float_vec_list: Vec<FloatVec> = Vec::with_capacity(embeddings_list.len());
-            for embeddings in embeddings_list.iter() {
-                float_vec_list.push(FloatVec {
-                    ptr: embeddings.as_ptr(),
-                    len: embeddings.len(),
-                    cap: embeddings.capacity(),
-                });
-            }
-            std::mem::forget(embeddings_list);
-
-            let result = ChunkedVecResult {
-                error: ptr::null_mut(),
-                embeddings: float_vec_list.as_ptr(),
-                emb_len: float_vec_list.len(),
-                emb_cap: float_vec_list.capacity(),
-                spans: spans.as_ptr(),
-                spans_cap: spans.capacity(),
-                docs: docs.as_ptr(),
-                docs_len: docs.len(),
-                docs_cap: docs.capacity(),
-            };
-            std::mem::forget(float_vec_list);
-            std::mem::forget(spans);
-            std::mem::forget(docs);
-            result
-        })
-        .unwrap_or_else(|msg| chunked_error(&format!("embeddings: internal error (panic): {msg}")))
-    }
-
-    pub extern "C" fn free_chunked_result(result: ChunkedVecResult) {
-        // A panic mid-free leaks the buffers; that beats unwinding into C++,
-        // which aborts the daemon. The panic hook has already logged it.
-        let _ = panic_guard::catch_panic(|| unsafe {
-            if !result.embeddings.is_null() && result.emb_len > 0 {
-                let slice = std::slice::from_raw_parts(result.embeddings, result.emb_len);
-                for vec in slice {
-                    if !vec.ptr.is_null() && vec.len > 0 {
-                        let _ = Vec::from_raw_parts(vec.ptr as *mut f32, vec.len, vec.cap);
-                    }
-                }
-                let _ = Vec::from_raw_parts(
-                    result.embeddings as *mut FloatVec,
-                    result.emb_len,
-                    result.emb_cap,
-                );
-            }
-
-            // spans is parallel to embeddings, so its length is emb_len.
-            if !result.spans.is_null() && result.spans_cap > 0 {
-                let _ = Vec::from_raw_parts(
-                    result.spans as *mut ChunkSpan,
-                    result.emb_len,
-                    result.spans_cap,
-                );
-            }
-
-            if !result.docs.is_null() && result.docs_cap > 0 {
-                let _ = Vec::from_raw_parts(
-                    result.docs as *mut DocChunks,
-                    result.docs_len,
-                    result.docs_cap,
-                );
-            }
-
-            if !result.error.is_null() {
-                let _ = std::ffi::CString::from_raw(result.error);
-            }
-        });
     }
 }
