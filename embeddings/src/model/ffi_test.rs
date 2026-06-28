@@ -408,11 +408,14 @@ mod tests {
             mem::size_of::<*const c_char>() + mem::size_of::<usize>()
         );
 
-        // FloatVecResult should be pointer + two usizes + error pointer
+        // FloatVecResult: error ptr + embeddings ptr + len + cap
+        //   + row_offsets ptr + rows + offsets_cap
         assert_eq!(
             mem::size_of::<FloatVecResult>(),
             mem::size_of::<*mut c_char>()
                 + mem::size_of::<*const FloatVec>()
+                + mem::size_of::<usize>() * 2
+                + mem::size_of::<*const usize>()
                 + mem::size_of::<usize>() * 2
         );
     }
