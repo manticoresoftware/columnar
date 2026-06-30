@@ -28,6 +28,11 @@ set ( _CMAKE_BUILD_TYPE ${CMAKE_BUILD_TYPE} )
 # The below version is used for versioning of the package and is replaced by the version from the pack workflow
 project ( columnar VERSION 0.0.0 )
 
+set ( COLUMNAR_EMBEDDED_BUILD OFF )
+if (NOT "${columnar_SOURCE_DIR}" STREQUAL "${CMAKE_SOURCE_DIR}")
+	set ( COLUMNAR_EMBEDDED_BUILD ON )
+endif ()
+
 # sometimes CMAKE_BUILD_TYPE became set after PROJECT statement, undo it.
 if (NOT _CMAKE_BUILD_TYPE AND CMAKE_BUILD_TYPE)
 	unset ( CMAKE_BUILD_TYPE CACHE )
@@ -136,14 +141,9 @@ if (API_ONLY)
 	# below is for support find_package
 	include ( CMakePackageConfigHelpers )
 
-	set ( pkgconfin "${CMAKE_CURRENT_BINARY_DIR}/columnar-config.cmake.in" )
-	file ( WRITE "${pkgconfin}" "@PACKAGE_INIT@
-
-include(\"\${CMAKE_CURRENT_LIST_DIR}/columnar-targets.cmake\")" )
-
-	configure_package_config_file ( "${pkgconfin}"
-			"${CMAKE_CURRENT_BINARY_DIR}/columnar-config.cmake" INSTALL_DESTINATION "${API_CMAKE_DIR}" )
-	install ( FILES "${CMAKE_CURRENT_BINARY_DIR}/columnar-config.cmake" DESTINATION "${API_CMAKE_DIR}" )
+		set ( pkgconf "${CMAKE_CURRENT_BINARY_DIR}/columnar-config.cmake" )
+		file ( WRITE "${pkgconf}" "include(\"\${CMAKE_CURRENT_LIST_DIR}/columnar-targets.cmake\")\n" )
+		install ( FILES "${pkgconf}" DESTINATION "${API_CMAKE_DIR}" )
 
 	write_basic_package_version_file ( "columnar-config-version.cmake" VERSION "${API_VER}.${SI_API_VER}.${KNN_API_VER}" COMPATIBILITY ExactVersion ARCH_INDEPENDENT )
 	install ( FILES "${CMAKE_CURRENT_BINARY_DIR}/columnar-config-version.cmake" DESTINATION "${API_CMAKE_DIR}" )
@@ -242,7 +242,7 @@ include ( GNUInstallDirs )
 set (MODULES_DIR "${CMAKE_INSTALL_DATADIR}/${REL_MODULES_DIR}")
 
 is_amd64 ( AMD )
-if ((INSTALL_COLUMNAR OR INSTALL_SECONDARY OR INSTALL_KNN ) AND AMD AND NOT USE_AVX2)
+if ((INSTALL_COLUMNAR OR INSTALL_SECONDARY OR INSTALL_KNN ) AND AMD AND NOT USE_AVX2 AND NOT COLUMNAR_EMBEDDED_BUILD)
 	set (ADD_AVX_BUILDS 1)
 endif()
 
@@ -325,5 +325,7 @@ if (INSTALL_KNN)
 	set ( CPACK_COMPONENT_KNN_DEPENDS embeddings )
 endif ()
 
-include ( CPack )
+if (NOT COLUMNAR_EMBEDDED_BUILD)
+	include ( CPack )
+endif ()
 include ( testing.cmake )

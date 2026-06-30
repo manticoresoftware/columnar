@@ -18,8 +18,8 @@ cmake_minimum_required ( VERSION 3.21 ) # because of IMPORTED_RUNTIME_ARTIFACTS
 
 include ( GetHNSW )
 
-add_library ( knn_lib MODULE knn.cpp knn.h iterator.cpp iterator.h embeddings.cpp embeddings.h quantizer.cpp quantizer.h quantile.cpp quantile.h space.cpp space.h termination.cpp termination.h ${CMAKE_SOURCE_DIR}/embeddings/manticoresearch_text_embeddings.h )
-target_include_directories(knn_lib PRIVATE ${CMAKE_SOURCE_DIR}/embeddings)
+add_library ( knn_lib MODULE knn.cpp knn.h iterator.cpp iterator.h embeddings.cpp embeddings.h quantizer.cpp quantizer.h quantile.cpp quantile.h space.cpp space.h termination.cpp termination.h ${columnar_SOURCE_DIR}/embeddings/manticoresearch_text_embeddings.h )
+target_include_directories(knn_lib PRIVATE ${columnar_SOURCE_DIR}/embeddings)
 
 target_link_libraries ( knn_lib PRIVATE hnswlib::hnswlib columnar_root util common )
 set_target_properties( knn_lib PROPERTIES PREFIX "" OUTPUT_NAME lib_manticore_knn${lib_arch_suffix} )
@@ -35,15 +35,22 @@ if ( BUILD_EMBEDDINGS_LOCALLY )
 	build_embeddings_lib()
 endif()
 
-# find embeddings library
-set ( CMAKE_FIND_LIBRARY_SUFFIXES .so .dylib .dll )
-FIND_LIBRARY ( EMBEDDINGS_LIB NAMES _${EMBEDDINGS_LIB_NAME} ${EMBEDDINGS_LIB_NAME} lib_${EMBEDDINGS_LIB_NAME} HINTS
-		"${CMAKE_SOURCE_DIR}/embeddings/target/debug"
-		"${CMAKE_SOURCE_DIR}/embeddings/target/release"
-		"${CMAKE_CURRENT_BINARY_DIR}/embeddings/release"
-		NO_CMAKE_FIND_ROOT_PATH
-		NO_DEFAULT_PATH
-)
+if ( MANTICORE_KNN_EMBEDDINGS_LIB )
+	if (NOT EXISTS "${MANTICORE_KNN_EMBEDDINGS_LIB}" AND NOT TARGET manticore_knn_embeddings)
+		message(FATAL_ERROR "MANTICORE_KNN_EMBEDDINGS_LIB points to a missing file: ${MANTICORE_KNN_EMBEDDINGS_LIB}")
+	endif()
+	set ( EMBEDDINGS_LIB "${MANTICORE_KNN_EMBEDDINGS_LIB}" )
+else()
+	# find embeddings library
+	set ( CMAKE_FIND_LIBRARY_SUFFIXES .so .dylib .dll )
+	FIND_LIBRARY ( EMBEDDINGS_LIB NAMES _${EMBEDDINGS_LIB_NAME} ${EMBEDDINGS_LIB_NAME} lib_${EMBEDDINGS_LIB_NAME} HINTS
+			"${columnar_SOURCE_DIR}/embeddings/target/debug"
+			"${columnar_SOURCE_DIR}/embeddings/target/release"
+			"${CMAKE_CURRENT_BINARY_DIR}/embeddings/release"
+			NO_CMAKE_FIND_ROOT_PATH
+			NO_DEFAULT_PATH
+	)
+endif()
 
 if (PACK AND NOT EMBEDDINGS_LIB)
 	message(FATAL_ERROR "Could not find manticoresearch text embeddings library at: ${EMBEDDINGS_LIB}")
@@ -55,7 +62,10 @@ endif()
 
 # Add embeddings library as a component to be included in packages
 add_library ( embeddings MODULE IMPORTED )
-set_target_properties ( embeddings PROPERTIES IMPORTED_LOCATION "${EMBEDDINGS_LIB}" INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/embeddings/")
+set_target_properties ( embeddings PROPERTIES IMPORTED_LOCATION "${EMBEDDINGS_LIB}" INTERFACE_INCLUDE_DIRECTORIES "${columnar_SOURCE_DIR}/embeddings/")
+if (TARGET manticore_knn_embeddings)
+	add_dependencies ( knn_lib manticore_knn_embeddings )
+endif()
 
 if ( NOT EXTERNAL_LIB ) # install only once, not from external_project build
 	install ( IMPORTED_RUNTIME_ARTIFACTS embeddings RUNTIME DESTINATION ${MODULES_DIR} LIBRARY DESTINATION ${MODULES_DIR} COMPONENT embeddings )
