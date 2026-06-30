@@ -40,7 +40,7 @@ public:
 	Span_T<const DocDist_t> GetData() const override	{ return Span_T<const DocDist_t> ( m_dCollected.data(), m_dCollected.size() ); }
 
 private:
-	static const int DOCS_PER_CHUNK = 1000;
+	static constexpr int DOCS_PER_CHUNK = 1000;
 
 	std::vector<uint32_t>	m_dRowIDs;
 	std::vector<DocDist_t>	m_dCollected;
@@ -49,8 +49,6 @@ private:
 	int64_t					m_iDistanceComputations = 0;
 };
 
-
-const int RowidIteratorKNN_c::DOCS_PER_CHUNK;
 
 static void SortByRowID ( std::vector<DocDist_t> & dData )
 {
