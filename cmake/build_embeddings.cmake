@@ -147,6 +147,23 @@ function(build_embeddings_lib)
 			"GIT_COMMIT_ID=${GIT_COMMIT_ID}"
 			"GIT_TIMESTAMP_ID=${GIT_TIMESTAMP_ID}"
 	)
+	# Don't forward clang-cl (ClangCL toolset) to cargo: cc-rs then fails to build
+	# ring's C sources. Actively --unset the inherited compiler variables (the env
+	# command inherits the parent environment, so skipping the append alone wouldn't
+	# remove inherited values) so cc-rs falls back to a coherent native cl.exe setup.
+	set(_embeddings_dropped_clang_cl OFF)
+	macro(_embeddings_drop_clang_cl _var _envname)
+		if (${_var} AND MSVC)
+			get_filename_component(_embeddings_cc_name "${${_var}}" NAME_WE)
+			string(TOLOWER "${_embeddings_cc_name}" _embeddings_cc_name)
+			if (_embeddings_cc_name STREQUAL "clang-cl")
+				message(STATUS "embeddings: not forwarding clang-cl as ${_envname}; letting cc-rs use MSVC cl.exe for ring's C sources")
+				set(${_var} "")
+				set(_embeddings_dropped_clang_cl ON)
+				list(APPEND EMBEDDINGS_CARGO_ENV "--unset=${_envname}")
+			endif()
+		endif()
+	endmacro()
 	set(_embeddings_cc "")
 	if (DEFINED ENV{CC})
 		set(_embeddings_cc "$ENV{CC}")
@@ -157,6 +174,7 @@ function(build_embeddings_lib)
 	if (NOT _embeddings_cc AND UNIX)
 		find_program(_embeddings_cc NAMES clang cc gcc)
 	endif()
+	_embeddings_drop_clang_cl(_embeddings_cc CC)
 	if (_embeddings_cc)
 		list(APPEND EMBEDDINGS_CARGO_ENV "CC=${_embeddings_cc}")
 	endif()
@@ -170,8 +188,20 @@ function(build_embeddings_lib)
 	if (NOT _embeddings_cxx AND UNIX)
 		find_program(_embeddings_cxx NAMES clang++ c++ g++)
 	endif()
+	_embeddings_drop_clang_cl(_embeddings_cxx CXX)
 	if (_embeddings_cxx)
 		list(APPEND EMBEDDINGS_CARGO_ENV "CXX=${_embeddings_cxx}")
+	endif()
+	# When we dropped clang-cl, cc-rs builds ring's C with native cl.exe. But the
+	# ClangCL MSBuild toolset also prepended Clang's builtin-header dir to INCLUDE,
+	# and cl.exe chokes on Clang's <stddef.h> (C1012). We can't unset INCLUDE (cc-rs
+	# trusts the ambient devenv and cl.exe then finds no CRT/SDK headers -> C1083),
+	# so run cargo through a launcher that strips just the LLVM dirs from INCLUDE at
+	# build time. Empty prefix -> the command runs directly, unchanged.
+	set(_embeddings_cargo_launcher "")
+	if (_embeddings_dropped_clang_cl)
+		set(_embeddings_cargo_launcher
+				${CMAKE_COMMAND} -P "${columnar_SOURCE_DIR}/cmake/run_embeddings_cargo.cmake" --)
 	endif()
 	if (DEFINED ENV{ORT_LIB_LOCATION} AND NOT "$ENV{ORT_LIB_LOCATION}" STREQUAL "")
 		list(APPEND EMBEDDINGS_CARGO_ENV "ORT_LIB_LOCATION=$ENV{ORT_LIB_LOCATION}")
@@ -182,7 +212,7 @@ function(build_embeddings_lib)
 
 	add_custom_command(
 			OUTPUT "${EMBEDDINGS_LIB_DST_PATH}"
-			COMMAND ${CMAKE_COMMAND} -E env ${EMBEDDINGS_CARGO_ENV}
+			COMMAND ${_embeddings_cargo_launcher} ${CMAKE_COMMAND} -E env ${EMBEDDINGS_CARGO_ENV}
 				"${CARGO_COMMAND}" build --manifest-path "${columnar_SOURCE_DIR}/embeddings/Cargo.toml" --lib --release ${EMBEDDINGS_CARGO_FEATURE_ARGS} --target-dir "${MANTICORE_EMBEDDINGS_TARGET_DIR}"
 			COMMAND ${CMAKE_COMMAND}
 				-DEMBEDDINGS_LIB_SRC_PATH=${EMBEDDINGS_LIB_SRC_PATH}
