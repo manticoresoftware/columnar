@@ -21,6 +21,7 @@
 #include "termination.h"
 #include "space.h"
 #include "util/reader.h"
+#include "util_private.h"
 
 #include <unordered_map>
 #include <algorithm>
@@ -155,6 +156,13 @@ Space_i * HNSWDist_c::CreateSpaceInterface ( bool bBuild ) const
 
 /////////////////////////////////////////////////////////////////////
 
+static FORCE_INLINE void PrefetchVec ( const void * pVec )
+{
+	assert(pVec);
+	_mm_prefetch ( (const char *)pVec, _MM_HINT_T0 );
+}
+
+
 class Distance_c : public Distance_i, public HNSWDist_c
 {
 public:
@@ -163,6 +171,7 @@ public:
 	float		CalcDist ( const util::Span_T<float> & dPoint1, const util::Span_T<float> & dPoint2 ) const override;
 	DistFunc_fn	GetDistFunc() const override		{ return m_fnDistFunc; }
 	void *		GetDistFuncParam() const override	{ return m_pDistFuncParam; }
+	void		CalcDistBatch ( const void * pAnchor, const util::Span_T<const void *> & dVectors, const util::Span_T<float> & dDistances ) const override;
 
 private:
 	hnswlib::DISTFUNC<float> m_fnDistFunc;
@@ -238,12 +247,12 @@ template<float (*DIST_FN)(const void *, const void *, size_t, size_t, const void
 class DistFnDispatch_c
 {
 public:
-	static float Eval ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam )
+	static FORCE_INLINE float Eval ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam )
 	{
 		return DIST_FN ( pVect1, pVect2, uRowID1, uRowID2, pParam );
 	}
 
-	static void Eval2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+	static FORCE_INLINE void Eval2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
 	{
 		fDistA = DIST_FN ( pVect1, pVect2A, uRowID1, uRowID2A, pParam );
 		fDistB = DIST_FN ( pVect1, pVect2B, uRowID1, uRowID2B, pParam );
@@ -254,7 +263,7 @@ using IPBinaryGenericDistFn_c = DistFnDispatch_c<&IPBinaryFloatDistanceGeneric>;
 class IPFloatDistFn_c : public DistFnDispatch_c<&IPFloatDistance>
 {
 public:
-	static void Eval2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+	static FORCE_INLINE void Eval2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
 	{
 		IPFloatDistanceBatch2 ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
 	}
@@ -264,7 +273,7 @@ public:
 class IPBinarySIMD16DistFn_c : public DistFnDispatch_c<&IPBinaryFloatDistanceSIMD16>
 {
 public:
-	static void Eval2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+	static FORCE_INLINE void Eval2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
 	{
 		IPBinaryFloatDistanceSIMD16Batch2 ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
 	}
@@ -273,7 +282,7 @@ public:
 class IPBinarySIMD16ResidualsDistFn_c : public DistFnDispatch_c<&IPBinaryFloatDistanceSIMD16Residuals>
 {
 public:
-	static void Eval2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+	static FORCE_INLINE void Eval2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
 	{
 		IPBinaryFloatDistanceSIMD16ResidualsBatch2 ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
 	}
@@ -284,7 +293,7 @@ using L2BinaryGenericDistFn_c = DistFnDispatch_c<&L2BinaryFloatDistanceGeneric>;
 class L2FloatDistFn_c : public DistFnDispatch_c<&L2FloatDistance>
 {
 public:
-	static void Eval2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+	static FORCE_INLINE void Eval2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
 	{
 		L2FloatDistanceBatch2 ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
 	}
@@ -294,7 +303,7 @@ public:
 class L2BinarySIMD16DistFn_c : public DistFnDispatch_c<&L2BinaryFloatDistanceSIMD16>
 {
 public:
-	static void Eval2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+	static FORCE_INLINE void Eval2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
 	{
 		L2BinaryFloatDistanceSIMD16Batch2 ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
 	}
@@ -303,7 +312,7 @@ public:
 class L2BinarySIMD16ResidualsDistFn_c : public DistFnDispatch_c<&L2BinaryFloatDistanceSIMD16Residuals>
 {
 public:
-	static void Eval2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
+	static FORCE_INLINE void Eval2 ( const void * pVect1, const void * pVect2A, const void * pVect2B, size_t uRowID1, size_t uRowID2A, size_t uRowID2B, const void * pParam, float & fDistA, float & fDistB )
 	{
 		L2BinaryFloatDistanceSIMD16ResidualsBatch2 ( pVect1, pVect2A, pVect2B, uRowID1, uRowID2A, uRowID2B, pParam, fDistA, fDistB );
 	}
@@ -351,6 +360,59 @@ public:
 	}
 };
 #endif
+
+template <typename DISTFN>
+static void CalcDistBatchT ( const void * pAnchor, const util::Span_T<const void *> & dVectors, const util::Span_T<float> & dDistances, const void * pParam )
+{
+	const size_t uCount = dVectors.size();
+	const void * const * pVecs = dVectors.data();
+	float * pOut = dDistances.data();
+	const size_t uUnusedRow = (size_t)-1;
+
+	size_t i = 0;
+	const size_t uPairLimit = uCount & ~size_t(1);
+	for ( ; i < uPairLimit; i += 2 )
+	{
+		if ( i+2 < uCount )	PrefetchVec ( pVecs[i+2] );
+		if ( i+3 < uCount )	PrefetchVec ( pVecs[i+3] );
+		DISTFN::Eval2 ( pAnchor, pVecs[i], pVecs[i+1], uUnusedRow, uUnusedRow, uUnusedRow, pParam, pOut[i], pOut[i+1] );
+	}
+
+	for ( ; i < uCount; i++ )	// odd tail
+		pOut[i] = DISTFN::Eval ( pAnchor, pVecs[i], uUnusedRow, uUnusedRow, pParam );
+}
+
+
+void Distance_c::CalcDistBatch ( const void * pAnchor, const util::Span_T<const void *> & dVectors, const util::Span_T<float> & dDistances ) const
+{
+	assert ( dVectors.size()==dDistances.size() );
+
+	switch ( m_eDistFuncId )
+	{
+	case DistFuncId_e::IP_FLOAT32:			CalcDistBatchT<IPFloatDistFn_c> ( pAnchor, dVectors, dDistances, m_pDistFuncParam );			break;
+	case DistFuncId_e::IP_BINARY_GENERIC:	CalcDistBatchT<IPBinaryGenericDistFn_c> ( pAnchor, dVectors, dDistances, m_pDistFuncParam );	break;
+	case DistFuncId_e::L2_FLOAT32:			CalcDistBatchT<L2FloatDistFn_c> ( pAnchor, dVectors, dDistances, m_pDistFuncParam );			break;
+	case DistFuncId_e::L2_BINARY_GENERIC:	CalcDistBatchT<L2BinaryGenericDistFn_c> ( pAnchor, dVectors, dDistances, m_pDistFuncParam );	break;
+
+#if !defined(USE_SIMDE)
+	case DistFuncId_e::IP_BINARY_SIMD16:			CalcDistBatchT<IPBinarySIMD16DistFn_c> ( pAnchor, dVectors, dDistances, m_pDistFuncParam );			break;
+	case DistFuncId_e::IP_BINARY_SIMD16_RESIDUALS:	CalcDistBatchT<IPBinarySIMD16ResidualsDistFn_c> ( pAnchor, dVectors, dDistances, m_pDistFuncParam );	break;
+	case DistFuncId_e::L2_BINARY_SIMD16:			CalcDistBatchT<L2BinarySIMD16DistFn_c> ( pAnchor, dVectors, dDistances, m_pDistFuncParam );			break;
+	case DistFuncId_e::L2_BINARY_SIMD16_RESIDUALS:	CalcDistBatchT<L2BinarySIMD16ResidualsDistFn_c> ( pAnchor, dVectors, dDistances, m_pDistFuncParam );	break;
+#endif
+
+	default:
+		assert ( m_fnDistFunc );
+		{
+			const void * const * pVecs = dVectors.data();
+			float * pOut = dDistances.data();
+			for ( size_t i = 0; i < dVectors.size(); i++ )
+				pOut[i] = m_fnDistFunc ( pAnchor, pVecs[i], (size_t)-1, (size_t)-1, m_pDistFuncParam );
+		}
+		break;
+	}
+}
+
 
 template <typename DistFn = void>
 static void RunSearchPath ( const hnswlib::HierarchicalNSW<float> & tAlg, std::vector<DocDist_t> & dResults, const void * pData, int64_t iResults, HNSWFilterWrapper_c * pFilter, size_t * pSearchEf, int iSearchPath )

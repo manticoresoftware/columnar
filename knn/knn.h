@@ -26,7 +26,7 @@
 namespace knn
 {
 
-static const int LIB_VERSION = 15;
+static const int LIB_VERSION = 16;
 static const uint32_t STORAGE_VERSION = 3;
 
 enum class HNSWSimilarity_e
@@ -101,8 +101,9 @@ public:
 	virtual			~Distance_i() = default;
 
 	virtual	float	CalcDist ( const util::Span_T<float> & dPoint1, const util::Span_T<float> & dPoint2 ) const = 0;
-	virtual DistFunc_fn		GetDistFunc() const = 0;
-	virtual void *			GetDistFuncParam() const = 0;
+	virtual DistFunc_fn GetDistFunc() const = 0;
+	virtual void *	GetDistFuncParam() const = 0;
+	virtual void	CalcDistBatch ( const void * pAnchor, const util::Span_T<const void *> & dVectors, const util::Span_T<float> & dDistances ) const = 0;
 };
 
 class Iterator_i : public common::BlockIterator_i
