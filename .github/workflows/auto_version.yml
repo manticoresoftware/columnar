@@ -1,0 +1,42 @@
+name: Auto version
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-version:
+    if: ${{ github.repository == 'manticoresoftware/columnar' }}
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.semver-tagger.outputs.version }}
+      version_full: ${{ steps.semver-tagger.outputs.version_full }}
+      version_rpm: ${{ steps.semver-tagger.outputs.version_rpm }}
+      version_deb: ${{ steps.semver-tagger.outputs.version_deb }}
+      version_updated: ${{ steps.semver-tagger.outputs.version_updated }}
+      target: ${{ steps.semver-tagger.outputs.target }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: semver-tagger
+        uses: manticoresoftware/semver-tagger-action@main
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          ignore_patterns: '\.md$|^test/|\.github|\.yml|\.gitignore$'
+          debug: true
+
+      - name: Report version
+        run: |
+          echo "Version: ${{ steps.semver-tagger.outputs.version }}"
+          echo "Full version: ${{ steps.semver-tagger.outputs.version_full }}"
+          echo "Version updated: ${{ steps.semver-tagger.outputs.version_updated }}"
+          echo "Target: ${{ steps.semver-tagger.outputs.target }}"
