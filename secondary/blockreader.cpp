@@ -351,6 +351,8 @@ template<typename VEC>
 static FORCE_INLINE void DecodeBlock ( VEC & dDst, int iNumValues, IntCodec_i * pCodec, SpanResizeable_T<uint32_t> & dBuf, FileReader_c & tReader )
 {
 	ReadBlock ( dDst, iNumValues, dBuf, tReader );
+	if ( tReader.IsError() )
+		return;
 	pCodec->DecodeDelta ( dBuf, dDst );
 }
 
@@ -358,13 +360,16 @@ template<typename VEC>
 static FORCE_INLINE void DecodeBlockWoDelta ( VEC & dDst, int iNumValues, IntCodec_i * pCodec, SpanResizeable_T<uint32_t> & dBuf, FileReader_c & tReader )
 {
 	ReadBlock ( dDst, iNumValues, dBuf, tReader );
+	if ( tReader.IsError() )
+		return;
 	pCodec->Decode ( dBuf, dDst );	
 }
 
 
 static FORCE_INLINE void SkipBlockUint32 ( FileReader_c & tReader )
 {
-	SkipVectorLen32<uint32_t>(tReader);
+	if ( !tReader.IsError() )
+		SkipVectorLen32<uint32_t>(tReader);
 }
 
 /////////////////////////////////////////////////////////////////////

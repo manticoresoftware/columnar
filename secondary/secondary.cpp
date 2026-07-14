@@ -93,6 +93,7 @@ public:
 	void		ClearCache() override;
 	const std::string & GetFilename() const override;
 	void		UpdateFilename ( const std::string & sFile ) override;
+	bool		Check ( uint32_t uNumRows, Reporter_fn & fnError, Reporter_fn & fnProgress ) const;
 
 private:
 	Settings_t	m_tSettings;
@@ -173,6 +174,31 @@ bool SecondaryIndex_c::Setup ( const std::string & sFile, std::string & sError )
 	ComputeInverseDeltas ( m_dBlockStartOff, true );
 	ReadVectorPacked ( m_dBlocksCount, m_tReader );
 
+	if ( m_tReader.IsError() )
+	{
+		sError = m_tReader.GetError();
+		return false;
+	}
+
+	if ( m_dBlocksCount.size()!=m_dAttrs.size() )
+	{
+		sError = FormatStr ( "Invalid secondary index '%s': blocks-count vector has %d entries, expected %d", sFile.c_str(), (int)m_dBlocksCount.size(), (int)m_dAttrs.size() );
+		return false;
+	}
+
+	int64_t iFileSize = m_tReader.GetFileSize();
+	if ( m_dBlockStartOff.size() && m_dBlockStartOff.back()>(uint64_t)iFileSize )
+	{
+		sError = FormatStr ( "Invalid secondary index '%s': block offset %llu is past file size %lld", sFile.c_str(), (unsigned long long)m_dBlockStartOff.back(), (long long)iFileSize );
+		return false;
+	}
+
+	if ( m_uValuesPerBlock==0 || m_uRowidsPerBlock==0 )
+	{
+		sError = FormatStr ( "Invalid secondary index '%s': zero block size", sFile.c_str() );
+		return false;
+	}
+
 	if ( m_uMaxBlockCacheSize )
 	{
 		for ( size_t i = 0; i < m_dAttrs.size(); i++ )
@@ -212,6 +238,18 @@ bool SecondaryIndex_c::Setup ( const std::string & sFile, std::string & sError )
 		}
 
 		int64_t iPgmLen = m_tReader.Unpack_uint64();
+		if ( m_tReader.IsError() )
+		{
+			sError = m_tReader.GetError();
+			return false;
+		}
+
+		if ( iPgmLen<0 || m_tReader.GetPos()+iPgmLen>iFileSize )
+		{
+			sError = FormatStr ( "Out of bounds PGM length %lld for attribute '%s'(%d)", (long long)iPgmLen, tCol.m_sName.c_str(), i );
+			return false;
+		}
+
 		int64_t iPgmEnd = m_tReader.GetPos() + iPgmLen;
 		m_dIdx[i]->Load ( m_tReader );
 		if ( m_tReader.GetPos()!=iPgmEnd )
@@ -705,6 +743,69 @@ bool SecondaryIndex_c::CalcCount ( uint32_t & uCount, const common::Filter_t & t
 }
 
 
+bool SecondaryIndex_c::Check ( uint32_t uNumRows, Reporter_fn & fnError, Reporter_fn & fnProgress ) const
+{
+	bool bOk = true;
+	for ( int i = 0; i < (int)m_dAttrs.size(); i++ )
+	{
+		const auto & tAttr = m_dAttrs[i];
+		if ( !tAttr.m_bEnabled || tAttr.m_eType==AttrType_e::NONE )
+			continue;
+
+		if ( fnProgress )
+			fnProgress ( FormatStr ( "checking secondary index attribute %s", tAttr.m_sName.c_str() ).c_str() );
+
+		Filter_t tFilter;
+		tFilter.m_sName = tAttr.m_sName;
+		tFilter.m_eType = FilterType_e::NOTNULL;
+		tFilter.m_bLeftUnbounded = true;
+		tFilter.m_bRightUnbounded = true;
+
+		IteratorSettings_t tSettings;
+		tSettings.m_uMaxValues = uNumRows;
+		tSettings.m_iRsetSize = uNumRows;
+		tSettings.m_iCutoff = -1;
+
+		std::vector<BlockIterator_i *> dIterators;
+		std::string sWarning, sError;
+		if ( !CreateIterators ( dIterators, tFilter, tSettings, sWarning, sError ) )
+		{
+			if ( fnError )
+				fnError ( FormatStr ( "secondary index attribute '%s': %s", tAttr.m_sName.c_str(), sError.c_str() ).c_str() );
+			bOk = false;
+			continue;
+		}
+
+		for ( auto * pIterator : dIterators )
+		{
+			std::unique_ptr<BlockIterator_i> pGuard ( pIterator );
+			Span_T<uint32_t> dRowidBlock;
+			while ( pIterator->GetNextRowIdBlock ( dRowidBlock ) )
+			{
+				for ( uint32_t uRowid : dRowidBlock )
+				{
+					if ( uRowid>=uNumRows )
+					{
+						if ( fnError )
+							fnError ( FormatStr ( "secondary index attribute '%s': rowid %u out of bounds %u", tAttr.m_sName.c_str(), uRowid, uNumRows ).c_str() );
+						bOk = false;
+					}
+				}
+			}
+		}
+
+		if ( m_tReader.IsError() )
+		{
+			if ( fnError )
+				fnError ( FormatStr ( "secondary index attribute '%s': %s", tAttr.m_sName.c_str(), m_tReader.GetError().c_str() ).c_str() );
+			bOk = false;
+		}
+	}
+
+	return bOk;
+}
+
+
 uint32_t SecondaryIndex_c::GetNumIterators ( const common::Filter_t & tFilter ) const
 {
 	std::string sWarning, sError;
@@ -748,5 +849,20 @@ SI::Index_i * CreateSecondaryIndex ( const char * szFile, const SI::IndexSetting
 		return nullptr;
 
 	return pIdx.release();
+}
+
+void CheckSecondaryIndex ( const std::string & sFilename, uint32_t uNumRows, SI::Reporter_fn & fnError, SI::Reporter_fn & fnProgress )
+{
+	SI::IndexSettings_t tSettings;
+	SI::SecondaryIndex_c tIndex(tSettings);
+	std::string sError;
+	if ( !tIndex.Setup ( sFilename, sError ) )
+	{
+		if ( fnError )
+			fnError ( sError.c_str() );
+		return;
+	}
+
+	tIndex.Check ( uNumRows, fnError, fnProgress );
 }
 

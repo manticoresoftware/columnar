@@ -47,7 +47,13 @@ public:
 		if ( m_tPtr>=m_tUsed && !ReadToBuffer() )
 			return 0;
 
-		assert ( m_tPtr<m_tUsed );
+		if ( m_tPtr>=m_tUsed )
+		{
+			m_bError = true;
+			m_sError = FormatStr ( "unexpected EOF in '%s' at offset %lld", m_sFile.c_str(), (long long)GetPos() );
+			return 0;
+		}
+
 		return m_pData[m_tPtr++];
 	}
 
