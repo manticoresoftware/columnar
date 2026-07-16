@@ -33,7 +33,7 @@ using namespace common;
 class StoredBlock_Bool_Const_c
 {
 public:
-	FORCE_INLINE void		ReadHeader ( FileReader_c & tReader ) { m_bValue = !!tReader.Read_uint8(); }
+	template <typename RD> FORCE_INLINE void ReadHeader ( RD & tReader ) { m_bValue = !!tReader.Read_uint8(); }
 	FORCE_INLINE int64_t	GetValue() const { return m_bValue; }
 
 private:
@@ -46,8 +46,8 @@ class StoredBlock_Bool_Bitmap_c
 public:
 							StoredBlock_Bool_Bitmap_c ( int iSubblockSize );
 
-	FORCE_INLINE void		ReadHeader ( FileReader_c & tReader, uint32_t uDocsInBlock );
-	FORCE_INLINE void		ReadSubblock ( int iSubblockId, int iNumValues, FileReader_c & tReader );
+	template <typename RD> FORCE_INLINE void ReadHeader ( RD & tReader, uint32_t uDocsInBlock );
+	template <typename RD> FORCE_INLINE void ReadSubblock ( int iSubblockId, int iNumValues, RD & tReader );
 	FORCE_INLINE int64_t	GetValue ( int iIdInSubblock );
 	FORCE_INLINE const Span_T<uint32_t> & GetValues() const { return m_tValuesRead; }
 
@@ -68,14 +68,16 @@ StoredBlock_Bool_Bitmap_c::StoredBlock_Bool_Bitmap_c ( int iSubblockSize )
 }
 
 
-void StoredBlock_Bool_Bitmap_c::ReadHeader ( FileReader_c & tReader, uint32_t uDocsInBlock )
+template <typename RD>
+void StoredBlock_Bool_Bitmap_c::ReadHeader ( RD & tReader, uint32_t uDocsInBlock )
 {
 	m_iValuesOffset = tReader.GetPos();
 	m_iSubblockId = -1;
 }
 
 
-void StoredBlock_Bool_Bitmap_c::ReadSubblock ( int iSubblockId, int iNumValues, FileReader_c & tReader )
+template <typename RD>
+void StoredBlock_Bool_Bitmap_c::ReadSubblock ( int iSubblockId, int iNumValues, RD & tReader )
 {
 	if ( m_iSubblockId==iSubblockId )
 		return;
@@ -98,21 +100,22 @@ int64_t StoredBlock_Bool_Bitmap_c::GetValue ( int iIdInSubblock )
 
 //////////////////////////////////////////////////////////////////////////
 
-class Accessor_Bool_c : public StoredBlockTraits_t
+template <typename RD=util::FileReader_c>
+class Accessor_Bool_T : public StoredBlockTraits_t
 {
 public:
-						Accessor_Bool_c ( const AttributeHeader_i & tHeader, FileReader_c * pReader );
+						Accessor_Bool_T ( const AttributeHeader_i & tHeader, RD * pReader );
 
 	FORCE_INLINE void	SetCurBlock ( uint32_t uBlockId );
 
 protected:
 	const AttributeHeader_i &		m_tHeader;
-	std::unique_ptr<FileReader_c>	m_pReader;
+	std::unique_ptr<RD>				m_pReader;
 
 	StoredBlock_Bool_Const_c		m_tBlockConst;
 	StoredBlock_Bool_Bitmap_c		m_tBlockBitmap;
 
-	int64_t (Accessor_Bool_c::*m_fnReadValue)() = nullptr;
+	int64_t (Accessor_Bool_T<RD>::*m_fnReadValue)() = nullptr;
 
 	BoolPacking_e		m_ePacking = BoolPacking_e::CONST;
 
@@ -121,7 +124,8 @@ protected:
 };
 
 
-Accessor_Bool_c::Accessor_Bool_c ( const AttributeHeader_i & tHeader, FileReader_c * pReader )
+template <typename RD>
+Accessor_Bool_T<RD>::Accessor_Bool_T ( const AttributeHeader_i & tHeader, RD * pReader )
 	: StoredBlockTraits_t ( tHeader.GetSettings().m_iSubblockSize )
 	, m_tHeader ( tHeader )
 	, m_pReader ( pReader )
@@ -131,7 +135,8 @@ Accessor_Bool_c::Accessor_Bool_c ( const AttributeHeader_i & tHeader, FileReader
 }
 
 
-void Accessor_Bool_c::SetCurBlock ( uint32_t uBlockId )
+template <typename RD>
+void Accessor_Bool_T<RD>::SetCurBlock ( uint32_t uBlockId )
 {
 	m_pReader->Seek ( m_tHeader.GetBlockOffset(uBlockId) );
 	m_ePacking = (BoolPacking_e)m_pReader->Unpack_uint32();
@@ -143,12 +148,12 @@ void Accessor_Bool_c::SetCurBlock ( uint32_t uBlockId )
 	switch ( m_ePacking )
 	{
 	case BoolPacking_e::CONST:
-		m_fnReadValue = &Accessor_Bool_c::ReadValue_Const;
+		m_fnReadValue = &Accessor_Bool_T<RD>::ReadValue_Const;
 		m_tBlockConst.ReadHeader ( *m_pReader );
 		break;
 
 	case BoolPacking_e::BITMAP:
-		m_fnReadValue = &Accessor_Bool_c::ReadValue_Bitmap;
+		m_fnReadValue = &Accessor_Bool_T<RD>::ReadValue_Bitmap;
 		m_tBlockBitmap.ReadHeader ( *m_pReader, uDocsInBlock );
 		break;
 
@@ -160,13 +165,15 @@ void Accessor_Bool_c::SetCurBlock ( uint32_t uBlockId )
 }
 
 
-int64_t Accessor_Bool_c::ReadValue_Const()
+template <typename RD>
+int64_t Accessor_Bool_T<RD>::ReadValue_Const()
 {
 	return m_tBlockConst.GetValue();
 }
 
 
-int64_t Accessor_Bool_c::ReadValue_Bitmap()
+template <typename RD>
+int64_t Accessor_Bool_T<RD>::ReadValue_Bitmap()
 {
 	uint32_t uIdInBlock = m_tRequestedRowID - m_tStartBlockRowId;
 	int iSubblockId = StoredBlockTraits_t::GetSubblockId(uIdInBlock);
@@ -176,10 +183,11 @@ int64_t Accessor_Bool_c::ReadValue_Bitmap()
 
 //////////////////////////////////////////////////////////////////////////
 
-class Iterator_Bool_c : public Iterator_i, public Accessor_Bool_c
+template <typename RD=util::FileReader_c>
+class Iterator_Bool_T : public Iterator_i, public Accessor_Bool_T<RD>
 {
-	using BASE = Accessor_Bool_c;
-	using BASE::Accessor_Bool_c;
+	using BASE = Accessor_Bool_T<RD>;
+	using BASE::Accessor_Bool_T;
 
 public:
 	int64_t		Get ( uint32_t tRowID ) final			{ return DoGet(tRowID); }
@@ -189,14 +197,15 @@ public:
 	uint8_t *	GetPacked ( uint32_t tRowID ) final						{ assert ( 0 && "INTERNAL ERROR: requesting blob from bool iterator" ); return nullptr; }
 	int			GetLength ( uint32_t tRowID ) final						{ assert ( 0 && "INTERNAL ERROR: requesting string length from bool iterator" ); return 0; }
 
-	void		AddDesc ( std::vector<IteratorDesc_t> & dDesc ) const override { dDesc.push_back ( { m_tHeader.GetName(), "iterator" } ); };
+	void		AddDesc ( std::vector<IteratorDesc_t> & dDesc ) const override { dDesc.push_back ( { BASE::m_tHeader.GetName(), "iterator" } ); };
 
 private:
 	FORCE_INLINE int64_t	DoGet ( uint32_t tRowID );
 };
 
 
-void Iterator_Bool_c::Fetch ( const Span_T<uint32_t> & dRowIDs, Span_T<int64_t> & dValues )
+template <typename RD>
+void Iterator_Bool_T<RD>::Fetch ( const Span_T<uint32_t> & dRowIDs, Span_T<int64_t> & dValues )
 {
 	uint32_t * pRowID = dRowIDs.begin();
 	uint32_t * pRowIDEnd = dRowIDs.end();
@@ -206,7 +215,8 @@ void Iterator_Bool_c::Fetch ( const Span_T<uint32_t> & dRowIDs, Span_T<int64_t> 
 }
 
 
-int64_t Iterator_Bool_c::DoGet ( uint32_t tRowID )
+template <typename RD>
+int64_t Iterator_Bool_T<RD>::DoGet ( uint32_t tRowID )
 {
 	assert ( tRowID < BASE::m_tHeader.GetNumDocs() );
 
@@ -278,14 +288,14 @@ int AnalyzerBlock_Bool_Bitmap_c::ProcessSubblock ( uint32_t * & pRowID, const Sp
 
 //////////////////////////////////////////////////////////////////////////
 
-template <bool HAVE_MATCHING_BLOCKS>
-class Analyzer_Bool_T : public Analyzer_T<HAVE_MATCHING_BLOCKS>, public Accessor_Bool_c
+template <bool HAVE_MATCHING_BLOCKS, typename RD=util::FileReader_c>
+class Analyzer_Bool_T : public Analyzer_T<HAVE_MATCHING_BLOCKS>, public Accessor_Bool_T<RD>
 {
 	using ANALYZER = Analyzer_T<HAVE_MATCHING_BLOCKS>;
-	using ACCESSOR = Accessor_Bool_c;
+	using ACCESSOR = Accessor_Bool_T<RD>;
 
 public:
-				Analyzer_Bool_T ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings );
+				Analyzer_Bool_T ( const AttributeHeader_i & tHeader, RD * pReader, const Filter_t & tSettings );
 
 	bool		GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBlock ) final;
 	void		AddDesc ( std::vector<IteratorDesc_t> & dDesc ) const final { dDesc.push_back ( { ACCESSOR::m_tHeader.GetName(), "ColumnarScan" } ); }
@@ -299,7 +309,7 @@ private:
 
 	const Filter_t & m_tSettings;
 
-	typedef int (Analyzer_Bool_T<HAVE_MATCHING_BLOCKS>::*ProcessSubblock_fn)( uint32_t * & pRowID, int iSubblockIdInBlock );
+	typedef int (Analyzer_Bool_T<HAVE_MATCHING_BLOCKS,RD>::*ProcessSubblock_fn)( uint32_t * & pRowID, int iSubblockIdInBlock );
 	std::array<ProcessSubblock_fn,to_underlying(BoolPacking_e::TOTAL)> m_dProcessingFuncs;
 	ProcessSubblock_fn	m_fnProcessSubblock = nullptr;
 
@@ -314,8 +324,8 @@ private:
 	bool		MoveToBlock ( int iNextBlock ) final;
 };
 
-template <bool HAVE_MATCHING_BLOCKS>
-Analyzer_Bool_T<HAVE_MATCHING_BLOCKS>::Analyzer_Bool_T ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings )
+template <bool HAVE_MATCHING_BLOCKS, typename RD>
+Analyzer_Bool_T<HAVE_MATCHING_BLOCKS,RD>::Analyzer_Bool_T ( const AttributeHeader_i & tHeader, RD * pReader, const Filter_t & tSettings )
 	: ANALYZER ( tHeader.GetSettings().m_iSubblockSize )
 	, ACCESSOR ( tHeader, pReader )
 	, m_tBlockConst ( ANALYZER::m_tRowID )
@@ -325,8 +335,8 @@ Analyzer_Bool_T<HAVE_MATCHING_BLOCKS>::Analyzer_Bool_T ( const AttributeHeader_i
 	SetupPackingFuncs();
 }
 
-template <bool HAVE_MATCHING_BLOCKS>
-void Analyzer_Bool_T<HAVE_MATCHING_BLOCKS>::AnalyzeFilter()
+template <bool HAVE_MATCHING_BLOCKS, typename RD>
+void Analyzer_Bool_T<HAVE_MATCHING_BLOCKS,RD>::AnalyzeFilter()
 {
 	m_bAcceptFalse = false;
 	m_bAcceptTrue = false;
@@ -358,8 +368,8 @@ void Analyzer_Bool_T<HAVE_MATCHING_BLOCKS>::AnalyzeFilter()
 	}
 }
 
-template <bool HAVE_MATCHING_BLOCKS>
-void Analyzer_Bool_T<HAVE_MATCHING_BLOCKS>::SetupPackingFuncs()
+template <bool HAVE_MATCHING_BLOCKS, typename RD>
+void Analyzer_Bool_T<HAVE_MATCHING_BLOCKS,RD>::SetupPackingFuncs()
 {
 	auto & dFuncs = m_dProcessingFuncs;
 	for ( auto & i : dFuncs )
@@ -369,45 +379,45 @@ void Analyzer_Bool_T<HAVE_MATCHING_BLOCKS>::SetupPackingFuncs()
 
 	if ( m_bAcceptFalse && m_bAcceptTrue )
 	{
-		dFuncs[ to_underlying ( BoolPacking_e::CONST ) ] = &Analyzer_Bool_T<HAVE_MATCHING_BLOCKS>::ProcessSubblockAny;
-		dFuncs[ to_underlying ( BoolPacking_e::BITMAP) ] = &Analyzer_Bool_T<HAVE_MATCHING_BLOCKS>::ProcessSubblockAny;
+		dFuncs[ to_underlying ( BoolPacking_e::CONST ) ] = &Analyzer_Bool_T<HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockAny;
+		dFuncs[ to_underlying ( BoolPacking_e::BITMAP) ] = &Analyzer_Bool_T<HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockAny;
 	}
 	else if ( !m_bAcceptFalse && !m_bAcceptTrue )
 	{
-		dFuncs [ to_underlying ( BoolPacking_e::CONST  ) ] = &Analyzer_Bool_T<HAVE_MATCHING_BLOCKS>::ProcessSubblockNone;
-		dFuncs [ to_underlying ( BoolPacking_e::BITMAP ) ] = &Analyzer_Bool_T<HAVE_MATCHING_BLOCKS>::ProcessSubblockNone;
+		dFuncs [ to_underlying ( BoolPacking_e::CONST  ) ] = &Analyzer_Bool_T<HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockNone;
+		dFuncs [ to_underlying ( BoolPacking_e::BITMAP ) ] = &Analyzer_Bool_T<HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockNone;
 	}
 	else
 	{
-		dFuncs [ to_underlying ( BoolPacking_e::CONST  ) ] = &Analyzer_Bool_T<HAVE_MATCHING_BLOCKS>::ProcessSubblockConst;
-		dFuncs [ to_underlying ( BoolPacking_e::BITMAP ) ] = &Analyzer_Bool_T<HAVE_MATCHING_BLOCKS>::ProcessSubblockBitmap;
+		dFuncs [ to_underlying ( BoolPacking_e::CONST  ) ] = &Analyzer_Bool_T<HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockConst;
+		dFuncs [ to_underlying ( BoolPacking_e::BITMAP ) ] = &Analyzer_Bool_T<HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockBitmap;
 
 		m_tBlockConst.Setup(m_bAcceptTrue);
 		m_tBlockBitmap.Setup(m_bAcceptTrue);
 	}
 }
 
-template <bool HAVE_MATCHING_BLOCKS>
-int Analyzer_Bool_T<HAVE_MATCHING_BLOCKS>::ProcessSubblockConst ( uint32_t * & pRowID, int iSubblockIdInBlock )
+template <bool HAVE_MATCHING_BLOCKS, typename RD>
+int Analyzer_Bool_T<HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockConst ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
 	return m_tBlockConst.ProcessSubblock ( pRowID, ACCESSOR::GetNumSubblockValues(iSubblockIdInBlock) );
 }
 
-template <bool HAVE_MATCHING_BLOCKS>
-int Analyzer_Bool_T<HAVE_MATCHING_BLOCKS>::ProcessSubblockBitmap ( uint32_t * & pRowID, int iSubblockIdInBlock )
+template <bool HAVE_MATCHING_BLOCKS, typename RD>
+int Analyzer_Bool_T<HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockBitmap ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
 	ACCESSOR::m_tBlockBitmap.ReadSubblock ( iSubblockIdInBlock, StoredBlockTraits_t::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
 	return m_tBlockBitmap.ProcessSubblock ( pRowID, ACCESSOR::m_tBlockBitmap.GetValues() );
 }
 
-template <bool HAVE_MATCHING_BLOCKS>
-bool Analyzer_Bool_T<HAVE_MATCHING_BLOCKS>::GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBlock )
+template <bool HAVE_MATCHING_BLOCKS, typename RD>
+bool Analyzer_Bool_T<HAVE_MATCHING_BLOCKS,RD>::GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBlock )
 {
 	return ANALYZER::GetNextRowIdBlock ( (ACCESSOR&)*this, dRowIdBlock, [this] ( uint32_t * & pRowID, int iSubblockIdInBlock ){ return (*this.*m_fnProcessSubblock) ( pRowID, iSubblockIdInBlock ); } );
 }
 
-template <bool HAVE_MATCHING_BLOCKS>
-bool Analyzer_Bool_T<HAVE_MATCHING_BLOCKS>::MoveToBlock ( int iNextBlock )
+template <bool HAVE_MATCHING_BLOCKS, typename RD>
+bool Analyzer_Bool_T<HAVE_MATCHING_BLOCKS,RD>::MoveToBlock ( int iNextBlock )
 {
 	while(true)
 	{
@@ -436,19 +446,21 @@ bool Analyzer_Bool_T<HAVE_MATCHING_BLOCKS>::MoveToBlock ( int iNextBlock )
 }
 
 
-Iterator_i * CreateIteratorBool ( const AttributeHeader_i & tHeader, FileReader_c * pReader )
-{
-	return new Iterator_Bool_c ( tHeader, pReader );
-}
+Iterator_i * CreateIteratorBool ( const AttributeHeader_i & tHeader, FileReader_c * pReader )		{ return new Iterator_Bool_T<FileReader_c> ( tHeader, pReader ); }
+Iterator_i * CreateIteratorBool ( const AttributeHeader_i & tHeader, MappedReader_c * pReader )		{ return new Iterator_Bool_T<MappedReader_c> ( tHeader, pReader ); }
 
 
-Analyzer_i * CreateAnalyzerBool ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings, bool bHaveMatchingBlocks )
+template <typename RD>
+static Analyzer_i * NewAnalyzerBool ( const AttributeHeader_i & tHeader, RD * pReader, const Filter_t & tSettings, bool bHaveMatchingBlocks )
 {
 	if ( bHaveMatchingBlocks )
-		return new Analyzer_Bool_T<true> ( tHeader, pReader, tSettings );
+		return new Analyzer_Bool_T<true,RD> ( tHeader, pReader, tSettings );
 	else
-		return new Analyzer_Bool_T<false> ( tHeader, pReader, tSettings );
+		return new Analyzer_Bool_T<false,RD> ( tHeader, pReader, tSettings );
 }
+
+Analyzer_i * CreateAnalyzerBool ( const AttributeHeader_i & tHeader, FileReader_c * pReader, const Filter_t & tSettings, bool bHaveMatchingBlocks )	{ return NewAnalyzerBool ( tHeader, pReader, tSettings, bHaveMatchingBlocks ); }
+Analyzer_i * CreateAnalyzerBool ( const AttributeHeader_i & tHeader, MappedReader_c * pReader, const Filter_t & tSettings, bool bHaveMatchingBlocks )	{ return NewAnalyzerBool ( tHeader, pReader, tSettings, bHaveMatchingBlocks ); }
 
 //////////////////////////////////////////////////////////////////////////
 

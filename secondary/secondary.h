@@ -38,7 +38,7 @@ namespace common
 namespace SI
 {
 
-static const int LIB_VERSION = 20;
+static const int LIB_VERSION = 21;
 static const uint32_t STORAGE_VERSION = 9;
 
 struct IndexAttrInfo_t
@@ -51,6 +51,7 @@ struct IndexAttrInfo_t
 struct IndexSettings_t
 {
 	uint64_t	m_uBlockCacheSize = 0;
+	bool		m_bMmap = false;
 };
 
 struct IteratorSettings_t

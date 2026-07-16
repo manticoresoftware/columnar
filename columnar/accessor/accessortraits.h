@@ -324,8 +324,8 @@ FORCE_INLINE void AddMinValue ( util::Span_T<uint64_t> & dValues, uint64_t uMin 
 }
 
 
-template <typename T>
-FORCE_INLINE void DecodeValues_Delta_PFOR ( util::SpanResizeable_T<T> & dValues, util::FileReader_c & tReader, util::IntCodec_i & tCodec, util::SpanResizeable_T<uint32_t> & dTmp, uint32_t uTotalSize, bool bReadFlag, uint32_t uVersion )
+template <typename T, typename RD>
+FORCE_INLINE void DecodeValues_Delta_PFOR ( util::SpanResizeable_T<T> & dValues, RD & tReader, util::IntCodec_i & tCodec, util::SpanResizeable_T<uint32_t> & dTmp, uint32_t uTotalSize, bool bReadFlag, uint32_t uVersion )
 {
 	int64_t tStart = tReader.GetPos();
 	uint8_t uFlags = util::to_underlying ( IntDeltaPacking_e::DELTA_ASC );
@@ -367,8 +367,8 @@ FORCE_INLINE void DecodeValues_Delta_PFOR ( util::SpanResizeable_T<T> & dValues,
 	}
 }
 
-template <typename T>
-FORCE_INLINE void DecodeValues_PFOR ( util::SpanResizeable_T<T> & dValues, util::FileReader_c & tReader, util::IntCodec_i & tCodec, util::SpanResizeable_T<uint32_t> & dTmp, uint32_t uTotalSize )
+template <typename T, typename RD>
+FORCE_INLINE void DecodeValues_PFOR ( util::SpanResizeable_T<T> & dValues, RD & tReader, util::IntCodec_i & tCodec, util::SpanResizeable_T<uint32_t> & dTmp, uint32_t uTotalSize )
 {
 	int64_t tStart = tReader.GetPos();
 	T uMin = (T)tReader.Unpack_uint64();

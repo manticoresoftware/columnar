@@ -80,9 +80,9 @@ int PreadWrapper ( int iFD, void * pBuf, size_t tCount, off_t tOff )
 
 FileReader_c::FileReader_c ( int iFD, size_t tBufferSize )
 	: m_iFD ( iFD )
-	, m_tSize ( tBufferSize )
 {
 	assert ( iFD>=0 );
+	m_tSize = tBufferSize;
 }
 
 
@@ -130,40 +130,28 @@ void FileReader_c::Read ( uint8_t * pData, size_t tLen )
 	while ( tLen > m_tSize )
 	{
 		CopyTail ( pDst, tLen );
-		if ( tLen>0 && !ReadToBuffer() )
+		if ( tLen>0 && !DoRefill() )
 			return;
 	}
 
 	if ( m_tPtr+tLen > m_tUsed )
 	{
 		CopyTail ( pDst, tLen );
-		if ( !ReadToBuffer() )
+		if ( !DoRefill() )
 			return;
 	}
 
-	memcpy ( pDst, m_pData.get()+m_tPtr, tLen );
+	memcpy ( pDst, m_pBuf+m_tPtr, tLen );
 	m_tPtr += tLen;
 }
 
 
-std::string FileReader_c::Read_string()
-{
-	uint32_t uLen = Read_uint32();
-	if ( !uLen )
-		return "";
-
-	std::unique_ptr<char[]> pBuffer ( new char[uLen+1] );
-	Read ( (uint8_t*)pBuffer.get(), uLen );
-	pBuffer[uLen] = '\0';
-	return std::string(pBuffer.get());
-}
-
-
-bool FileReader_c::ReadToBuffer()
+bool FileReader_c::DoRefill()
 {
 	assert ( m_iFD>=0 );
 
 	CreateBuffer();
+	m_pBuf = m_pData.get();
 
 	int64_t iNewFilePos = m_iFilePos + std::min ( m_tPtr, m_tUsed );
 	int iRead = PreadWrapper ( m_iFD, m_pData.get(), m_tSize, iNewFilePos );
@@ -220,7 +208,10 @@ static bool MMapOpen ( const std::string & sFile, bool bWrite, std::string & sEr
 
 #if _WIN32
 	int iAccessMode = GENERIC_READ | ( bWrite ? GENERIC_WRITE : 0 );
-	DWORD uShare = FILE_SHARE_READ | FILE_SHARE_DELETE | ( bWrite ? FILE_SHARE_WRITE : 0 );
+	// always allow FILE_SHARE_WRITE, even for a read-only mapping: another handle may later reopen the file
+	// O_RDWR (e.g. SI SaveMeta after an attribute update) and would otherwise hit a sharing violation while
+	// the read-only mapping is live.
+	DWORD uShare = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
 	HANDLE iFD = CreateFile ( sFile.c_str(), iAccessMode, uShare, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0 );
 	if ( iFD==INVALID_HANDLE_VALUE )
 	{

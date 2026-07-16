@@ -121,6 +121,8 @@ public:
 	Settings_t 				m_tSettings;
 	RsetInfo_t 				m_tRsetInfo;
 	int						m_iFD = -1;
+	uint8_t *				m_pMap = nullptr;	// whole-.spidx mapping base (mmap mode)
+	int64_t					m_iMapSize = 0;
 	uint32_t				m_uVersion = 0;
 	uint64_t				m_uBlockBaseOff = 0;
 	uint64_t				m_uBlocksCount = 0;
@@ -129,6 +131,12 @@ public:
 	const common::RowidRange_t * m_pBounds = nullptr;
 	int						m_iCutoff = 0;
 	BlockCache_i *			m_pBlockCache = nullptr;
+
+	template<class RD> std::shared_ptr<RD> MakeReader ( size_t uBufSize ) const
+	{
+		if constexpr ( RD::IS_MAPPED ) return std::make_shared<RD> ( m_pMap, m_iMapSize );
+		else                           return std::make_shared<RD> ( m_iFD, uBufSize );
+	}
 
 	BlockReader_i *			CreateBlockReader();
 	BlockReader_i *			CreateRangeReader();

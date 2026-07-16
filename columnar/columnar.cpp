@@ -374,7 +374,7 @@ class Columnar_c final : public Columnar_i
 public:
 										Columnar_c ( const std::string & sFilename, uint32_t uTotalDocs );
 
-	bool								Setup ( std::string & sError );
+	bool								Setup ( bool bMmap, std::string & sError );
 
 	Iterator_i *						CreateIterator ( const std::string & sName, const IteratorHints_t & tHints, columnar::IteratorCapabilities_t * pCapabilities, std::string & sError ) const final;
 	std::vector<BlockIterator_i *>		CreateAnalyzerOrPrefilter ( const std::vector<Filter_t> & dFilters, std::vector<int> & dDeletedFilters, const BlockTester_i & tBlockTester ) const final;
@@ -390,11 +390,16 @@ private:
 	uint32_t							m_uVersion = 0;
 	std::vector<std::unique_ptr<AttributeHeader_i>>	m_dHeaders;
 	std::unordered_map<std::string, HeaderWithLocator_t> m_hHeaders;
-	FileReader_c						m_tReader;
+	FileReader_c						m_tReader;			// buffered; used for header loading + owns the shared fd
+	std::unique_ptr<MappedBuffer_i>		m_pMap;				// whole-.spc read-only mapping; non-null == mmap mode
 
 	const AttributeHeader_i *			GetHeader ( const std::string & sName ) const;
 	bool								LoadHeaders ( FileReader_c & tReader, int iNumAttrs, std::string & sError );
-	FileReader_c *						CreateFileReader() const;
+
+	bool								ShouldMmap() const	{ return !!m_pMap; }
+	template <typename RD> Iterator_i * CreateIteratorReader ( RD * pReader, const AttributeHeader_i & tHeader, const std::string & sName, const IteratorHints_t & tHints, columnar::IteratorCapabilities_t * pCapabilities, std::string & sError ) const;
+	template <typename RD> Analyzer_i * CreateAnalyzerReader ( RD * pReader, const AttributeHeader_i & tHeader, const Filter_t & tSettings, bool bHaveMatchingBlocks ) const;
+
 	HeaderWithLocator_t					GetHeaderForMinMax ( const Filter_t & tFilter ) const;
 	std::vector<HeaderWithLocator_t>	GetHeadersForMinMax ( const std::vector<Filter_t> & dFilters ) const;
 
@@ -411,7 +416,7 @@ Columnar_c::Columnar_c ( const std::string & sFilename, uint32_t uTotalDocs )
 {}
 
 
-bool Columnar_c::Setup ( std::string & sError )
+bool Columnar_c::Setup ( bool bMmap, std::string & sError )
 {
 	if ( !m_tReader.Open ( m_sFilename, sError ) )
 		return false;
@@ -436,6 +441,14 @@ bool Columnar_c::Setup ( std::string & sError )
 		return false;
 	}
 
+	// map the whole .spc read-only for data reads (headers already loaded via m_tReader), only in mmap mode
+	if ( bMmap )
+	{
+		m_pMap.reset ( MappedBuffer_i::Create() );
+		if ( !m_pMap->Open ( m_sFilename, false, sError ) )
+			return false;
+	}
+
 	return true;
 }
 
@@ -446,19 +459,27 @@ Iterator_i * Columnar_c::CreateIterator ( const std::string & sName, const Itera
 	if ( !pHeader )
 		return nullptr;
 
-	std::unique_ptr<FileReader_c> pReader ( CreateFileReader() );
-	if ( !pReader )
-		return nullptr;
+	if ( ShouldMmap() )
+		return CreateIteratorReader ( new MappedReader_c ( (uint8_t*)m_pMap->GetPtr(), (int64_t)m_pMap->GetLengthBytes() ), *pHeader, sName, tHints, pCapabilities, sError );
 
-	switch ( pHeader->GetType() )
+	return CreateIteratorReader ( new FileReader_c ( m_tReader.GetFD() ), *pHeader, sName, tHints, pCapabilities, sError );
+}
+
+
+template <typename RD>
+Iterator_i * Columnar_c::CreateIteratorReader ( RD * pReader, const AttributeHeader_i & tHeader, const std::string & sName, const IteratorHints_t & tHints, columnar::IteratorCapabilities_t * pCapabilities, std::string & sError ) const
+{
+	std::unique_ptr<RD> pReaderPtr ( pReader );
+
+	switch ( tHeader.GetType() )
 	{
 	case AttrType_e::UINT32:
 	case AttrType_e::TIMESTAMP:
 	case AttrType_e::FLOAT:
-		return CreateIteratorUint32 ( *pHeader, m_uVersion, pReader.release() );
+		return CreateIteratorUint32 ( tHeader, m_uVersion, pReaderPtr.release() );
 
-	case AttrType_e::INT64:		return CreateIteratorUint64 ( *pHeader, m_uVersion, pReader.release() );
-	case AttrType_e::BOOLEAN:	return CreateIteratorBool ( *pHeader, pReader.release() );
+	case AttrType_e::INT64:		return CreateIteratorUint64 ( tHeader, m_uVersion, pReaderPtr.release() );
+	case AttrType_e::BOOLEAN:	return CreateIteratorBool ( tHeader, pReaderPtr.release() );
 	case AttrType_e::STRING:
 		if ( tHints.m_bNeedStringHashes )
 		{
@@ -468,26 +489,20 @@ Iterator_i * Columnar_c::CreateIterator ( const std::string & sName, const Itera
 				if ( pCapabilities )
 					pCapabilities->m_bStringHashes = true;
 
-				return CreateIteratorUint64 ( *pHashHeader, m_uVersion, pReader.release() );
+				return CreateIteratorUint64 ( *pHashHeader, m_uVersion, pReaderPtr.release() );
 			}
 		}
-		return CreateIteratorStr ( *pHeader, m_uVersion, pReader.release() );
-	
+		return CreateIteratorStr ( tHeader, m_uVersion, pReaderPtr.release() );
+
 	case AttrType_e::UINT32SET:
 	case AttrType_e::INT64SET:
 	case AttrType_e::FLOATVEC:
-		return CreateIteratorMVA ( *pHeader, m_uVersion, pReader.release(), tHints.m_bBuffered );
+		return CreateIteratorMVA ( tHeader, m_uVersion, pReaderPtr.release(), tHints.m_bBuffered );
 
 	default:
 		sError = "Unsupported columnar iterator type";
 		return nullptr;
 	}
-}
-
-
-FileReader_c * Columnar_c::CreateFileReader() const
-{
-	return new FileReader_c ( m_tReader.GetFD() );
 }
 
 
@@ -497,11 +512,19 @@ Analyzer_i * Columnar_c::CreateAnalyzer ( const Filter_t & tSettings, bool bHave
 	if ( !pHeader )
 		return nullptr;
 
-	std::unique_ptr<FileReader_c> pReader ( CreateFileReader() );
-	if ( !pReader )
-		return nullptr;
+	if ( ShouldMmap() )
+		return CreateAnalyzerReader ( new MappedReader_c ( (uint8_t*)m_pMap->GetPtr(), (int64_t)m_pMap->GetLengthBytes() ), *pHeader, tSettings, bHaveMatchingBlocks );
 
-	auto eType = pHeader->GetType();
+	return CreateAnalyzerReader ( new FileReader_c ( m_tReader.GetFD() ), *pHeader, tSettings, bHaveMatchingBlocks );
+}
+
+
+template <typename RD>
+Analyzer_i * Columnar_c::CreateAnalyzerReader ( RD * pReader, const AttributeHeader_i & tHeader, const Filter_t & tSettings, bool bHaveMatchingBlocks ) const
+{
+	std::unique_ptr<RD> pReaderPtr ( pReader );
+
+	auto eType = tHeader.GetType();
 	switch ( eType )
 	{
 	case AttrType_e::UINT32:
@@ -511,25 +534,25 @@ Analyzer_i * Columnar_c::CreateAnalyzer ( const Filter_t & tSettings, bool bHave
 	{
 		Filter_t tFixedSettings = tSettings;
 		FixupFilterSettings ( tFixedSettings, eType );
-		return CreateAnalyzerInt ( *pHeader, m_uVersion, pReader.release(), tFixedSettings, bHaveMatchingBlocks );
+		return CreateAnalyzerInt ( tHeader, m_uVersion, pReaderPtr.release(), tFixedSettings, bHaveMatchingBlocks );
 	}
 
 	case AttrType_e::BOOLEAN:
-		return CreateAnalyzerBool ( *pHeader, pReader.release(), tSettings, bHaveMatchingBlocks );
+		return CreateAnalyzerBool ( tHeader, pReaderPtr.release(), tSettings, bHaveMatchingBlocks );
 
 	case AttrType_e::UINT32SET:
 	case AttrType_e::INT64SET:
-		return CreateAnalyzerMVA ( *pHeader, m_uVersion, pReader.release(), tSettings, bHaveMatchingBlocks );
+		return CreateAnalyzerMVA ( tHeader, m_uVersion, pReaderPtr.release(), tSettings, bHaveMatchingBlocks );
 
 	case AttrType_e::STRING:
 		if ( tSettings.m_fnCalcStrHash )
 		{
 			const AttributeHeader_i * pHashHeader = GetHeader ( GenerateHashAttrName ( tSettings.m_sName ) );
 			if ( pHashHeader )
-				return CreateAnalyzerInt ( *pHashHeader, m_uVersion, pReader.release(), StringFilterToHashFilter ( tSettings, true ), bHaveMatchingBlocks );
+				return CreateAnalyzerInt ( *pHashHeader, m_uVersion, pReaderPtr.release(), StringFilterToHashFilter ( tSettings, true ), bHaveMatchingBlocks );
 		}
 
-		return CreateAnalyzerStr ( *pHeader, m_uVersion, pReader.release(), tSettings, bHaveMatchingBlocks );
+		return CreateAnalyzerStr ( tHeader, m_uVersion, pReaderPtr.release(), tSettings, bHaveMatchingBlocks );
 
 	default:
 		return nullptr;
@@ -687,6 +710,7 @@ bool Columnar_c::GetAttrInfo ( const std::string & sName, AttrInfo_t & tInfo ) c
 	const auto & tHashFound = m_hHeaders.find ( GenerateHashAttrName(sName) );
 	bool bHasHash = tHashFound!=m_hHeaders.end();
 	tInfo.m_fComplexity = bHasHash ? tHashFound->second.first->GetComplexity() : tFound->second.first->GetComplexity();
+	tInfo.m_bStablePtr = ShouldMmap();
 
 	return true;
 }
@@ -791,10 +815,10 @@ bool Columnar_c::LoadHeaders ( FileReader_c & tReader, int iNumAttrs, std::strin
 } // namespace columnar
 
 
-columnar::Columnar_i * CreateColumnarStorageReader ( const std::string & sFilename, uint32_t uTotalDocs, std::string & sError )
+columnar::Columnar_i * CreateColumnarStorageReader ( const std::string & sFilename, uint32_t uTotalDocs, bool bMmap, std::string & sError )
 {
 	std::unique_ptr<columnar::Columnar_c> pColumnar ( new columnar::Columnar_c ( sFilename, uTotalDocs ) );
-	if ( !pColumnar->Setup(sError) )
+	if ( !pColumnar->Setup ( bMmap, sError ) )
 		return nullptr;
 
 	return pColumnar.release();

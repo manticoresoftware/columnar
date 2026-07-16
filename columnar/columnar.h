@@ -28,7 +28,7 @@
 namespace columnar
 {
 
-static const int LIB_VERSION = 27;
+static const int LIB_VERSION = 28;
 
 class Iterator_i
 {
@@ -75,7 +75,8 @@ struct AttrInfo_t
 {
 	int					m_iId = -1;
 	common::AttrType_e	m_eType = common::AttrType_e::NONE;
-	float				m_fComplexity = 0.0f; 
+	float				m_fComplexity = 0.0f;
+	bool				m_bStablePtr = false;
 };
 
 
@@ -98,7 +99,7 @@ public:
 
 extern "C"
 {
-	DLLEXPORT columnar::Columnar_i *	CreateColumnarStorageReader ( const std::string & sFilename, uint32_t uTotalDocs, std::string & sError );
+	DLLEXPORT columnar::Columnar_i *	CreateColumnarStorageReader ( const std::string & sFilename, uint32_t uTotalDocs, bool bMmap, std::string & sError );
 	DLLEXPORT void						CheckColumnarStorage ( const std::string & sFilename, uint32_t uNumRows, columnar::Reporter_fn & fnError, columnar::Reporter_fn & fnProgress );
 	DLLEXPORT int						GetColumnarLibVersion();
 	DLLEXPORT const char *				GetColumnarLibVersionStr();

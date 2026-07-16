@@ -80,7 +80,7 @@ class SecondaryIndex_c : public Index_i
 public:
 				SecondaryIndex_c ( const SI::IndexSettings_t & tSettings ) : m_uMaxBlockCacheSize ( tSettings.m_uBlockCacheSize ) {}
 
-	bool		Setup ( const std::string & sFile, std::string & sError );
+	bool		Setup ( const std::string & sFile, bool bMmap, std::string & sError );
 
 	bool		CreateIterators ( std::vector<BlockIterator_i *> & dIterators, const Filter_t & tFilter, const IteratorSettings_t & tSettings, std::string & sWarning, std::string & sError ) const override;
 	bool		CalcCount ( uint32_t & uCount, const common::Filter_t & tFilter, uint32_t uMaxValues, std::string & sError ) const override;
@@ -105,6 +105,10 @@ private:
 	uint64_t	m_uNextMetaOff { 0 };
 
 	util::FileReader_c m_tReader;
+	std::unique_ptr<util::MappedBuffer_i> m_pMap;		// whole-.spidx read-only mapping
+
+	uint8_t *	MapBase() const	{ return m_pMap ? (uint8_t*)m_pMap->GetPtr() : nullptr; }
+	int64_t		MapSize() const	{ return m_pMap ? (int64_t)m_pMap->GetLengthBytes() : 0; }
 
 	std::vector<ColumnInfo_t> m_dAttrs;
 	std::unordered_map<std::string, int> m_hAttrs;
@@ -128,7 +132,7 @@ private:
 	const ColumnInfo_t * GetAttr ( const Filter_t & tFilter, std::string & sError ) const;
 };
 
-bool SecondaryIndex_c::Setup ( const std::string & sFile, std::string & sError )
+bool SecondaryIndex_c::Setup ( const std::string & sFile, bool bMmap, std::string & sError )
 {
 	if ( !m_tReader.Open ( sFile, sError ) )
 		return false;
@@ -231,6 +235,13 @@ bool SecondaryIndex_c::Setup ( const std::string & sFile, std::string & sError )
 	{
 		sError = m_tReader.GetError();
 		return false;
+	}
+
+	if ( bMmap )
+	{
+		m_pMap.reset ( util::MappedBuffer_i::Create() );
+		if ( !m_pMap->Open ( sFile, false, sError ) )
+			return false;
 	}
 
 	return true;
@@ -408,7 +419,7 @@ int64_t SecondaryIndex_c::GetValsRows ( std::vector<BlockIterator_i *> * pIterat
 	int iColumnId = GetColumnId ( tFilter.m_sName );
 	auto pBlockCache = tSettings.m_bUseCache && m_dBlockCaches.size() ? m_dBlockCaches[iColumnId].get() : nullptr;
 
-	ReaderFactory_c tReaderFactory = { .m_tCol = m_dAttrs[iColumnId], .m_tSettings = m_tSettings, .m_tRsetInfo = tRsetInfo, .m_iFD = m_tReader.GetFD(), .m_uVersion = m_uVersion, .m_uBlockBaseOff = uBlockBaseOff, .m_uBlocksCount = uBlocksCount, .m_uValuesPerBlock = m_uValuesPerBlock, .m_uRowidsPerBlock = m_uRowidsPerBlock, .m_pBounds = tSettings.m_pBounds, .m_iCutoff = tSettings.m_iCutoff, .m_pBlockCache = pBlockCache };
+	ReaderFactory_c tReaderFactory = { .m_tCol = m_dAttrs[iColumnId], .m_tSettings = m_tSettings, .m_tRsetInfo = tRsetInfo, .m_iFD = m_tReader.GetFD(), .m_pMap = MapBase(), .m_iMapSize = MapSize(), .m_uVersion = m_uVersion, .m_uBlockBaseOff = uBlockBaseOff, .m_uBlocksCount = uBlocksCount, .m_uValuesPerBlock = m_uValuesPerBlock, .m_uRowidsPerBlock = m_uRowidsPerBlock, .m_pBounds = tSettings.m_pBounds, .m_iCutoff = tSettings.m_iCutoff, .m_pBlockCache = pBlockCache };
 	std::unique_ptr<BlockReader_i> pBlockReader { tReaderFactory.CreateBlockReader() };
 	if ( !pBlockReader )
 		return 0;
@@ -435,7 +446,7 @@ uint32_t SecondaryIndex_c::CalcValsRows ( const Filter_t & tFilter ) const
 
 	const auto & tCol = m_dAttrs[GetColumnId ( tFilter.m_sName )];
 
-	ReaderFactory_c tReaderFactory = { .m_tCol = tCol, .m_tSettings = m_tSettings, .m_iFD = m_tReader.GetFD(), .m_uVersion = m_uVersion, .m_uBlockBaseOff = uBlockBaseOff, .m_uBlocksCount = uBlocksCount, .m_uValuesPerBlock = m_uValuesPerBlock, .m_uRowidsPerBlock = m_uRowidsPerBlock };
+	ReaderFactory_c tReaderFactory = { .m_tCol = tCol, .m_tSettings = m_tSettings, .m_iFD = m_tReader.GetFD(), .m_pMap = MapBase(), .m_iMapSize = MapSize(), .m_uVersion = m_uVersion, .m_uBlockBaseOff = uBlockBaseOff, .m_uBlocksCount = uBlocksCount, .m_uValuesPerBlock = m_uValuesPerBlock, .m_uRowidsPerBlock = m_uRowidsPerBlock };
 	std::unique_ptr<BlockReader_i> pBlockReader { tReaderFactory.CreateBlockReader() };
 	if ( !pBlockReader )
 		return 0;
@@ -517,7 +528,7 @@ int64_t SecondaryIndex_c::GetRangeRows ( std::vector<BlockIterator_i *> * pItera
 	RsetInfo_t tRsetInfo { iNumIterators, tSettings.m_uMaxValues, tSettings.m_iRsetSize };
 	const auto & tCol = m_dAttrs[GetColumnId ( tFilter.m_sName )];
 
-	ReaderFactory_c tReaderFactory = { .m_tCol = tCol, .m_tSettings = m_tSettings, .m_tRsetInfo = tRsetInfo, .m_iFD = m_tReader.GetFD(), .m_uVersion = m_uVersion, .m_uBlockBaseOff = uBlockBaseOff, .m_uBlocksCount = uBlocksCount, .m_uValuesPerBlock = m_uValuesPerBlock, .m_uRowidsPerBlock = m_uRowidsPerBlock, .m_pBounds = tSettings.m_pBounds, .m_iCutoff = tSettings.m_iCutoff };
+	ReaderFactory_c tReaderFactory = { .m_tCol = tCol, .m_tSettings = m_tSettings, .m_tRsetInfo = tRsetInfo, .m_iFD = m_tReader.GetFD(), .m_pMap = MapBase(), .m_iMapSize = MapSize(), .m_uVersion = m_uVersion, .m_uBlockBaseOff = uBlockBaseOff, .m_uBlocksCount = uBlocksCount, .m_uValuesPerBlock = m_uValuesPerBlock, .m_uRowidsPerBlock = m_uRowidsPerBlock, .m_pBounds = tSettings.m_pBounds, .m_iCutoff = tSettings.m_iCutoff };
 	std::unique_ptr<BlockReader_i> pReader { tReaderFactory.CreateRangeReader() };
 	if ( !pReader )
 		return 0;
@@ -540,7 +551,7 @@ uint32_t SecondaryIndex_c::CalcRangeRows ( const Filter_t & tFilter ) const
 	BlockIter_t tPosIt ( tPos, 0, uBlocksCount, m_uValuesPerBlockShift );
 	const auto & tCol = m_dAttrs[GetColumnId ( tFilter.m_sName )];
 
-	ReaderFactory_c tReaderFactory = { .m_tCol = tCol, .m_tSettings = m_tSettings, .m_iFD = m_tReader.GetFD(), .m_uVersion = m_uVersion, .m_uBlockBaseOff = uBlockBaseOff, .m_uBlocksCount = uBlocksCount, .m_uValuesPerBlock = m_uValuesPerBlock, .m_uRowidsPerBlock = m_uRowidsPerBlock };
+	ReaderFactory_c tReaderFactory = { .m_tCol = tCol, .m_tSettings = m_tSettings, .m_iFD = m_tReader.GetFD(), .m_pMap = MapBase(), .m_iMapSize = MapSize(), .m_uVersion = m_uVersion, .m_uBlockBaseOff = uBlockBaseOff, .m_uBlocksCount = uBlocksCount, .m_uValuesPerBlock = m_uValuesPerBlock, .m_uRowidsPerBlock = m_uRowidsPerBlock };
 	std::unique_ptr<BlockReader_i> pReader { tReaderFactory.CreateRangeReader() };
 	if ( !pReader )
 		return 0;
@@ -744,7 +755,7 @@ SI::Index_i * CreateSecondaryIndex ( const char * szFile, const SI::IndexSetting
 {
 	std::unique_ptr<SI::SecondaryIndex_c> pIdx ( new SI::SecondaryIndex_c(tSettings) );
 
-	if ( !pIdx->Setup ( szFile, sError ) )
+	if ( !pIdx->Setup ( szFile, tSettings.m_bMmap, sError ) )
 		return nullptr;
 
 	return pIdx.release();
