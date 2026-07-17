@@ -190,17 +190,10 @@ void Int64FastPFORCodec_c::DecodeDelta ( const util::Span_T<uint32_t> & dCompres
 
 //////////////////////////////////////////////////////////////////////////
 
-static constexpr size_t SVB_PADDING_WORDS = ( STREAMVBYTE_PADDING + sizeof(uint32_t) - 1 ) / sizeof(uint32_t);
-
-// StreamVByte decoders may read up to STREAMVBYTE_PADDING bytes past the compressed stream.
-// SI stores compressed byte streams rounded to uint32_t words, so materialize explicit
-// zero padding before decoding data loaded from disk.
-static FORCE_INLINE const uint8_t * GetPaddedSVBInput ( const util::Span_T<uint32_t> & dCompressed, std::vector<uint32_t> & dPaddedCompressed )
-{
-	dPaddedCompressed.assign ( dCompressed.begin(), dCompressed.end() );
-	dPaddedCompressed.resize ( dCompressed.size() + SVB_PADDING_WORDS, 0 );
-	return (const uint8_t*)dPaddedCompressed.data();
-}
+// StreamVByte decoders over-read past the end of the compressed input; callers guarantee the
+// slack by feeding buffers padded via SpanResizeable_T::resize_with_padding ( ..., SVB_PADDING_WORDS ),
+// so the decoders can run in place with no per-call copy.
+static_assert ( util::SVB_PADDING_BYTES>=STREAMVBYTE_PADDING, "SVB_PADDING_BYTES must cover STREAMVBYTE_PADDING" );
 
 //////////////////////////////////////////////////////////////////////////
 
@@ -225,11 +218,8 @@ public:
 		dCompressed.resize ( ( uBytesWritten + sizeof(uint32_t)-1 ) / sizeof(uint32_t) );
 	}
 
-	FORCE_INLINE void Decode ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint32_t> & dDecompressed )		{ streamvbyte_decode ( GetPaddedSVBInput ( dCompressed, m_dPaddedCompressed ), dDecompressed.data(), dDecompressed.size() ); }
-	FORCE_INLINE void DecodeDelta ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint32_t> & dDecompressed )	{ streamvbyte_delta_decode ( GetPaddedSVBInput ( dCompressed, m_dPaddedCompressed ), dDecompressed.data(), dDecompressed.size(), 0 ); }
-
-private:
-	std::vector<uint32_t> m_dPaddedCompressed;
+	FORCE_INLINE void Decode ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint32_t> & dDecompressed )		{ streamvbyte_decode ( (const uint8_t*)dCompressed.data(), dDecompressed.data(), dDecompressed.size() ); }
+	FORCE_INLINE void DecodeDelta ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint32_t> & dDecompressed )	{ streamvbyte_delta_decode ( (const uint8_t*)dCompressed.data(), dDecompressed.data(), dDecompressed.size(), 0 ); }
 };
 
 //////////////////////////////////////////////////////////////////////////
@@ -258,7 +248,6 @@ private:
 
 	std::vector<uint32_t> m_dHi;
 	std::vector<uint32_t> m_dLo;
-	std::vector<uint32_t> m_dPaddedCompressed;
 
 	FORCE_INLINE void SplitAndEncode ( const util::Span_T<uint64_t> & dUncompressed, std::vector<uint32_t> & dCompressed );
 	FORCE_INLINE void DecodeAndMerge ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint64_t> & dDecompressed );
@@ -322,7 +311,7 @@ void Int64SVBCodec_c::SplitAndEncode ( const util::Span_T<uint64_t> & dUncompres
 void Int64SVBCodec_c::DecodeAndMerge ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint64_t> & dDecompressed )
 {
 	auto uNumValues = dDecompressed.size();
-	const uint8_t * pIn = GetPaddedSVBInput ( dCompressed, m_dPaddedCompressed );
+	const uint8_t * pIn = (const uint8_t*)dCompressed.data();
 	uint32_t uHeader = *(const uint32_t*)pIn;
 
 	if ( uHeader & LO_ONLY_FLAG )
