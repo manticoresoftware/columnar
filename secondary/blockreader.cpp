@@ -344,7 +344,7 @@ template<typename VEC, typename RD>
 static FORCE_INLINE void ReadBlock ( VEC & dDst, int iNumValues, SpanResizeable_T<uint32_t> & dBuf, RD & tReader )
 {
 	dDst.resize(iNumValues);
-	ReadVectorLen32 ( dBuf, tReader );
+	ReadVectorLen32 ( dBuf, tReader, SVB_PADDING_WORDS );
 }
 
 template<typename VEC, typename RD>

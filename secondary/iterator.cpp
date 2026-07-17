@@ -259,7 +259,7 @@ bool RowidIterator_T<ROWID_RANGE, RD>::ReadNextBlock ( Span_T<uint32_t> & dRowId
 
 	m_pReader->Seek ( m_iDataOffset + ( iBlockOffset << 2 ) );
 
-	m_dTmp.resize(iBlockSize);
+	m_dTmp.resize_with_padding ( iBlockSize, SVB_PADDING_WORDS );
 	ReadVectorData ( m_dTmp, *m_pReader );
 	m_dRows.resize ( CalcNumBlockRowids() );
 	m_pCodec->DecodeDelta ( m_dTmp, m_dRows );
@@ -272,7 +272,7 @@ template <bool ROWID_RANGE, typename RD>
 void RowidIterator_T<ROWID_RANGE, RD>::DecodeDeltaVector ( SpanResizeable_T<uint32_t> & dDecoded, int iRsetSize )
 {
 	dDecoded.resize(iRsetSize);
-	ReadVectorLen32 ( m_dTmp, *m_pReader );
+	ReadVectorLen32 ( m_dTmp, *m_pReader, SVB_PADDING_WORDS );
 	m_pCodec->DecodeDelta ( m_dTmp, dDecoded );
 }
 

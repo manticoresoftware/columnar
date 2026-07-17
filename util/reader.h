@@ -216,6 +216,14 @@ FORCE_INLINE void ReadVectorLen32 ( VEC & dData, RD & tReader )
 	tReader.Read ( (uint8_t *)( dData.data() ), sizeof ( dData[0] ) * uLen );
 }
 
+template<typename VEC, typename RD>
+FORCE_INLINE void ReadVectorLen32 ( VEC & dData, RD & tReader, size_t tTail )
+{
+	uint32_t uLen =  tReader.Unpack_uint32();
+	dData.resize_with_padding ( uLen, tTail );
+	tReader.Read ( (uint8_t *)( dData.data() ), sizeof ( dData[0] ) * uLen );
+}
+
 template<typename T, typename RD>
 FORCE_INLINE void SkipVectorLen32 ( RD & tReader )
 {
