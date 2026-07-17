@@ -25,6 +25,9 @@
 namespace util
 {
 
+static constexpr size_t SVB_PADDING_BYTES = 16;
+static constexpr size_t SVB_PADDING_WORDS = ( SVB_PADDING_BYTES + sizeof(uint32_t) - 1 ) / sizeof(uint32_t);
+
 class IntCodec_i
 {
 public:

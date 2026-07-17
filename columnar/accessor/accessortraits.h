@@ -339,7 +339,7 @@ FORCE_INLINE void DecodeValues_Delta_PFOR ( util::SpanResizeable_T<T> & dValues,
 		uint32_t uPFOREncodedSize = uint32_t ( uTotalSize - ( tReader.GetPos() - tStart ) );
 		assert ( uPFOREncodedSize % 4 == 0 );
 
-		dTmp.resize ( uPFOREncodedSize >>2 );
+		dTmp.resize_with_padding ( uPFOREncodedSize >>2, util::SVB_PADDING_WORDS );
 		tReader.Read ( (uint8_t*)dTmp.data(), (int)dTmp.size()*sizeof(dTmp[0]) );
 
 		if ( bAsc )
@@ -356,7 +356,7 @@ FORCE_INLINE void DecodeValues_Delta_PFOR ( util::SpanResizeable_T<T> & dValues,
 		uint32_t uPFOREncodedSize = uint32_t ( uTotalSize - ( tReader.GetPos() - tStart ) );
 		assert ( uPFOREncodedSize % 4 == 0 );
 
-		dTmp.resize ( uPFOREncodedSize>>2 );
+		dTmp.resize_with_padding ( uPFOREncodedSize>>2, util::SVB_PADDING_WORDS );
 		tReader.Read ( (uint8_t*)dTmp.data(), (int)dTmp.size()*sizeof(dTmp[0]) );
 
 		tCodec.Decode ( dTmp, dValues );
@@ -375,7 +375,7 @@ FORCE_INLINE void DecodeValues_PFOR ( util::SpanResizeable_T<T> & dValues, util:
 	uint32_t uPFOREncodedSize = uint32_t ( uTotalSize - ( tReader.GetPos() - tStart ) );
 	assert ( uPFOREncodedSize % 4 == 0 );
 
-	dTmp.resize ( uPFOREncodedSize>>2 );
+	dTmp.resize_with_padding ( uPFOREncodedSize>>2, util::SVB_PADDING_WORDS );
 	tReader.Read ( (uint8_t*)dTmp.data(), (int)dTmp.size()*sizeof(dTmp[0]) );
 
 	tCodec.Decode ( dTmp, dValues );

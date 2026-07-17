@@ -190,6 +190,13 @@ void Int64FastPFORCodec_c::DecodeDelta ( const util::Span_T<uint32_t> & dCompres
 
 //////////////////////////////////////////////////////////////////////////
 
+// StreamVByte decoders over-read past the end of the compressed input; callers guarantee the
+// slack by feeding buffers padded via SpanResizeable_T::resize_with_padding ( ..., SVB_PADDING_WORDS ),
+// so the decoders can run in place with no per-call copy.
+static_assert ( util::SVB_PADDING_BYTES>=STREAMVBYTE_PADDING, "SVB_PADDING_BYTES must cover STREAMVBYTE_PADDING" );
+
+//////////////////////////////////////////////////////////////////////////
+
 class Int32SVBCodec_c
 {
 public:
