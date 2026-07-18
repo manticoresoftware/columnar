@@ -325,7 +325,7 @@ FORCE_INLINE void AddMinValue ( util::Span_T<uint64_t> & dValues, uint64_t uMin 
 
 
 template <typename T, typename RD>
-FORCE_INLINE void DecodeValues_Delta_PFOR ( util::SpanResizeable_T<T> & dValues, RD & tReader, util::IntCodec_i & tCodec, util::SpanResizeable_T<uint32_t> & dTmp, uint32_t uTotalSize, bool bReadFlag, uint32_t uVersion )
+FORCE_INLINE void DecodeValues_Delta_PFOR ( util::SpanResizeable_T<T> & dValues, RD & tReader, util::IntCodec_c & tCodec, util::SpanResizeable_T<uint32_t> & dTmp, uint32_t uTotalSize, bool bReadFlag, uint32_t uVersion )
 {
 	int64_t tStart = tReader.GetPos();
 	uint8_t uFlags = util::to_underlying ( IntDeltaPacking_e::DELTA_ASC );
@@ -339,14 +339,13 @@ FORCE_INLINE void DecodeValues_Delta_PFOR ( util::SpanResizeable_T<T> & dValues,
 		uint32_t uPFOREncodedSize = uint32_t ( uTotalSize - ( tReader.GetPos() - tStart ) );
 		assert ( uPFOREncodedSize % 4 == 0 );
 
-		dTmp.resize_with_padding ( uPFOREncodedSize >>2, util::SVB_PADDING_WORDS );
-		tReader.Read ( (uint8_t*)dTmp.data(), (int)dTmp.size()*sizeof(dTmp[0]) );
+		util::Span_T<uint32_t> dSrc = util::ReadCompressedSpan ( tReader, dTmp, uPFOREncodedSize>>2, tCodec.CanDecodeUnaligned() );
 
 		if ( bAsc )
-			tCodec.DecodeDelta ( dTmp, dValues );
+			tCodec.DecodeDelta ( dSrc, dValues );
 		else
 		{
-			tCodec.Decode ( dTmp, dValues );
+			tCodec.Decode ( dSrc, dValues );
 			ComputeInverseDeltas ( dValues, false );
 		}
 	}
@@ -356,10 +355,9 @@ FORCE_INLINE void DecodeValues_Delta_PFOR ( util::SpanResizeable_T<T> & dValues,
 		uint32_t uPFOREncodedSize = uint32_t ( uTotalSize - ( tReader.GetPos() - tStart ) );
 		assert ( uPFOREncodedSize % 4 == 0 );
 
-		dTmp.resize_with_padding ( uPFOREncodedSize>>2, util::SVB_PADDING_WORDS );
-		tReader.Read ( (uint8_t*)dTmp.data(), (int)dTmp.size()*sizeof(dTmp[0]) );
+		util::Span_T<uint32_t> dSrc = util::ReadCompressedSpan ( tReader, dTmp, uPFOREncodedSize>>2, tCodec.CanDecodeUnaligned() );
 
-		tCodec.Decode ( dTmp, dValues );
+		tCodec.Decode ( dSrc, dValues );
 
 		assert ( !dValues[0] );
 		dValues[0] = uMin;
@@ -368,17 +366,16 @@ FORCE_INLINE void DecodeValues_Delta_PFOR ( util::SpanResizeable_T<T> & dValues,
 }
 
 template <typename T, typename RD>
-FORCE_INLINE void DecodeValues_PFOR ( util::SpanResizeable_T<T> & dValues, RD & tReader, util::IntCodec_i & tCodec, util::SpanResizeable_T<uint32_t> & dTmp, uint32_t uTotalSize )
+FORCE_INLINE void DecodeValues_PFOR ( util::SpanResizeable_T<T> & dValues, RD & tReader, util::IntCodec_c & tCodec, util::SpanResizeable_T<uint32_t> & dTmp, uint32_t uTotalSize )
 {
 	int64_t tStart = tReader.GetPos();
 	T uMin = (T)tReader.Unpack_uint64();
 	uint32_t uPFOREncodedSize = uint32_t ( uTotalSize - ( tReader.GetPos() - tStart ) );
 	assert ( uPFOREncodedSize % 4 == 0 );
 
-	dTmp.resize_with_padding ( uPFOREncodedSize>>2, util::SVB_PADDING_WORDS );
-	tReader.Read ( (uint8_t*)dTmp.data(), (int)dTmp.size()*sizeof(dTmp[0]) );
+	util::Span_T<uint32_t> dSrc = util::ReadCompressedSpan ( tReader, dTmp, uPFOREncodedSize>>2, tCodec.CanDecodeUnaligned() );
 
-	tCodec.Decode ( dTmp, dValues );
+	tCodec.Decode ( dSrc, dValues );
 
 	AddMinValue ( dValues, uMin );
 }

@@ -444,7 +444,7 @@ bool Columnar_c::Setup ( bool bMmap, std::string & sError )
 	// map the whole .spc read-only for data reads (headers already loaded via m_tReader), only in mmap mode
 	if ( bMmap )
 	{
-		m_pMap.reset ( MappedBuffer_i::Create() );
+		m_pMap.reset ( CreateMappedBuffer() );
 		if ( !m_pMap->Open ( m_sFilename, false, sError ) )
 			return false;
 	}

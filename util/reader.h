@@ -177,7 +177,18 @@ public:
 	FORCE_INLINE void Seek ( int64_t iPos )
 	{
 		assert ( iPos>=0 );
+		assert ( (size_t)iPos<=m_tUsed && "corrupt offset: seek past the end of the mapping" );
 		m_tPtr = (size_t)iPos;
+	}
+
+	FORCE_INLINE const uint8_t * GetCurPtrAndSkip ( size_t tLen )
+	{
+		assert ( m_tPtr<=m_tUsed );
+		assert ( tLen<=m_tUsed-m_tPtr && "corrupt length: block extends past the end of the mapping" );
+
+		const uint8_t * pRes = m_pBuf + m_tPtr;
+		m_tPtr += tLen;
+		return pRes;
 	}
 
 	using ReaderBase_T<MappedReader_c>::Read;
@@ -238,6 +249,31 @@ void ReadVectorData ( VEC & dData, RD & tReader )
 	tReader.Read ( (uint8_t *)( dData.data() ), sizeof ( dData[0] ) * uLen );
 }
 
+template<typename RD>
+FORCE_INLINE Span_T<uint32_t> ReadCompressedSpan ( RD & tReader, SpanResizeable_T<uint32_t> & dScratch, size_t tWords, bool bZeroCopyOk )
+{
+	assert ( tWords<=UINT32_MAX );
+	static_assert ( sizeof(size_t)>=sizeof(uint64_t), "ReadCompressedSpan assumes a 64-bit size_t" );
+	const size_t tBytes = tWords*sizeof(uint32_t);
+
+	if constexpr ( RD::IS_MAPPED )
+	{
+		if ( bZeroCopyOk )
+			return Span_T<uint32_t> ( (uint32_t*)tReader.GetCurPtrAndSkip ( tBytes ), tWords );
+	}
+
+	dScratch.resize_with_padding ( tWords, ( SVB_PADDING_BYTES + sizeof(uint32_t)-1 ) / sizeof(uint32_t) );
+	tReader.Read ( (uint8_t*)dScratch.data(), tBytes );
+	return Span_T<uint32_t> ( dScratch.data(), tWords );
+}
+
+template<typename RD>
+FORCE_INLINE Span_T<uint32_t> ReadCompressedSpanLen32 ( RD & tReader, SpanResizeable_T<uint32_t> & dScratch, bool bZeroCopyOk )
+{
+	uint32_t uLen = tReader.Unpack_uint32();
+	return ReadCompressedSpan ( tReader, dScratch, uLen, bZeroCopyOk );
+}
+
 int64_t GetFileSize ( int iFD, std::string * sError );
 bool IsFileExists ( const std::string & sName );
 
@@ -245,16 +281,18 @@ class MappedBuffer_i
 {
 public:
 					MappedBuffer_i() = default;
-	virtual			~MappedBuffer_i() { Close(); }
+	virtual			~MappedBuffer_i() = default;
 
 	virtual bool	Open ( const std::string & sFile, bool bWrite, std::string & sError ) = 0;
 	virtual void	Close () {};
-	static MappedBuffer_i * Create();
 
 	virtual void *	GetPtr () const = 0;
 	virtual size_t	GetLengthBytes () const = 0;
 	virtual const char * GetFileName() const = 0;
 };
+
+MappedBuffer_i * CreateMappedBuffer();
+
 
 template < typename T >
 class MappedBuffer_T
@@ -274,7 +312,7 @@ public:
 	size_t			size() const		{ return m_pBuf->GetLengthBytes() / sizeof(T); }
 
 private:
-	std::unique_ptr<MappedBuffer_i> m_pBuf { MappedBuffer_i::Create() };
+	std::unique_ptr<MappedBuffer_i> m_pBuf { CreateMappedBuffer() };
 };
 
 } // namespace util

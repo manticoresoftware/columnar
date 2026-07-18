@@ -30,7 +30,7 @@ template <bool ROWID_RANGE, typename RD>
 class RowidIterator_T : public BlockIteratorWithSetup_i
 {
 public:
-				RowidIterator_T ( const std::string & sAttr, Packing_e eType, int64_t iStartOffset, uint32_t uMinRowID, uint32_t uMaxRowID, uint32_t uCount, uint32_t uRowidsPerBlock, std::shared_ptr<RD> & pReader, std::shared_ptr<IntCodec_i> & pCodec, const RowidRange_t * pBounds, bool bBitmap );
+				RowidIterator_T ( const std::string & sAttr, Packing_e eType, int64_t iStartOffset, uint32_t uMinRowID, uint32_t uMaxRowID, uint32_t uCount, uint32_t uRowidsPerBlock, std::shared_ptr<RD> & pReader, std::shared_ptr<IntCodec_c> & pCodec, const RowidRange_t * pBounds, bool bBitmap );
 
 	bool		HintRowID ( uint32_t tRowID ) override;
 	bool		GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBlock ) override;
@@ -48,7 +48,7 @@ private:
 	Packing_e			m_eType = Packing_e::TOTAL;
 	int64_t				m_iStartOffset = 0;
 	std::shared_ptr<RD> m_pReader { nullptr };
-	std::shared_ptr<IntCodec_i>	m_pCodec { nullptr };
+	std::shared_ptr<IntCodec_c>	m_pCodec { nullptr };
 	uint32_t			m_uMinRowID = 0;
 	uint32_t			m_uMaxRowID = 0;
 	uint32_t			m_uCount = 0;
@@ -77,7 +77,7 @@ private:
 };
 
 template <bool ROWID_RANGE, typename RD>
-RowidIterator_T<ROWID_RANGE, RD>::RowidIterator_T ( const std::string & sAttr, Packing_e eType, int64_t iStartOffset, uint32_t uMinRowID, uint32_t uMaxRowID, uint32_t uCount, uint32_t uRowidsPerBlock, std::shared_ptr<RD> & pReader, std::shared_ptr<IntCodec_i> & pCodec, const RowidRange_t * pBounds, bool bBitmap )
+RowidIterator_T<ROWID_RANGE, RD>::RowidIterator_T ( const std::string & sAttr, Packing_e eType, int64_t iStartOffset, uint32_t uMinRowID, uint32_t uMaxRowID, uint32_t uCount, uint32_t uRowidsPerBlock, std::shared_ptr<RD> & pReader, std::shared_ptr<IntCodec_c> & pCodec, const RowidRange_t * pBounds, bool bBitmap )
 	: m_sAttr ( sAttr )
 	, m_eType ( eType )
 	, m_iStartOffset ( iStartOffset )
@@ -257,12 +257,13 @@ bool RowidIterator_T<ROWID_RANGE, RD>::ReadNextBlock ( Span_T<uint32_t> & dRowId
 	int64_t iBlockOffset = m_iCurBlock ? ( m_dBlockOffsets[m_iCurBlock-1]): 0;
 	iBlockSize -= iBlockOffset;
 
+	assert ( iBlockSize>=0 && "non-monotonic block offsets" );
+
 	m_pReader->Seek ( m_iDataOffset + ( iBlockOffset << 2 ) );
 
-	m_dTmp.resize_with_padding ( iBlockSize, SVB_PADDING_WORDS );
-	ReadVectorData ( m_dTmp, *m_pReader );
+	Span_T<uint32_t> dSrc = ReadCompressedSpan ( *m_pReader, m_dTmp, iBlockSize, m_pCodec->CanDecodeUnaligned() );
 	m_dRows.resize ( CalcNumBlockRowids() );
-	m_pCodec->DecodeDelta ( m_dTmp, m_dRows );
+	m_pCodec->DecodeDelta ( dSrc, m_dRows );
 
 	dRowIdBlock = Span_T<uint32_t>(m_dRows);
 	return ( !dRowIdBlock.empty() );
@@ -272,8 +273,8 @@ template <bool ROWID_RANGE, typename RD>
 void RowidIterator_T<ROWID_RANGE, RD>::DecodeDeltaVector ( SpanResizeable_T<uint32_t> & dDecoded, int iRsetSize )
 {
 	dDecoded.resize(iRsetSize);
-	ReadVectorLen32 ( m_dTmp, *m_pReader, SVB_PADDING_WORDS );
-	m_pCodec->DecodeDelta ( m_dTmp, dDecoded );
+	Span_T<uint32_t> dSrc = ReadCompressedSpanLen32 ( *m_pReader, m_dTmp, m_pCodec->CanDecodeUnaligned() );
+	m_pCodec->DecodeDelta ( dSrc, dDecoded );
 }
 
 template <bool ROWID_RANGE, typename RD>
@@ -314,7 +315,7 @@ void RowidIterator_T<ROWID_RANGE, RD>::Setup ( Packing_e eType, uint64_t uStartO
 /////////////////////////////////////////////////////////////////////
 
 template<typename RD>
-BlockIteratorWithSetup_i * CreateRowidIterator ( const std::string & sAttr, Packing_e eType, uint64_t uStartOffset, uint32_t uMinRowID, uint32_t uMaxRowID, uint32_t uCount, uint32_t uRowidsPerBlock, std::shared_ptr<RD> & pSharedReader, std::shared_ptr<IntCodec_i> & pCodec, const RowidRange_t * pBounds, bool bBitmap )
+BlockIteratorWithSetup_i * CreateRowidIterator ( const std::string & sAttr, Packing_e eType, uint64_t uStartOffset, uint32_t uMinRowID, uint32_t uMaxRowID, uint32_t uCount, uint32_t uRowidsPerBlock, std::shared_ptr<RD> & pSharedReader, std::shared_ptr<IntCodec_c> & pCodec, const RowidRange_t * pBounds, bool bBitmap )
 {
 	if ( pBounds )
 	{
@@ -345,7 +346,7 @@ bool SetupRowidIterator ( BlockIteratorWithSetup_i * pIterator, Packing_e eType,
 }
 
 // CreateRowidIterator's definition lives in this TU but it's called from blockreader.cpp for both reader types, so instantiate it explicitly here
-template BlockIteratorWithSetup_i * CreateRowidIterator ( const std::string &, Packing_e, uint64_t, uint32_t, uint32_t, uint32_t, uint32_t, std::shared_ptr<util::FileReader_c> &, std::shared_ptr<IntCodec_i> &, const RowidRange_t *, bool );
-template BlockIteratorWithSetup_i * CreateRowidIterator ( const std::string &, Packing_e, uint64_t, uint32_t, uint32_t, uint32_t, uint32_t, std::shared_ptr<util::MappedReader_c> &, std::shared_ptr<IntCodec_i> &, const RowidRange_t *, bool );
+template BlockIteratorWithSetup_i * CreateRowidIterator ( const std::string &, Packing_e, uint64_t, uint32_t, uint32_t, uint32_t, uint32_t, std::shared_ptr<util::FileReader_c> &, std::shared_ptr<IntCodec_c> &, const RowidRange_t *, bool );
+template BlockIteratorWithSetup_i * CreateRowidIterator ( const std::string &, Packing_e, uint64_t, uint32_t, uint32_t, uint32_t, uint32_t, std::shared_ptr<util::MappedReader_c> &, std::shared_ptr<IntCodec_c> &, const RowidRange_t *, bool );
 
 }

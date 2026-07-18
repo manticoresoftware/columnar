@@ -190,12 +190,30 @@ struct MappedBufferData_t
 	HANDLE		m_iMap { INVALID_HANDLE_VALUE };
 #else
 	int			m_iFD { -1 };
+	int64_t		m_iReserveLen { 0 };	// full anonymous reservation incl. the guard page; what munmap() needs
 #endif
 
 	void * m_pData { nullptr };
-	int64_t m_iBytesCount { 0 };
+	int64_t m_iBytesCount { 0 };		// exact file size
 };
 
+#if !_WIN32
+static size_t GetPageSize()
+{
+	static const size_t tPageSize = ::sysconf ( _SC_PAGESIZE );
+	return tPageSize;
+}
+
+
+static FORCE_INLINE int64_t RoundUpToPage ( int64_t iSize )
+{
+	int64_t iPage = (int64_t)GetPageSize();
+	return ( iSize + iPage - 1 ) / iPage * iPage;
+}
+#endif
+
+
+static void MMapClose ( MappedBufferData_t & tBuf );
 
 static bool MMapOpen ( const std::string & sFile, bool bWrite, std::string & sError, MappedBufferData_t & tBuf )
 {
@@ -224,6 +242,7 @@ static bool MMapOpen ( const std::string & sFile, bool bWrite, std::string & sEr
 	if ( GetFileSizeEx ( iFD, &tLen )==0 )
 	{
 		sError = FormatStr ( "failed to fstat file '%s' (errno %u)", sFile.c_str(), ::GetLastError() );
+		MMapClose ( tBuf );
 		return false;
 	}
 
@@ -233,12 +252,24 @@ static bool MMapOpen ( const std::string & sFile, bool bWrite, std::string & sEr
 	if ( tBuf.m_iBytesCount>0 )
 	{
 		tBuf.m_iMap = ::CreateFileMapping ( iFD, NULL, bWrite ? PAGE_READWRITE : PAGE_READONLY, 0, 0, NULL );
+		if ( !tBuf.m_iMap ) // returns NULL on failure, not INVALID_HANDLE_VALUE
+		{
+			sError = FormatStr ( "failed to create file mapping for '%s' (errno %u)", sFile.c_str(), ::GetLastError() );
+			tBuf.m_iMap = INVALID_HANDLE_VALUE; // keep MMapClose's invariant
+			MMapClose ( tBuf );
+			return false;
+		}
+
 		tBuf.m_pData = ::MapViewOfFile ( tBuf.m_iMap, FILE_MAP_READ | ( bWrite ? FILE_MAP_WRITE : 0 ), 0, 0, 0 );
 		if ( !tBuf.m_pData )
 		{
 			sError = FormatStr ( "failed to map file '%s': (errno %u, length=%I64u)", sFile.c_str(), ::GetLastError(), tBuf.m_iBytesCount );
+			MMapClose ( tBuf );
 			return false;
 		}
+
+		// NOTE: no trailing guard page on Windows. A PAGE_READONLY mapping can't be sized past the file,
+		// and placeholder mappings (VirtualAlloc2/MapViewOfFile3) can't be split at arbitrary file sizes.
 	}
 #else
 	int iFD = ::open ( sFile.c_str(), bWrite ? O_RDWR : O_RDONLY, 0644 );
@@ -248,17 +279,45 @@ static bool MMapOpen ( const std::string & sFile, bool bWrite, std::string & sEr
 
 	tBuf.m_iBytesCount = GetFileSize ( iFD, &sError );
 	if ( tBuf.m_iBytesCount<0 )
+	{
+		MMapClose ( tBuf );
 		return false;
+	}
 
 	// mmap fails to map zero-size file
 	if ( tBuf.m_iBytesCount>0 )
 	{
-		tBuf.m_pData = mmap ( NULL, tBuf.m_iBytesCount, PROT_READ | ( bWrite ? PROT_WRITE : 0 ), MAP_SHARED, iFD, 0 );
-		if ( tBuf.m_pData==MAP_FAILED )
+		// Reserve the file's pages plus one trailing guard page, then overlay the file over the front.
+		// The guard page stays anonymous zero-filled and readable, so decoders that over-read past the
+		// end of the last block (StreamVByte reads up to 16 bytes past a stream) can never fault
+		int64_t iMapLen = RoundUpToPage ( tBuf.m_iBytesCount );
+		tBuf.m_iReserveLen = iMapLen + (int64_t)GetPageSize();
+
+		void * pBase = mmap ( NULL, (size_t)tBuf.m_iReserveLen, PROT_READ, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0 );
+		if ( pBase==MAP_FAILED )
 		{
-			sError = FormatStr ( "failed to mmap file '%s': %s (length=%lld)", sFile.c_str(), strerror(errno), tBuf.m_iBytesCount );
+			sError = FormatStr ( "failed to reserve mapping for '%s': %s (length=%lld)", sFile.c_str(), strerror(errno), (long long)tBuf.m_iReserveLen );
+			tBuf.m_iReserveLen = 0;
+			MMapClose ( tBuf );
 			return false;
 		}
+
+		// MAP_FIXED atomically replaces the front of our own reservation; the guard page survives
+		void * pFile = mmap ( pBase, tBuf.m_iBytesCount, PROT_READ | ( bWrite ? PROT_WRITE : 0 ), MAP_SHARED|MAP_FIXED, iFD, 0 );
+		if ( pFile==MAP_FAILED )
+		{
+			sError = FormatStr ( "failed to mmap file '%s': %s (length=%lld)", sFile.c_str(), strerror(errno), (long long)tBuf.m_iBytesCount );
+			::munmap ( pBase, (size_t)tBuf.m_iReserveLen );	// not in tBuf yet, so MMapClose can't free it
+			tBuf.m_iReserveLen = 0;
+			MMapClose ( tBuf );
+			return false;
+		}
+
+		// MAP_FIXED (without MAP_FIXED_NOREPLACE) must overlay at exactly the requested address; if it
+		// didn't, the file wouldn't sit at the front of our reservation and the guard-page math is off
+		assert ( pFile==pBase );
+
+		tBuf.m_pData = pBase;
 	}
 #endif
 
@@ -271,7 +330,7 @@ static void MMapClose ( MappedBufferData_t & tBuf )
 	if ( tBuf.m_pData )
 		::UnmapViewOfFile ( tBuf.m_pData );
 
-	if ( tBuf.m_iMap!=INVALID_HANDLE_VALUE )
+	if ( tBuf.m_iMap && tBuf.m_iMap!=INVALID_HANDLE_VALUE )
 		::CloseHandle ( tBuf.m_iMap );
 
 	tBuf.m_iMap = INVALID_HANDLE_VALUE;
@@ -281,8 +340,10 @@ static void MMapClose ( MappedBufferData_t & tBuf )
 
 	tBuf.m_iFD = INVALID_HANDLE_VALUE;
 #else
+	// the whole reservation was mapped (file pages + guard page), so unmap all of it, not just the file
 	if ( tBuf.m_pData )
-		::munmap ( tBuf.m_pData, tBuf.m_iBytesCount );
+		::munmap ( tBuf.m_pData, (size_t)tBuf.m_iReserveLen );
+	tBuf.m_iReserveLen = 0;
 
 	if ( tBuf.m_iFD!=-1 )
 		::close ( tBuf.m_iFD );
@@ -330,40 +391,29 @@ bool IsFileExists ( const std::string & sName )
 class MappedBuffer_c : public MappedBuffer_i
 {
 public:
-	MappedBuffer_c() = default;
-	virtual ~MappedBuffer_c() override = default;
+					MappedBuffer_c() = default;
+	virtual			~MappedBuffer_c() override			{ MMapClose(m_tBuf); }
 
-	bool Open ( const std::string & sFile, bool bWrite, std::string & sError ) override
-	{
-		m_sFileName = sFile;
-		return MMapOpen ( sFile, bWrite, sError, m_tBuf );
-	}
+	bool			Open ( const std::string & sFile, bool bWrite, std::string & sError ) override;
+	void			Close() override					{ MMapClose(m_tBuf); }
+	void *			GetPtr() const override				{ return m_tBuf.m_pData; }
+	size_t			GetLengthBytes () const override	{ return m_tBuf.m_iBytesCount; }
+	const char *	GetFileName() const override		{ return m_sFileName.c_str(); }
 
-	void Close () override
-	{
-		MMapClose ( m_tBuf );
-	}
-	
-	void * GetPtr () const override
-	{
-		return m_tBuf.m_pData;
-	}
-
-	size_t GetLengthBytes () const override
-	{
-		return m_tBuf.m_iBytesCount;
-	}
-
-	const char * GetFileName() const override
-	{
-		return m_sFileName.c_str();
-	}
-
-	MappedBufferData_t m_tBuf;
-	std::string m_sFileName;
+private:
+	MappedBufferData_t	m_tBuf;
+	std::string			m_sFileName;
 };
 
-MappedBuffer_i * MappedBuffer_i::Create()
+
+bool MappedBuffer_c::Open ( const std::string & sFile, bool bWrite, std::string & sError )
+{
+	m_sFileName = sFile;
+	return MMapOpen ( sFile, bWrite, sError, m_tBuf );
+}
+
+
+MappedBuffer_i * CreateMappedBuffer()
 {
 	return new MappedBuffer_c();
 }

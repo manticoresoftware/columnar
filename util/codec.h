@@ -25,13 +25,12 @@
 namespace util
 {
 
-static constexpr size_t SVB_PADDING_BYTES = 16;
-static constexpr size_t SVB_PADDING_WORDS = ( SVB_PADDING_BYTES + sizeof(uint32_t) - 1 ) / sizeof(uint32_t);
-
-class IntCodec_i
+class IntCodec_c
 {
 public:
-	virtual			~IntCodec_i() = default;
+	virtual			~IntCodec_c() = default;
+
+	FORCE_INLINE bool CanDecodeUnaligned() const { return m_bCanDecodeUnaligned; }
 
 	virtual void	Encode ( const util::Span_T<uint32_t> & dUncompressed, std::vector<uint32_t> & dCompressed ) = 0;
 	virtual void	EncodeDelta ( util::Span_T<uint32_t> & dUncompressed, std::vector<uint32_t> & dCompressed ) = 0;
@@ -44,6 +43,9 @@ public:
 
 	virtual void	Decode ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint64_t> & dDecompressed ) = 0;
 	virtual void	DecodeDelta ( const util::Span_T<uint32_t> & dCompressed, util::SpanResizeable_T<uint64_t> & dDecompressed ) = 0;
+
+protected:
+	bool			m_bCanDecodeUnaligned = false;
 };
 
 
@@ -60,15 +62,15 @@ struct CodecPoolDeleter_t
 		: m_pKey ( std::make_shared<CodecKey_t>( std::move(sCodec32), std::move(sCodec64) ) )
 	{}
 
-	void operator() ( IntCodec_i * pCodec ) const;
+	void operator() ( IntCodec_c * pCodec ) const;
 
 private:
 	std::shared_ptr<CodecKey_t> m_pKey;
 };
 
-using IntCodecPooledPtr_t = std::unique_ptr<IntCodec_i, CodecPoolDeleter_t>;
+using IntCodecPooledPtr_t = std::unique_ptr<IntCodec_c, CodecPoolDeleter_t>;
 
 IntCodecPooledPtr_t CreateIntCodec ( const std::string & sCodec32, const std::string & sCodec64 );
-std::shared_ptr<IntCodec_i> CreateIntCodecShared ( const std::string & sCodec32, const std::string & sCodec64 );
+std::shared_ptr<IntCodec_c> CreateIntCodecShared ( const std::string & sCodec32, const std::string & sCodec64 );
 
 } // namespace util

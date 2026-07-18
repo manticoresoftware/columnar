@@ -239,7 +239,7 @@ bool SecondaryIndex_c::Setup ( const std::string & sFile, bool bMmap, std::strin
 
 	if ( bMmap )
 	{
-		m_pMap.reset ( util::MappedBuffer_i::Create() );
+		m_pMap.reset ( util::CreateMappedBuffer() );
 		if ( !m_pMap->Open ( sFile, false, sError ) )
 			return false;
 	}

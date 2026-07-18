@@ -340,25 +340,26 @@ bool BitmapIterator_T<BITMAP,ROWID_RANGE>::GetNextRowIdBlock ( Span_T<uint32_t> 
 
 /////////////////////////////////////////////////////////////////////
 
+// returns the compressed source span: straight into the mapping when possible, else a padded copy in dBuf
 template<typename VEC, typename RD>
-static FORCE_INLINE void ReadBlock ( VEC & dDst, int iNumValues, SpanResizeable_T<uint32_t> & dBuf, RD & tReader )
+static FORCE_INLINE Span_T<uint32_t> ReadBlock ( VEC & dDst, int iNumValues, SpanResizeable_T<uint32_t> & dBuf, RD & tReader, IntCodec_c * pCodec )
 {
 	dDst.resize(iNumValues);
-	ReadVectorLen32 ( dBuf, tReader, SVB_PADDING_WORDS );
+	return ReadCompressedSpanLen32 ( tReader, dBuf, pCodec->CanDecodeUnaligned() );
 }
 
 template<typename VEC, typename RD>
-static FORCE_INLINE void DecodeBlock ( VEC & dDst, int iNumValues, IntCodec_i * pCodec, SpanResizeable_T<uint32_t> & dBuf, RD & tReader )
+static FORCE_INLINE void DecodeBlock ( VEC & dDst, int iNumValues, IntCodec_c * pCodec, SpanResizeable_T<uint32_t> & dBuf, RD & tReader )
 {
-	ReadBlock ( dDst, iNumValues, dBuf, tReader );
-	pCodec->DecodeDelta ( dBuf, dDst );
+	Span_T<uint32_t> dSrc = ReadBlock ( dDst, iNumValues, dBuf, tReader, pCodec );
+	pCodec->DecodeDelta ( dSrc, dDst );
 }
 
 template<typename VEC, typename RD>
-static FORCE_INLINE void DecodeBlockWoDelta ( VEC & dDst, int iNumValues, IntCodec_i * pCodec, SpanResizeable_T<uint32_t> & dBuf, RD & tReader )
+static FORCE_INLINE void DecodeBlockWoDelta ( VEC & dDst, int iNumValues, IntCodec_c * pCodec, SpanResizeable_T<uint32_t> & dBuf, RD & tReader )
 {
-	ReadBlock ( dDst, iNumValues, dBuf, tReader );
-	pCodec->Decode ( dBuf, dDst );
+	Span_T<uint32_t> dSrc = ReadBlock ( dDst, iNumValues, dBuf, tReader, pCodec );
+	pCodec->Decode ( dSrc, dDst );
 }
 
 
@@ -415,14 +416,14 @@ struct BlockValues_T
 	SpanResizeable_T<VALUE>		m_dValues;
 	int64_t						m_iOffPastValues = -1;
 
-	template <typename RD> void Load ( uint32_t uNumValues, SpanResizeable_T<uint32_t> & dBuf, RD & tReader, IntCodec_i * pCodec );
+	template <typename RD> void Load ( uint32_t uNumValues, SpanResizeable_T<uint32_t> & dBuf, RD & tReader, IntCodec_c * pCodec );
 	void		CopyFrom ( const BlockValues_T<VALUE> & dRhs );
 	uint64_t	CalcSize() const;
 };
 
 template <typename VALUE>
 template <typename RD>
-void BlockValues_T<VALUE>::Load ( uint32_t uNumValues, SpanResizeable_T<uint32_t> & dBuf, RD & tReader, IntCodec_i * pCodec )
+void BlockValues_T<VALUE>::Load ( uint32_t uNumValues, SpanResizeable_T<uint32_t> & dBuf, RD & tReader, IntCodec_c * pCodec )
 {
 	DecodeBlock ( m_dValues, uNumValues, pCodec, dBuf, tReader );
 	m_iOffPastValues = tReader.GetPos();
@@ -452,14 +453,14 @@ struct BlockData_t
 	SpanResizeable_T<uint32_t>	m_dCount;
 	int64_t						m_iMetaOffset = 0;
 
-	template <typename RD> void Load ( uint32_t uNumValues, uint32_t uVersion, bool bOnlyCount, SpanResizeable_T<uint32_t> & dBuf, RD & tReader, IntCodec_i * pCodec );
+	template <typename RD> void Load ( uint32_t uNumValues, uint32_t uVersion, bool bOnlyCount, SpanResizeable_T<uint32_t> & dBuf, RD & tReader, IntCodec_c * pCodec );
 	void		CopyFrom ( const BlockData_t & dRhs );
 	uint64_t	CalcSize() const;
 };
 
 
 template <typename RD>
-void BlockData_t::Load ( uint32_t uNumValues, uint32_t uVersion, bool bOnlyCount, SpanResizeable_T<uint32_t> & dBuf, RD & tReader, IntCodec_i * pCodec )
+void BlockData_t::Load ( uint32_t uNumValues, uint32_t uVersion, bool bOnlyCount, SpanResizeable_T<uint32_t> & dBuf, RD & tReader, IntCodec_c * pCodec )
 {
 	if ( !bOnlyCount )
 	{
@@ -506,7 +507,7 @@ template<typename RD>
 class ReaderTraits_T : public BlockReader_i
 {
 public:
-	ReaderTraits_T ( const ReaderFactory_c & tCtx, std::shared_ptr<IntCodec_i> & pCodec );
+	ReaderTraits_T ( const ReaderFactory_c & tCtx, std::shared_ptr<IntCodec_c> & pCodec );
 
 protected:
 	std::shared_ptr<RD> m_pReader { nullptr };
@@ -514,7 +515,7 @@ protected:
 
 	std::string					m_sAttr;
 	uint32_t					m_uVersion;
-	std::shared_ptr<IntCodec_i>	m_pCodec { nullptr };
+	std::shared_ptr<IntCodec_c>	m_pCodec { nullptr };
 	uint64_t					m_uBlockBaseOff = 0;
 	uint64_t					m_uBlocksCount = 0;
 	uint32_t					m_uTotalValues = 0;
@@ -537,7 +538,7 @@ protected:
 
 
 template<typename RD>
-ReaderTraits_T<RD>::ReaderTraits_T ( const ReaderFactory_c & tCtx, std::shared_ptr<IntCodec_i> & pCodec )
+ReaderTraits_T<RD>::ReaderTraits_T ( const ReaderFactory_c & tCtx, std::shared_ptr<IntCodec_c> & pCodec )
 	: m_pReader ( tCtx.MakeReader<RD> ( READER_BUFFER_SIZE ) )
 	, m_pOffsetReader ( tCtx.MakeReader<RD> ( READER_BUFFER_SIZE/2 ) )
 	, m_sAttr ( tCtx.m_tCol.m_sName )
@@ -751,7 +752,7 @@ class BlockReader_T : public ReaderTraits_T<RD>
 public:
 	using BASE = ReaderTraits_T<RD>;
 
-	BlockReader_T ( const ReaderFactory_c & tCtx, std::shared_ptr<IntCodec_i> & pCodec )
+	BlockReader_T ( const ReaderFactory_c & tCtx, std::shared_ptr<IntCodec_c> & pCodec )
 		: BASE ( tCtx, pCodec ), m_pBlockCache ( tCtx.m_pBlockCache ? static_cast<BlockCache_T<VALUE>*>(tCtx.m_pBlockCache) : nullptr )
 	{}
 
@@ -1107,7 +1108,7 @@ template<typename RD>
 class RangeReaderBase_T : public ReaderTraits_T<RD>
 {
 public:
-				RangeReaderBase_T ( const ReaderFactory_c & tCtx, std::shared_ptr<IntCodec_i> & pCodec );
+				RangeReaderBase_T ( const ReaderFactory_c & tCtx, std::shared_ptr<IntCodec_c> & pCodec );
 
 	void		CreateBlocksIterator ( const std::vector<BlockIter_t> & dIt, const Filter_t & tFilter, std::vector<BlockIterator_i *> & dRes ) override { assert ( 0 && "Requesting block iterators from range reader" ); }
 	void		CreateBlocksIterator ( const BlockIter_t & tIt, const Filter_t & tFilter, std::vector<BlockIterator_i *> & dRes ) override;
@@ -1152,7 +1153,7 @@ protected:
 
 
 template<typename RD>
-RangeReaderBase_T<RD>::RangeReaderBase_T ( const ReaderFactory_c & tCtx, std::shared_ptr<IntCodec_i> & pCodec )
+RangeReaderBase_T<RD>::RangeReaderBase_T ( const ReaderFactory_c & tCtx, std::shared_ptr<IntCodec_c> & pCodec )
  	: BASE ( tCtx, pCodec )
  	, m_pOffReader ( tCtx.MakeReader<RD>( OFF_READER_BUFFER_SIZE ) )
 {}
@@ -1367,7 +1368,7 @@ template<typename STORE_VALUE, typename DST_VALUE, typename RD = util::FileReade
 class RangeReader_T : public RangeReaderBase_T<RD>
 {
 public:
-	RangeReader_T ( const ReaderFactory_c & tCtx, std::shared_ptr<IntCodec_i> & pCodec );
+	RangeReader_T ( const ReaderFactory_c & tCtx, std::shared_ptr<IntCodec_c> & pCodec );
 
 private:
 	using BASE = RangeReaderBase_T<RD>;
@@ -1402,14 +1403,14 @@ private:
 };
 
 template<typename STORE_VALUE, typename DST_VALUE, typename RD>
-RangeReader_T<STORE_VALUE,DST_VALUE, RD>::RangeReader_T ( const ReaderFactory_c & tCtx, std::shared_ptr<IntCodec_i> & pCodec )
+RangeReader_T<STORE_VALUE,DST_VALUE, RD>::RangeReader_T ( const ReaderFactory_c & tCtx, std::shared_ptr<IntCodec_c> & pCodec )
 	: BASE ( tCtx, pCodec )
 {}
 
 /////////////////////////////////////////////////////////////////////
 
 template<typename RD>
-static BlockReader_i * NewBlockReader ( const ReaderFactory_c & tCtx, std::shared_ptr<IntCodec_i> & pCodec )
+static BlockReader_i * NewBlockReader ( const ReaderFactory_c & tCtx, std::shared_ptr<IntCodec_c> & pCodec )
 {
 	switch ( tCtx.m_tCol.m_eType )
 	{
@@ -1444,7 +1445,7 @@ BlockReader_i * ReaderFactory_c::CreateBlockReader()
 
 
 template<typename RD>
-static BlockReader_i * NewRangeReader ( const ReaderFactory_c & tCtx, std::shared_ptr<IntCodec_i> & pCodec )
+static BlockReader_i * NewRangeReader ( const ReaderFactory_c & tCtx, std::shared_ptr<IntCodec_c> & pCodec )
 {
 	switch ( tCtx.m_tCol.m_eType )
 	{
