@@ -22,6 +22,8 @@
 #include "util/util.h"
 #include "common/schema.h"
 
+#include <functional>
+
 namespace util
 {
 	class FileReader_c;
@@ -38,7 +40,12 @@ namespace common
 namespace SI
 {
 
-static const int LIB_VERSION = 20;
+// Return true to continue receiving detailed messages. Once false is returned,
+// subsequent nullptr calls report additional failures without their text.
+using ErrorReporter_fn = std::function<bool (const char*)>;
+using ProgressReporter_fn = std::function<void (const char*)>;
+
+static const int LIB_VERSION = 21;
 static const uint32_t STORAGE_VERSION = 9;
 
 struct IndexAttrInfo_t
@@ -87,6 +94,7 @@ class Builder_i;
 extern "C"
 {
 	DLLEXPORT SI::Index_i *		CreateSecondaryIndex ( const char * sFile, const SI::IndexSettings_t & tSettings, std::string & sError );
+	DLLEXPORT bool				CheckSecondaryIndex ( const std::string & sFilename, uint32_t uNumRows, SI::ErrorReporter_fn & fnError, SI::ProgressReporter_fn & fnProgress );
 
 	DLLEXPORT int				GetSecondaryLibVersion();
 	DLLEXPORT const char *		GetSecondaryLibVersionStr();
