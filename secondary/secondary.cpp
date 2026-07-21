@@ -93,7 +93,7 @@ public:
 	void		ClearCache() override;
 	const std::string & GetFilename() const override;
 	void		UpdateFilename ( const std::string & sFile ) override;
-	bool		Check ( uint32_t uNumRows, Reporter_fn & fnError, Reporter_fn & fnProgress ) const;
+	bool		Check ( uint32_t uNumRows, ErrorReporter_fn & fnError, ProgressReporter_fn & fnProgress ) const;
 
 private:
 	Settings_t	m_tSettings;
@@ -129,10 +129,47 @@ private:
 	const ColumnInfo_t * GetAttr ( const Filter_t & tFilter, std::string & sError ) const;
 };
 
+
+static bool ReadPackedVectorChecked ( std::vector<uint64_t> & dValues, FileReader_c & tReader, uint32_t uExpected, const char * szName, std::string & sError )
+{
+	uint32_t uCount = tReader.Unpack_uint32();
+	if ( tReader.IsError() )
+	{
+		sError = tReader.GetError();
+		return false;
+	}
+
+	if ( uCount!=uExpected )
+	{
+		sError = FormatStr ( "Invalid secondary index '%s': %s vector has %u entries, expected %u", tReader.GetFilename().c_str(), szName, uCount, uExpected );
+		return false;
+	}
+
+	dValues.resize(uCount);
+	for ( uint64_t & uValue : dValues )
+		uValue = tReader.Unpack_uint64();
+
+	if ( tReader.IsError() )
+	{
+		sError = tReader.GetError();
+		return false;
+	}
+
+	return true;
+}
+
+
 bool SecondaryIndex_c::Setup ( const std::string & sFile, std::string & sError )
 {
 	if ( !m_tReader.Open ( sFile, sError ) )
 		return false;
+
+	int64_t iFileSize = m_tReader.GetFileSize();
+	if ( iFileSize<0 )
+	{
+		sError = m_tReader.GetError();
+		return false;
+	}
 
 	m_uVersion = m_tReader.Read_uint32();
 
@@ -145,22 +182,49 @@ bool SecondaryIndex_c::Setup ( const std::string & sFile, std::string & sError )
 		
 	m_sFileName = sFile;
 	m_uMetaOff = m_tReader.Read_uint64();
+	if ( m_tReader.IsError() )
+	{
+		sError = m_tReader.GetError();
+		return false;
+	}
+
+	if ( m_uMetaOff<sizeof(uint32_t)+sizeof(uint64_t) || m_uMetaOff>=(uint64_t)iFileSize )
+	{
+		sError = FormatStr ( "Invalid secondary index '%s': metadata offset %llu is outside file size %lld", sFile.c_str(), (unsigned long long)m_uMetaOff, (long long)iFileSize );
+		return false;
+	}
 		
 	m_tReader.Seek ( m_uMetaOff );
 
 	// raw non packed data first
 	m_uNextMetaOff = m_tReader.Read_uint64();
-	int iAttrsCount = m_tReader.Read_uint32();
+	uint32_t uAttrsCount = m_tReader.Read_uint32();
+	if ( m_tReader.IsError() || uAttrsCount>(uint64_t)iFileSize-m_tReader.GetPos() || uAttrsCount>(uint32_t)INT_MAX )
+	{
+		sError = m_tReader.IsError() ? m_tReader.GetError() : FormatStr ( "Invalid secondary index '%s': attribute count %u is out of bounds", sFile.c_str(), uAttrsCount );
+		return false;
+	}
+	int iAttrsCount = (int)uAttrsCount;
 
 	BitVec_c dAttrsEnabled ( iAttrsCount );
 	ReadVectorData ( dAttrsEnabled.GetData(), m_tReader );
 
 	m_tSettings.Load ( m_tReader, m_uVersion );
 	m_uValuesPerBlock = m_tReader.Read_uint32();
+	if ( m_tReader.IsError() || m_uValuesPerBlock<2 || ( m_uValuesPerBlock & ( m_uValuesPerBlock-1 ) ) )
+	{
+		sError = m_tReader.IsError() ? m_tReader.GetError() : FormatStr ( "Invalid secondary index '%s': values-per-block %u is not a power of two", sFile.c_str(), m_uValuesPerBlock );
+		return false;
+	}
 	m_uValuesPerBlockShift = Log2(m_uValuesPerBlock)-1;
 
 	if ( m_uVersion>=8 )
 		m_uRowidsPerBlock = m_tReader.Read_uint32();
+	if ( m_tReader.IsError() || !m_uRowidsPerBlock )
+	{
+		sError = m_tReader.IsError() ? m_tReader.GetError() : FormatStr ( "Invalid secondary index '%s': zero rowids-per-block", sFile.c_str() );
+		return false;
+	}
 
 	m_dAttrs.resize ( iAttrsCount );
 	for ( int i=0; i<iAttrsCount; i++ )
@@ -170,40 +234,11 @@ bool SecondaryIndex_c::Setup ( const std::string & sFile, std::string & sError )
 		tAttr.m_bEnabled = dAttrsEnabled.BitGet(i);
 	}
 
-	ReadVectorPacked ( m_dBlockStartOff, m_tReader );
+	if ( !ReadPackedVectorChecked ( m_dBlockStartOff, m_tReader, uAttrsCount, "block-offset", sError ) )
+		return false;
 	ComputeInverseDeltas ( m_dBlockStartOff, true );
-	ReadVectorPacked ( m_dBlocksCount, m_tReader );
-
-	if ( m_tReader.IsError() )
-	{
-		sError = m_tReader.GetError();
+	if ( !ReadPackedVectorChecked ( m_dBlocksCount, m_tReader, uAttrsCount, "blocks-count", sError ) )
 		return false;
-	}
-
-	if ( m_dBlocksCount.size()!=m_dAttrs.size() )
-	{
-		sError = FormatStr ( "Invalid secondary index '%s': blocks-count vector has %d entries, expected %d", sFile.c_str(), (int)m_dBlocksCount.size(), (int)m_dAttrs.size() );
-		return false;
-	}
-
-	int64_t iFileSize = m_tReader.GetFileSize();
-	if ( m_dBlockStartOff.size() && m_dBlockStartOff.back()>(uint64_t)iFileSize )
-	{
-		sError = FormatStr ( "Invalid secondary index '%s': block offset %llu is past file size %lld", sFile.c_str(), (unsigned long long)m_dBlockStartOff.back(), (long long)iFileSize );
-		return false;
-	}
-
-	if ( m_uValuesPerBlock==0 || m_uRowidsPerBlock==0 )
-	{
-		sError = FormatStr ( "Invalid secondary index '%s': zero block size", sFile.c_str() );
-		return false;
-	}
-
-	if ( m_uMaxBlockCacheSize )
-	{
-		for ( size_t i = 0; i < m_dAttrs.size(); i++ )
-			m_dBlockCaches.push_back ( std::unique_ptr<BlockCache_i> ( CreateBlockCache ( m_dAttrs[i].m_eType, m_dBlocksCount[i], m_uMaxBlockCacheSize ) ) );
-	}
 
 	m_dIdx.resize ( m_dAttrs.size() );
 	for ( int i=0; i<m_dIdx.size(); i++ )
@@ -244,7 +279,7 @@ bool SecondaryIndex_c::Setup ( const std::string & sFile, std::string & sError )
 			return false;
 		}
 
-		if ( iPgmLen<0 || m_tReader.GetPos()+iPgmLen>iFileSize )
+		if ( iPgmLen<0 || iPgmLen>iFileSize-m_tReader.GetPos() )
 		{
 			sError = FormatStr ( "Out of bounds PGM length %lld for attribute '%s'(%d)", (long long)iPgmLen, tCol.m_sName.c_str(), i );
 			return false;
@@ -269,6 +304,40 @@ bool SecondaryIndex_c::Setup ( const std::string & sFile, std::string & sError )
 	{
 		sError = m_tReader.GetError();
 		return false;
+	}
+
+	if ( m_iBlocksBase<0 || m_iBlocksBase>iFileSize )
+	{
+		sError = FormatStr ( "Invalid secondary index '%s': block-offset base %lld is past file size %lld", sFile.c_str(), (long long)m_iBlocksBase, (long long)iFileSize );
+		return false;
+	}
+
+	uint64_t uOffsetTablesSize = iFileSize-m_iBlocksBase;
+	uint64_t uExpectedTableStart = 0;
+	for ( int i = 0; i < (int)m_dAttrs.size(); i++ )
+	{
+		uint64_t uTableStart = m_dBlockStartOff[i];
+		uint64_t uBlocksCount = m_dBlocksCount[i];
+		uint64_t uExpectedBlocks = m_dAttrs[i].m_uCountDistinct ? 1 + ( m_dAttrs[i].m_uCountDistinct - 1 ) / m_uValuesPerBlock : 0;
+		if ( uBlocksCount!=uExpectedBlocks )
+		{
+			sError = FormatStr ( "Invalid secondary index '%s': attribute '%s'(%d) has %llu blocks, expected %llu for %u distinct values", sFile.c_str(), m_dAttrs[i].m_sName.c_str(), i, (unsigned long long)uBlocksCount, (unsigned long long)uExpectedBlocks, m_dAttrs[i].m_uCountDistinct );
+			return false;
+		}
+
+		if ( uTableStart!=uExpectedTableStart || uTableStart>uOffsetTablesSize || uBlocksCount>(uOffsetTablesSize-uTableStart)/sizeof(uint64_t) )
+		{
+			sError = FormatStr ( "Invalid secondary index '%s': block-offset table for attribute '%s'(%d) with %llu entries at %llu is not a contiguous in-file table", sFile.c_str(), m_dAttrs[i].m_sName.c_str(), i, (unsigned long long)uBlocksCount, (unsigned long long)uTableStart );
+			return false;
+		}
+
+		uExpectedTableStart = uTableStart + uBlocksCount*sizeof(uint64_t);
+	}
+
+	if ( m_uMaxBlockCacheSize )
+	{
+		for ( size_t i = 0; i < m_dAttrs.size(); i++ )
+			m_dBlockCaches.push_back ( std::unique_ptr<BlockCache_i> ( CreateBlockCache ( m_dAttrs[i].m_eType, m_dBlocksCount[i], m_uMaxBlockCacheSize ) ) );
 	}
 
 	return true;
@@ -743,64 +812,176 @@ bool SecondaryIndex_c::CalcCount ( uint32_t & uCount, const common::Filter_t & t
 }
 
 
-bool SecondaryIndex_c::Check ( uint32_t uNumRows, Reporter_fn & fnError, Reporter_fn & fnProgress ) const
+struct SecondaryBlockPos_t
 {
+	int			m_iAttr = 0;
+	uint64_t	m_uBlock = 0;
+	uint64_t	m_uOffset = 0;
+};
+
+
+static bool ReadPackedUint32Bounded ( FileReader_c & tReader, uint64_t uEnd, uint32_t & uValue, std::string & sError )
+{
+	uValue = 0;
+	for ( int i = 0; i < 5; i++ )
+	{
+		if ( (uint64_t)tReader.GetPos()>=uEnd )
+		{
+			sError = "packed vector length crosses the block boundary";
+			return false;
+		}
+
+		uint8_t uByte = tReader.Read_uint8();
+		if ( tReader.IsError() )
+		{
+			sError = tReader.GetError();
+			return false;
+		}
+
+		if ( uValue>(UINT32_MAX>>7) )
+		{
+			sError = "packed vector length overflows uint32";
+			return false;
+		}
+
+		uValue = ( uValue << 7 ) | ( uByte & 0x7f );
+		if ( !( uByte & 0x80 ) )
+			return true;
+	}
+
+	sError = "packed vector length is overlong";
+	return false;
+}
+
+
+static bool CheckBlockLayout ( FileReader_c & tReader, uint64_t uStart, uint64_t uEnd, uint32_t uVersion, uint32_t uNumValues, bool bWideValues, const std::string & sAttr, uint64_t uBlock, std::string & sError )
+{
+	static const char * dVectorNames[] = { "values", "types", "minimum rowids", "maximum rowids", "row starts", "row counts" };
+	const int iVectors = uVersion>6 ? 6 : 5;
+
+	tReader.Seek(uStart);
+	for ( int i = 0; i < iVectors; i++ )
+	{
+		uint32_t uWords = 0;
+		std::string sReason;
+		if ( !ReadPackedUint32Bounded ( tReader, uEnd, uWords, sReason ) )
+		{
+			sError = FormatStr ( "Invalid secondary index block %llu for attribute '%s': unable to read %s vector: %s", (unsigned long long)uBlock, sAttr.c_str(), dVectorNames[i], sReason.c_str() );
+			return false;
+		}
+
+		uint64_t uMaxWords = (uint64_t)uNumValues * ( i==0 && bWideValues ? 2 : 1 ) + 1024;
+		uint64_t uLeft = uEnd-(uint64_t)tReader.GetPos();
+		if ( !uWords || uWords>uMaxWords || uWords>uLeft/sizeof(uint32_t) )
+		{
+			sError = FormatStr ( "Invalid secondary index block %llu for attribute '%s': %s vector has %u words with %llu bytes left in the block", (unsigned long long)uBlock, sAttr.c_str(), dVectorNames[i], uWords, (unsigned long long)uLeft );
+			return false;
+		}
+
+		tReader.Seek ( tReader.GetPos() + (uint64_t)uWords*sizeof(uint32_t) );
+	}
+
+	return true;
+}
+
+
+bool SecondaryIndex_c::Check ( uint32_t, ErrorReporter_fn & fnError, ProgressReporter_fn & fnProgress ) const
+{
+	FileReader_c tReader;
+	std::string sError;
 	bool bOk = true;
+	bool bReportDetails = true;
+	auto ReportError = [&] ( const std::string & sMessage )
+	{
+		bOk = false;
+		if ( !fnError )
+			return;
+
+		if ( bReportDetails )
+			bReportDetails = fnError ( sMessage.c_str() );
+		else
+			fnError ( nullptr );
+	};
+
+	if ( !tReader.Open ( m_sFileName, sError ) )
+	{
+		ReportError ( sError );
+		return false;
+	}
+
+	int64_t iFileSize = tReader.GetFileSize();
+	if ( iFileSize<0 )
+	{
+		ReportError ( tReader.GetError() );
+		return false;
+	}
+
+	FileReader_c tOffsetReader;
+	if ( !tOffsetReader.Open ( m_sFileName, sError ) )
+	{
+		ReportError ( sError );
+		return false;
+	}
+
+	SecondaryBlockPos_t tPreviousBlock;
+	bool bHavePreviousBlock = false;
+	auto CheckPreviousBlock = [&] ( uint64_t uEnd )
+	{
+		const ColumnInfo_t & tAttr = m_dAttrs[tPreviousBlock.m_iAttr];
+		uint32_t uNumValues = tPreviousBlock.m_uBlock+1<m_dBlocksCount[tPreviousBlock.m_iAttr]
+			? m_uValuesPerBlock
+			: ( tAttr.m_uCountDistinct % m_uValuesPerBlock ? tAttr.m_uCountDistinct % m_uValuesPerBlock : m_uValuesPerBlock );
+		bool bWideValues = tAttr.m_eType==AttrType_e::STRING || tAttr.m_eType==AttrType_e::INT64 || tAttr.m_eType==AttrType_e::INT64SET;
+		std::string sBlockError;
+		if ( CheckBlockLayout ( tReader, tPreviousBlock.m_uOffset, uEnd, m_uVersion, uNumValues, bWideValues, tAttr.m_sName, tPreviousBlock.m_uBlock, sBlockError ) )
+			return true;
+
+		// The block boundary comes from a separately validated offset table, so
+		// later blocks remain independently checkable. The indextool reporter
+		// limits printed diagnostics while continuing to count them.
+		ReportError ( sBlockError );
+		return false;
+	};
+
 	for ( int i = 0; i < (int)m_dAttrs.size(); i++ )
 	{
-		const auto & tAttr = m_dAttrs[i];
-		if ( !tAttr.m_bEnabled || tAttr.m_eType==AttrType_e::NONE )
-			continue;
-
+		const ColumnInfo_t & tAttr = m_dAttrs[i];
 		if ( fnProgress )
 			fnProgress ( FormatStr ( "checking secondary index attribute %s", tAttr.m_sName.c_str() ).c_str() );
 
-		Filter_t tFilter;
-		tFilter.m_sName = tAttr.m_sName;
-		tFilter.m_eType = FilterType_e::NOTNULL;
-		tFilter.m_bLeftUnbounded = true;
-		tFilter.m_bRightUnbounded = true;
-
-		IteratorSettings_t tSettings;
-		tSettings.m_uMaxValues = uNumRows;
-		tSettings.m_iRsetSize = uNumRows;
-		tSettings.m_iCutoff = -1;
-
-		std::vector<BlockIterator_i *> dIterators;
-		std::string sWarning, sError;
-		if ( !CreateIterators ( dIterators, tFilter, tSettings, sWarning, sError ) )
+		uint64_t uTablePos = m_iBlocksBase + m_dBlockStartOff[i];
+		if ( uTablePos>(uint64_t)iFileSize || m_dBlocksCount[i]>((uint64_t)iFileSize-uTablePos)/sizeof(uint64_t) )
 		{
-			if ( fnError )
-				fnError ( FormatStr ( "secondary index attribute '%s': %s", tAttr.m_sName.c_str(), sError.c_str() ).c_str() );
-			bOk = false;
-			continue;
+			ReportError ( FormatStr ( "Invalid secondary index '%s': block-offset table for attribute '%s' exceeds file size %lld", m_sFileName.c_str(), tAttr.m_sName.c_str(), (long long)iFileSize ) );
+			return false;
 		}
 
-		for ( auto * pIterator : dIterators )
+		tOffsetReader.Seek(uTablePos);
+		for ( uint64_t uBlock = 0; uBlock < m_dBlocksCount[i]; uBlock++ )
 		{
-			std::unique_ptr<BlockIterator_i> pGuard ( pIterator );
-			Span_T<uint32_t> dRowidBlock;
-			while ( pIterator->GetNextRowIdBlock ( dRowidBlock ) )
+			uint64_t uOffset = tOffsetReader.Read_uint64();
+			if ( tOffsetReader.IsError() )
 			{
-				for ( uint32_t uRowid : dRowidBlock )
-				{
-					if ( uRowid>=uNumRows )
-					{
-						if ( fnError )
-							fnError ( FormatStr ( "secondary index attribute '%s': rowid %u out of bounds %u", tAttr.m_sName.c_str(), uRowid, uNumRows ).c_str() );
-						bOk = false;
-					}
-				}
+				ReportError ( tOffsetReader.GetError() );
+				return false;
 			}
-		}
 
-		if ( m_tReader.IsError() )
-		{
-			if ( fnError )
-				fnError ( FormatStr ( "secondary index attribute '%s': %s", tAttr.m_sName.c_str(), m_tReader.GetError().c_str() ).c_str() );
-			bOk = false;
+			if ( uOffset<sizeof(uint32_t)+sizeof(uint64_t) || uOffset>=m_uMetaOff || ( bHavePreviousBlock && uOffset<=tPreviousBlock.m_uOffset ) )
+			{
+				ReportError ( FormatStr ( "Invalid secondary index '%s': block %llu for attribute '%s' has invalid offset %llu", m_sFileName.c_str(), (unsigned long long)uBlock, tAttr.m_sName.c_str(), (unsigned long long)uOffset ) );
+				return false;
+			}
+
+			if ( bHavePreviousBlock && !CheckPreviousBlock(uOffset) && tReader.IsError() )
+				return false;
+
+			tPreviousBlock = { i, uBlock, uOffset };
+			bHavePreviousBlock = true;
 		}
 	}
+
+	if ( bHavePreviousBlock && !CheckPreviousBlock(m_uMetaOff) && tReader.IsError() )
+		return false;
 
 	return bOk;
 }
@@ -851,7 +1032,7 @@ SI::Index_i * CreateSecondaryIndex ( const char * szFile, const SI::IndexSetting
 	return pIdx.release();
 }
 
-void CheckSecondaryIndex ( const std::string & sFilename, uint32_t uNumRows, SI::Reporter_fn & fnError, SI::Reporter_fn & fnProgress )
+bool CheckSecondaryIndex ( const std::string & sFilename, uint32_t uNumRows, SI::ErrorReporter_fn & fnError, SI::ProgressReporter_fn & fnProgress )
 {
 	SI::IndexSettings_t tSettings;
 	SI::SecondaryIndex_c tIndex(tSettings);
@@ -860,9 +1041,8 @@ void CheckSecondaryIndex ( const std::string & sFilename, uint32_t uNumRows, SI:
 	{
 		if ( fnError )
 			fnError ( sError.c_str() );
-		return;
+		return false;
 	}
 
-	tIndex.Check ( uNumRows, fnError, fnProgress );
+	return tIndex.Check ( uNumRows, fnError, fnProgress );
 }
-

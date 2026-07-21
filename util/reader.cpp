@@ -143,6 +143,7 @@ void FileReader_c::Read ( uint8_t * pData, size_t tLen )
 
 	if ( m_tPtr+tLen > m_tUsed )
 	{
+		m_tPtr = m_tUsed;
 		m_bError = true;
 		m_sError = FormatStr ( "unexpected EOF in '%s' at offset %lld", m_sFile.c_str(), (long long)GetPos() );
 		return;
@@ -176,6 +177,7 @@ bool FileReader_c::ReadToBuffer()
 	int iRead = PreadWrapper ( m_iFD, m_pData.get(), m_tSize, iNewFilePos );
 	if ( iRead<0 )
 	{
+		m_iFilePos = iNewFilePos;
 		m_tPtr = m_tUsed = 0;
 		m_bError = true;
 		m_sError = FormatStr ( "read error in '%s': %d (%s)", m_sFile.c_str(), errno, strerror(errno) );
@@ -184,6 +186,7 @@ bool FileReader_c::ReadToBuffer()
 
 	if ( iRead==0 )
 	{
+		m_iFilePos = iNewFilePos;
 		m_tPtr = m_tUsed = 0;
 		m_bError = true;
 		m_sError = FormatStr ( "unexpected EOF in '%s' at offset %lld", m_sFile.c_str(), (long long)iNewFilePos );
