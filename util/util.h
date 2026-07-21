@@ -133,6 +133,18 @@ public:
 		BASE::m_tLength = tLength;
 	}
 
+	FORCE_INLINE void resize_with_padding ( size_t tLength, size_t tTail )
+	{
+		if ( tLength+tTail>m_tMaxLength )
+		{
+			m_tMaxLength = tLength+tTail;
+			m_dData.resize ( m_tMaxLength );
+			BASE::m_pData = m_dData.data();
+		}
+
+		BASE::m_tLength = tLength;
+	}
+
 	size_t capacity() const { return m_tMaxLength; }
 
 private:
