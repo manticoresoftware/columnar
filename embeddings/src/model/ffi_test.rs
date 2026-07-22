@@ -75,8 +75,13 @@ mod tests {
                             model_ptr as *mut std::ffi::c_void,
                         )
                     };
-                    let vec_result =
-                        TextModelWrapper::make_vect_embeddings(&wrapper, items.as_ptr(), 1, 0);
+                    let vec_result = TextModelWrapper::make_vect_embeddings(
+                        &wrapper,
+                        items.as_ptr(),
+                        1,
+                        std::ptr::null(),
+                        0,
+                    );
                     assert!(vec_result.error.is_null());
                     assert_eq!(vec_result.len, 1);
                     TextModelWrapper::free_vec_result(vec_result);
@@ -131,6 +136,9 @@ mod tests {
             ptr: ptr::null(),
             len: 0,
             cap: 0,
+            row_offsets: ptr::null(),
+            rows: 0,
+            offsets_cap: 0,
         };
 
         assert!(result.error.is_null());
@@ -339,6 +347,9 @@ mod tests {
             ptr: ptr::null(),
             len: 0,
             cap: 0,
+            row_offsets: ptr::null(),
+            rows: 0,
+            offsets_cap: 0,
         };
 
         // Verify error is set
@@ -365,6 +376,9 @@ mod tests {
             ptr: ptr::null(),
             len: 0,
             cap: 0,
+            row_offsets: ptr::null(),
+            rows: 0,
+            offsets_cap: 0,
         };
 
         // Should not crash with null pointers
@@ -394,11 +408,14 @@ mod tests {
             mem::size_of::<*const c_char>() + mem::size_of::<usize>()
         );
 
-        // FloatVecResult should be pointer + two usizes + error pointer
+        // FloatVecResult: error ptr + embeddings ptr + len + cap
+        //   + row_offsets ptr + rows + offsets_cap
         assert_eq!(
             mem::size_of::<FloatVecResult>(),
             mem::size_of::<*mut c_char>()
                 + mem::size_of::<*const FloatVec>()
+                + mem::size_of::<usize>() * 2
+                + mem::size_of::<*const usize>()
                 + mem::size_of::<usize>() * 2
         );
     }
@@ -500,5 +517,162 @@ mod tests {
     #[test]
     fn test_concurrent_qwen_embeddings_via_ffi() {
         run_concurrent_ffi_embeddings("Qwen/Qwen3-Embedding-0.6B");
+    }
+
+    /// End-to-end on the cached MiniLM model: all five strategies. truncate/mean
+    /// return one vector/doc; fixed/recursive/sentence return N vectors/doc
+    /// grouped by row_offsets. Verifies offsets, normalization, and clean frees.
+    #[test]
+    fn test_all_strategies_local_model() {
+        let model_name = to_c_string("sentence-transformers/all-MiniLM-L6-v2");
+        let empty = to_c_string("");
+        let loaded = TextModelWrapper::load_model(
+            model_name.as_ptr(),
+            model_name.as_bytes().len(),
+            empty.as_ptr(),
+            empty.as_bytes().len(),
+            empty.as_ptr(),
+            empty.as_bytes().len(),
+            empty.as_ptr(),
+            empty.as_bytes().len(),
+            0,
+            false,
+        );
+        if loaded.model.is_null() {
+            TextModelWrapper::free_model_result(loaded);
+            eprintln!("skipping: all-MiniLM-L6-v2 not available locally");
+            return;
+        }
+        let wrapper =
+            unsafe { std::mem::transmute::<*mut std::ffi::c_void, TextModelWrapper>(loaded.model) };
+
+        // Long enough to exceed the model's input limit, so truncate drops the
+        // tail while mean covers the whole document via several chunks.
+        let long = "Vector search turns text into embeddings for retrieval. ".repeat(100);
+        let items = [create_string_item(&long)];
+
+        let first_vec = |res: &FloatVecResult| -> Vec<f32> {
+            assert!(res.error.is_null());
+            assert_eq!(res.len, 1, "exactly one vector per input document");
+            assert_eq!(res.rows, 1);
+            assert!(!res.row_offsets.is_null());
+            unsafe {
+                let offs = std::slice::from_raw_parts(res.row_offsets, res.rows + 1);
+                assert_eq!(offs, &[0usize, 1usize], "trivial offsets for 1 vector/doc");
+                let fv = &*res.ptr;
+                std::slice::from_raw_parts(fv.ptr, fv.len).to_vec()
+            }
+        };
+
+        // truncate (null settings)
+        let trunc =
+            TextModelWrapper::make_vect_embeddings(&wrapper, items.as_ptr(), 1, ptr::null(), 0);
+        let trunc_vec = first_vec(&trunc);
+
+        // mean: small chunk size forces many chunks → embed each → average
+        let settings = crate::chunk::ChunkSettings {
+            strategy: crate::chunk::STRATEGY_MEAN,
+            max_tokens: 32,
+            overlap_tokens: 0,
+            max_chunks: 0,
+        };
+        let mean =
+            TextModelWrapper::make_vect_embeddings(&wrapper, items.as_ptr(), 1, &settings, 0);
+        let mean_vec = first_vec(&mean);
+
+        assert_eq!(trunc_vec.len(), mean_vec.len(), "same embedding dimension");
+        let diff: f32 = trunc_vec
+            .iter()
+            .zip(&mean_vec)
+            .map(|(a, b)| (a - b).abs())
+            .sum();
+        assert!(
+            diff > 1e-3,
+            "mean must differ from truncate on a long document"
+        );
+        let norm: f32 = mean_vec.iter().map(|x| x * x).sum::<f32>().sqrt();
+        assert!(
+            (norm - 1.0).abs() < 1e-2,
+            "mean vector must be L2-normalized"
+        );
+
+        // multi-vector strategies: fixed/recursive/sentence keep every chunk
+        // vector → N vectors/doc, grouped by row_offsets [0, N].
+        for strat in [
+            crate::chunk::STRATEGY_FIXED,
+            crate::chunk::STRATEGY_RECURSIVE,
+            crate::chunk::STRATEGY_SENTENCE,
+        ] {
+            let s = crate::chunk::ChunkSettings {
+                strategy: strat,
+                max_tokens: 32,
+                overlap_tokens: 0,
+                max_chunks: 0,
+            };
+            let res = TextModelWrapper::make_vect_embeddings(&wrapper, items.as_ptr(), 1, &s, 0);
+            assert!(res.error.is_null(), "strategy {strat} errored");
+            assert_eq!(res.rows, 1, "one document");
+            assert!(
+                res.len > 1,
+                "strategy {strat} must emit multiple chunk vectors, got {}",
+                res.len
+            );
+            unsafe {
+                let offs = std::slice::from_raw_parts(res.row_offsets, res.rows + 1);
+                assert_eq!(offs[0], 0);
+                assert_eq!(offs[1], res.len, "row 0 owns all {} chunk vectors", res.len);
+                let fvs = std::slice::from_raw_parts(res.ptr, res.len);
+                for fv in fvs {
+                    assert_eq!(fv.len, trunc_vec.len(), "chunk vector dimension");
+                    let v = std::slice::from_raw_parts(fv.ptr, fv.len);
+                    let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+                    assert!((norm - 1.0).abs() < 1e-2, "chunk vector must be normalized");
+                }
+            }
+            TextModelWrapper::free_vec_result(res);
+        }
+
+        // multi-document batch: row_offsets must group N-per-doc correctly, and
+        // overlap_tokens > 0 must still produce valid output. doc A is long
+        // (many chunks), doc B is short (one chunk).
+        let short = "One short sentence.";
+        let batch = [create_string_item(&long), create_string_item(short)];
+        let s = crate::chunk::ChunkSettings {
+            strategy: crate::chunk::STRATEGY_FIXED,
+            max_tokens: 32,
+            overlap_tokens: 4,
+            max_chunks: 0,
+        };
+        let res = TextModelWrapper::make_vect_embeddings(&wrapper, batch.as_ptr(), 2, &s, 0);
+        assert!(res.error.is_null());
+        assert_eq!(res.rows, 2, "two documents");
+        unsafe {
+            let offs = std::slice::from_raw_parts(res.row_offsets, res.rows + 1);
+            assert_eq!(offs[0], 0);
+            assert_eq!(offs[2], res.len, "last offset == total vectors");
+            assert!(offs[1] > 1, "doc A (long) has multiple chunks");
+            assert_eq!(offs[2] - offs[1], 1, "doc B (short) has exactly one chunk");
+        }
+        TextModelWrapper::free_vec_result(res);
+
+        // max_chunks cap: the long doc is capped to ≤ 3 vectors (tail merged).
+        let capped = crate::chunk::ChunkSettings {
+            strategy: crate::chunk::STRATEGY_FIXED,
+            max_tokens: 32,
+            overlap_tokens: 0,
+            max_chunks: 3,
+        };
+        let res = TextModelWrapper::make_vect_embeddings(&wrapper, items.as_ptr(), 1, &capped, 0);
+        assert!(res.error.is_null());
+        assert!(
+            (1..=3).contains(&res.len),
+            "max_chunks=3 caps to ≤3 vectors, got {}",
+            res.len
+        );
+        TextModelWrapper::free_vec_result(res);
+
+        TextModelWrapper::free_vec_result(trunc);
+        TextModelWrapper::free_vec_result(mean);
+        TextModelWrapper::free_model_result(loaded);
     }
 }
