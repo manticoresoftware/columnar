@@ -17,6 +17,7 @@
 #include "codec.h"
 
 #include <utility>
+#include <cstring>
 
 #if _WIN32
 	#pragma warning ( push )
@@ -132,6 +133,9 @@ FastPForLib::IntegerCODEC * CreateFastPFORCodec ( const std::string & sName )
 class Int32FastPFORCodec_c
 {
 public:
+	// SIMD FastPFOR uses aligned loads and encodes the encode-time buffer alignment into the stream
+	static constexpr bool UNALIGNED_OK = false;
+
 		Int32FastPFORCodec_c ( const std::string & sCodec32 ) : m_pCodec32 ( CreateFastPFORCodec(sCodec32) ) {}
 
 	FORCE_INLINE void	Encode ( const util::Span_T<uint32_t> & dUncompressed, std::vector<uint32_t> & dCompressed )			{ util::Encode ( dUncompressed, dCompressed, *m_pCodec32 ); }
@@ -163,6 +167,9 @@ void Int32FastPFORCodec_c::DecodeDelta ( const util::Span_T<uint32_t> & dCompres
 class Int64FastPFORCodec_c
 {
 public:
+	// SIMD FastPFOR uses aligned loads and encodes the encode-time buffer alignment into the stream
+	static constexpr bool UNALIGNED_OK = false;
+
 		Int64FastPFORCodec_c ( const std::string & sCodec64 )  : m_pCodec64 ( CreateFastPFORCodec(sCodec64) ) {}
 
 	FORCE_INLINE void	Encode ( const util::Span_T<uint64_t> & dUncompressed, std::vector<uint32_t> & dCompressed )			{ util::Encode ( dUncompressed, dCompressed, *m_pCodec64 ); }
@@ -190,9 +197,9 @@ void Int64FastPFORCodec_c::DecodeDelta ( const util::Span_T<uint32_t> & dCompres
 
 //////////////////////////////////////////////////////////////////////////
 
-// StreamVByte decoders over-read past the end of the compressed input; callers guarantee the
-// slack by feeding buffers padded via SpanResizeable_T::resize_with_padding ( ..., SVB_PADDING_WORDS ),
-// so the decoders can run in place with no per-call copy.
+// StreamVByte decoders over-read past the end of the compressed input; callers guarantee the slack
+// via util::ReadCompressedSpan(), so the decoders below always run in place with no per-call copy.
+// Keep our published slack in sync with the library's.
 static_assert ( util::SVB_PADDING_BYTES>=STREAMVBYTE_PADDING, "SVB_PADDING_BYTES must cover STREAMVBYTE_PADDING" );
 
 //////////////////////////////////////////////////////////////////////////
@@ -200,6 +207,9 @@ static_assert ( util::SVB_PADDING_BYTES>=STREAMVBYTE_PADDING, "SVB_PADDING_BYTES
 class Int32SVBCodec_c
 {
 public:
+	// StreamVByte is byte-oriented and uses unaligned SIMD loads throughout
+	static constexpr bool UNALIGNED_OK = true;
+
 	Int32SVBCodec_c ( const std::string & sCodec )  {}
 
 	FORCE_INLINE void Encode ( const util::Span_T<uint32_t> & dUncompressed, std::vector<uint32_t> & dCompressed )
@@ -227,6 +237,10 @@ public:
 class Int64SVBCodec_c
 {
 public:
+	// StreamVByte is byte-oriented and uses unaligned SIMD loads throughout; the stream header is
+	// read via memcpy in DecodeAndMerge, so an unaligned base is fine
+	static constexpr bool UNALIGNED_OK = true;
+
 	Int64SVBCodec_c ( const std::string & sCodec ) {}
 
 	FORCE_INLINE void Encode ( const util::Span_T<uint64_t> & dUncompressed, std::vector<uint32_t> & dCompressed )				{ SplitAndEncode ( dUncompressed, dCompressed ); }
@@ -312,7 +326,9 @@ void Int64SVBCodec_c::DecodeAndMerge ( const util::Span_T<uint32_t> & dCompresse
 {
 	auto uNumValues = dDecompressed.size();
 	const uint8_t * pIn = (const uint8_t*)dCompressed.data();
-	uint32_t uHeader = *(const uint32_t*)pIn;
+
+	uint32_t uHeader;
+	memcpy ( &uHeader, pIn, sizeof(uHeader) );
 
 	if ( uHeader & LO_ONLY_FLAG )
 	{
@@ -342,7 +358,7 @@ void Int64SVBCodec_c::DecodeAndMerge ( const util::Span_T<uint32_t> & dCompresse
 //////////////////////////////////////////////////////////////////////////
 
 template<typename CODEC32, typename CODEC64>
-class IntCodec_T : public IntCodec_i, public CODEC32, public CODEC64
+class IntCodec_T : public IntCodec_c, public CODEC32, public CODEC64
 {
 public:
 			IntCodec_T ( const std::string & sCodec32, const std::string & szCodec64 );
@@ -364,7 +380,10 @@ template<typename CODEC32, typename CODEC64>
 IntCodec_T<CODEC32,CODEC64>::IntCodec_T( const std::string & sCodec32, const std::string & sCodec64 )
 	: CODEC32(sCodec32)
 	, CODEC64(sCodec64)
-{}
+{
+	// conservative: a mixed config (e.g. svb32 + fastpfor64) disables zero-copy for both widths
+	m_bCanDecodeUnaligned = CODEC32::UNALIGNED_OK && CODEC64::UNALIGNED_OK;
+}
 
 //////////////////////////////////////////////////////////////////////////
 
@@ -417,15 +436,15 @@ void BitUnpack ( const util::Span_T<uint32_t> & dPacked, util::Span_T<uint32_t> 
 class IntCodecPool_c
 {
 public:
-	std::unique_ptr<IntCodec_i>	Acquire ( const std::string & sCodec32, const std::string & sCodec64 );
-	void						Release ( const std::string & sCodec32, const std::string & sCodec64, std::unique_ptr<IntCodec_i> pCodec );
+	std::unique_ptr<IntCodec_c>	Acquire ( const std::string & sCodec32, const std::string & sCodec64 );
+	void						Release ( const std::string & sCodec32, const std::string & sCodec64, std::unique_ptr<IntCodec_c> pCodec );
 	static IntCodecPool_c &		Get();
 
 private:
 	struct ThreadPoolEntry_t
 	{
 		CodecKey_t m_tKey;
-		std::vector<std::unique_ptr<IntCodec_i>> m_dCodecs;
+		std::vector<std::unique_ptr<IntCodec_c>> m_dCodecs;
 	};
 
 	static constexpr size_t MAX_CODECS_PER_PAIR = 128;
@@ -433,7 +452,7 @@ private:
 };
 
 
-std::unique_ptr<IntCodec_i> IntCodecPool_c::Acquire ( const std::string & sCodec32, const std::string & sCodec64 )
+std::unique_ptr<IntCodec_c> IntCodecPool_c::Acquire ( const std::string & sCodec32, const std::string & sCodec64 )
 {
 	auto & dPool = GetThreadPool();
 	for ( auto & tEntry : dPool )
@@ -444,7 +463,7 @@ std::unique_ptr<IntCodec_i> IntCodecPool_c::Acquire ( const std::string & sCodec
 		if ( tEntry.m_dCodecs.empty() )
 			return nullptr;
 
-		std::unique_ptr<IntCodec_i> pCodec = std::move ( tEntry.m_dCodecs.back() );
+		std::unique_ptr<IntCodec_c> pCodec = std::move ( tEntry.m_dCodecs.back() );
 		tEntry.m_dCodecs.pop_back();
 		return pCodec;
 	}
@@ -453,7 +472,7 @@ std::unique_ptr<IntCodec_i> IntCodecPool_c::Acquire ( const std::string & sCodec
 }
 
 
-void IntCodecPool_c::Release ( const std::string & sCodec32, const std::string & sCodec64, std::unique_ptr<IntCodec_i> pCodec )
+void IntCodecPool_c::Release ( const std::string & sCodec32, const std::string & sCodec64, std::unique_ptr<IntCodec_c> pCodec )
 {
 	if ( !pCodec )
 		return;
@@ -490,7 +509,7 @@ std::vector<IntCodecPool_c::ThreadPoolEntry_t> & IntCodecPool_c::GetThreadPool()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-void CodecPoolDeleter_t::operator() ( IntCodec_i * pCodec ) const
+void CodecPoolDeleter_t::operator() ( IntCodec_c * pCodec ) const
 {
 	if ( !pCodec )
 		return;
@@ -501,12 +520,12 @@ void CodecPoolDeleter_t::operator() ( IntCodec_i * pCodec ) const
 		return;
 	}
 
-	IntCodecPool_c::Get().Release ( m_pKey->first, m_pKey->second, std::unique_ptr<IntCodec_i>(pCodec) );
+	IntCodecPool_c::Get().Release ( m_pKey->first, m_pKey->second, std::unique_ptr<IntCodec_c>(pCodec) );
 }
 
 IntCodecPooledPtr_t CreateIntCodec ( const std::string & sCodec32, const std::string & sCodec64 )
 {
-	std::unique_ptr<IntCodec_i> pCodec = IntCodecPool_c::Get().Acquire ( sCodec32, sCodec64 );
+	std::unique_ptr<IntCodec_c> pCodec = IntCodecPool_c::Get().Acquire ( sCodec32, sCodec64 );
 	if ( !pCodec )
 	{
 		bool bSVB32 = ( sCodec32=="libstreamvbyte" );
@@ -525,11 +544,11 @@ IntCodecPooledPtr_t CreateIntCodec ( const std::string & sCodec32, const std::st
 	return IntCodecPooledPtr_t ( pCodec.release(), CodecPoolDeleter_t ( sCodec32, sCodec64 ) );
 }
 
-std::shared_ptr<IntCodec_i> CreateIntCodecShared ( const std::string & sCodec32, const std::string & sCodec64 )
+std::shared_ptr<IntCodec_c> CreateIntCodecShared ( const std::string & sCodec32, const std::string & sCodec64 )
 {
 	auto pCodec = CreateIntCodec ( sCodec32, sCodec64 );
 	auto tDeleter = pCodec.get_deleter();
-	return std::shared_ptr<IntCodec_i> ( pCodec.release(), tDeleter );
+	return std::shared_ptr<IntCodec_c> ( pCodec.release(), tDeleter );
 }
 
 } // namespace util

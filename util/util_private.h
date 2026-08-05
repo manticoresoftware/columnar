@@ -36,6 +36,10 @@ namespace util
 
 const uint64_t STR_HASH_SEED = 0xCBF29CE484222325ULL;
 
+// StreamVByte decoders read (but never use) up to this many bytes past the end of the compressed
+// input. Any buffer handed to an SVB codec must have this much readable slack past its end
+static constexpr size_t SVB_PADDING_BYTES = 16;
+
 class ByteCodec_c
 {
 public:

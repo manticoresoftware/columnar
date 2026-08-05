@@ -35,7 +35,7 @@ template <typename T>
 class StoredBlock_Int_Const_T
 {
 public:
-	FORCE_INLINE void	ReadHeader ( FileReader_c & tReader );
+	template <typename RD> FORCE_INLINE void ReadHeader ( RD & tReader );
 	FORCE_INLINE T		GetValue() const { return m_tValue; }
 
 private:
@@ -43,7 +43,8 @@ private:
 };
 
 template <typename T>
-void StoredBlock_Int_Const_T<T>::ReadHeader ( FileReader_c & tReader )
+template <typename RD>
+void StoredBlock_Int_Const_T<T>::ReadHeader ( RD & tReader )
 {
 	m_tValue = (T)tReader.Unpack_uint64();
 }
@@ -54,8 +55,8 @@ class StoredBlock_Int_Table_T
 public:
 							StoredBlock_Int_Table_T ( int iSubblockSize, const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion );
 
-	FORCE_INLINE void		ReadHeader ( FileReader_c & tReader );
-	FORCE_INLINE void		ReadSubblock ( int iSubblockId, int iNumValues, FileReader_c & tReader );
+	template <typename RD> FORCE_INLINE void ReadHeader ( RD & tReader );
+	template <typename RD> FORCE_INLINE void ReadSubblock ( int iSubblockId, int iNumValues, RD & tReader );
 	FORCE_INLINE T			GetValue ( int iIdInSubblock );
 	FORCE_INLINE const Span_T<uint32_t> & GetValueIndexes() const { return m_tValuesRead; }
 	FORCE_INLINE int		GetIndexInTable ( T tValue ) const;
@@ -85,7 +86,8 @@ StoredBlock_Int_Table_T<T>::StoredBlock_Int_Table_T ( int iSubblockSize, const s
 }
 
 template <typename T>
-void StoredBlock_Int_Table_T<T>::ReadHeader ( FileReader_c & tReader )
+template <typename RD>
+void StoredBlock_Int_Table_T<T>::ReadHeader ( RD & tReader )
 {
 	m_dTableValues.resize ( tReader.Read_uint8() );
 
@@ -100,7 +102,8 @@ void StoredBlock_Int_Table_T<T>::ReadHeader ( FileReader_c & tReader )
 }
 
 template <typename T>
-void StoredBlock_Int_Table_T<T>::ReadSubblock ( int iSubblockId, int iNumValues, FileReader_c & tReader )
+template <typename RD>
+void StoredBlock_Int_Table_T<T>::ReadSubblock ( int iSubblockId, int iNumValues, RD & tReader )
 {
 	if ( m_iSubblockId==iSubblockId )
 		return;
@@ -139,10 +142,10 @@ class StoredBlock_Int_PFOR_T
 public:
 							StoredBlock_Int_PFOR_T ( const std::string & sCodec32, const std::string & sCodec64, uint32_t uVersion );
 
-	FORCE_INLINE void		ReadHeader ( FileReader_c & tReader, int iNumSubblocks );
-	FORCE_INLINE void		ReadSubblock_Delta ( int iSubblockId, int iNumValues, FileReader_c & tReader );
-	FORCE_INLINE void		ReadSubblock_Generic ( int iSubblockId, int iNumValues, FileReader_c & tReader );
-	FORCE_INLINE void		ReadSubblock_Hash ( int iSubblockId, int iNumValues, FileReader_c & tReader );
+	template <typename RD> FORCE_INLINE void ReadHeader ( RD & tReader, int iNumSubblocks );
+	template <typename RD> FORCE_INLINE void ReadSubblock_Delta ( int iSubblockId, int iNumValues, RD & tReader );
+	template <typename RD> FORCE_INLINE void ReadSubblock_Generic ( int iSubblockId, int iNumValues, RD & tReader );
+	template <typename RD> FORCE_INLINE void ReadSubblock_Hash ( int iSubblockId, int iNumValues, RD & tReader );
 	FORCE_INLINE T			GetValue ( int iIdInSubblock ) const;
 	FORCE_INLINE const Span_T<T> & GetAllValues() const { return m_dSubblockValues; }
 
@@ -158,10 +161,10 @@ private:
 	int							m_iSubblockId = -1;
 	SpanResizeable_T<T>			m_dSubblockValues;
 
-	template <typename DECOMPRESS>
-	FORCE_INLINE void		ReadSubblock ( int iSubblockId, int iNumValues, FileReader_c & tReader, DECOMPRESS && fnDecompress );
-	FORCE_INLINE void		DecodeValues_Hash ( SpanResizeable_T<T> & dValues, FileReader_c & tReader, int iNumSubblockValues );
-	FORCE_INLINE void		ReadHashesWithNullMap ( FileReader_c & tReader, int iValues, int iNumHashes );
+	template <typename RD, typename DECOMPRESS>
+	FORCE_INLINE void		ReadSubblock ( int iSubblockId, int iNumValues, RD & tReader, DECOMPRESS && fnDecompress );
+	template <typename RD> FORCE_INLINE void DecodeValues_Hash ( SpanResizeable_T<T> & dValues, RD & tReader, int iNumSubblockValues );
+	template <typename RD> FORCE_INLINE void ReadHashesWithNullMap ( RD & tReader, int iValues, int iNumHashes );
 };
 
 template <typename T>
@@ -171,7 +174,8 @@ StoredBlock_Int_PFOR_T<T>::StoredBlock_Int_PFOR_T ( const std::string & sCodec32
 {}
 
 template <typename T>
-void StoredBlock_Int_PFOR_T<T>::ReadHeader ( FileReader_c & tReader, int iNumSubblocks )
+template <typename RD>
+void StoredBlock_Int_PFOR_T<T>::ReadHeader ( RD & tReader, int iNumSubblocks )
 {
 	m_dSubblockCumulativeSizes.resize(iNumSubblocks);
 
@@ -183,32 +187,35 @@ void StoredBlock_Int_PFOR_T<T>::ReadHeader ( FileReader_c & tReader, int iNumSub
 }
 
 template <typename T>
-void StoredBlock_Int_PFOR_T<T>::ReadSubblock_Delta ( int iSubblockId, int iNumValues, FileReader_c & tReader )
+template <typename RD>
+void StoredBlock_Int_PFOR_T<T>::ReadSubblock_Delta ( int iSubblockId, int iNumValues, RD & tReader )
 {
-	ReadSubblock ( iSubblockId, iNumValues, tReader, [this] ( SpanResizeable_T<T> & dValues, FileReader_c & tReader, uint32_t uTotalSize )
+	ReadSubblock ( iSubblockId, iNumValues, tReader, [this] ( SpanResizeable_T<T> & dValues, auto & tReader, uint32_t uTotalSize )
 		{ DecodeValues_Delta_PFOR ( dValues, tReader, *m_pCodec, m_dTmp, uTotalSize, true, m_uVersion ); }
 	);
 }
 
 template <typename T>
-void StoredBlock_Int_PFOR_T<T>::ReadSubblock_Generic ( int iSubblockId, int iNumValues, FileReader_c & tReader )
+template <typename RD>
+void StoredBlock_Int_PFOR_T<T>::ReadSubblock_Generic ( int iSubblockId, int iNumValues, RD & tReader )
 {
-	ReadSubblock ( iSubblockId, iNumValues, tReader, [this] ( SpanResizeable_T<T> & dValues, FileReader_c & tReader, uint32_t uTotalSize )
+	ReadSubblock ( iSubblockId, iNumValues, tReader, [this] ( SpanResizeable_T<T> & dValues, auto & tReader, uint32_t uTotalSize )
 		{ DecodeValues_PFOR ( dValues, tReader, *m_pCodec, m_dTmp, uTotalSize ); }
 	);
 }
 
 template <typename T>
-void StoredBlock_Int_PFOR_T<T>::ReadSubblock_Hash ( int iSubblockId, int iNumValues, FileReader_c & tReader )
+template <typename RD>
+void StoredBlock_Int_PFOR_T<T>::ReadSubblock_Hash ( int iSubblockId, int iNumValues, RD & tReader )
 {
-	ReadSubblock ( iSubblockId, iNumValues, tReader, [this,iNumValues] ( SpanResizeable_T<T> & dValues, FileReader_c & tReader, uint32_t uTotalSize )
-		{ DecodeValues_Hash ( dValues, tReader, iNumValues ); }
+	ReadSubblock ( iSubblockId, iNumValues, tReader, [this,iNumValues] ( SpanResizeable_T<T> & dValues, auto & tReader, uint32_t uTotalSize )
+		{ this->DecodeValues_Hash ( dValues, tReader, iNumValues ); }
 	);
 }
 
 template <typename T>
-template <typename DECOMPRESS>
-void StoredBlock_Int_PFOR_T<T>::ReadSubblock ( int iSubblockId, int iNumValues, FileReader_c & tReader, DECOMPRESS && fnDecompress )
+template <typename RD, typename DECOMPRESS>
+void StoredBlock_Int_PFOR_T<T>::ReadSubblock ( int iSubblockId, int iNumValues, RD & tReader, DECOMPRESS && fnDecompress )
 {
 	if ( m_iSubblockId==iSubblockId )
 		return;
@@ -235,7 +242,8 @@ T StoredBlock_Int_PFOR_T<T>::GetValue ( int iIdInSubblock ) const
 }
 
 template <typename T>
-void StoredBlock_Int_PFOR_T<T>::DecodeValues_Hash ( SpanResizeable_T<T> & dValues, FileReader_c & tReader, int iNumSubblockValues )
+template <typename RD>
+void StoredBlock_Int_PFOR_T<T>::DecodeValues_Hash ( SpanResizeable_T<T> & dValues, RD & tReader, int iNumSubblockValues )
 {
 	int iNumHashes = tReader.Read_uint16();
 	bool bHaveNullMap = iNumSubblockValues!=iNumHashes;
@@ -249,7 +257,8 @@ void StoredBlock_Int_PFOR_T<T>::DecodeValues_Hash ( SpanResizeable_T<T> & dValue
 }
 
 template <typename T>
-void StoredBlock_Int_PFOR_T<T>::ReadHashesWithNullMap ( FileReader_c & tReader, int iValues, int iNumHashes )
+template <typename RD>
+void StoredBlock_Int_PFOR_T<T>::ReadHashesWithNullMap ( RD & tReader, int iValues, int iNumHashes )
 {
 	assert ( !(iValues & 127 ) );
 	m_dTmp.resize ( iValues >> 5 );
@@ -277,21 +286,21 @@ void StoredBlock_Int_PFOR_T<T>::ReadHashesWithNullMap ( FileReader_c & tReader, 
 
 //////////////////////////////////////////////////////////////////////////
 
-template<typename T>
+template<typename T, typename RD=util::FileReader_c>
 class Accessor_INT_T : public StoredBlockTraits_t
 {
 public:
-					Accessor_INT_T ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader );
+					Accessor_INT_T ( const AttributeHeader_i & tHeader, uint32_t uVersion, RD * pReader );
 
 protected:
 	const AttributeHeader_i &		m_tHeader;
-	std::unique_ptr<FileReader_c>	m_pReader;
+	std::unique_ptr<RD>				m_pReader;
 
 	StoredBlock_Int_Const_T<T>		m_tBlockConst;
 	StoredBlock_Int_Table_T<T>		m_tBlockTable;
 	StoredBlock_Int_PFOR_T<T>		m_tBlockPFOR;
 
-	int64_t (Accessor_INT_T<T>::*m_fnReadValue)() = nullptr;
+	int64_t (Accessor_INT_T<T,RD>::*m_fnReadValue)() = nullptr;
 
 	IntPacking_e	m_ePacking = IntPacking_e::CONST;
 
@@ -304,8 +313,8 @@ protected:
 	int64_t			ReadValue_Hash();
 };
 
-template<typename T>
-Accessor_INT_T<T>::Accessor_INT_T ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader )
+template<typename T, typename RD>
+Accessor_INT_T<T,RD>::Accessor_INT_T ( const AttributeHeader_i & tHeader, uint32_t uVersion, RD * pReader )
 	: StoredBlockTraits_t ( tHeader.GetSettings().m_iSubblockSize )
 	, m_tHeader ( tHeader )
 	, m_pReader ( pReader )
@@ -315,8 +324,8 @@ Accessor_INT_T<T>::Accessor_INT_T ( const AttributeHeader_i & tHeader, uint32_t 
 	assert(pReader);
 }
 
-template<typename T>
-void Accessor_INT_T<T>::SetCurBlock ( uint32_t uBlockId )
+template<typename T, typename RD>
+void Accessor_INT_T<T,RD>::SetCurBlock ( uint32_t uBlockId )
 {
 	m_pReader->Seek ( m_tHeader.GetBlockOffset(uBlockId) );
 	m_ePacking = (IntPacking_e)m_pReader->Unpack_uint32();
@@ -327,27 +336,27 @@ void Accessor_INT_T<T>::SetCurBlock ( uint32_t uBlockId )
 	switch ( m_ePacking )
 	{
 	case IntPacking_e::CONST:
-		m_fnReadValue = &Accessor_INT_T<T>::ReadValue_Const;
+		m_fnReadValue = &Accessor_INT_T<T,RD>::ReadValue_Const;
 		m_tBlockConst.ReadHeader ( *m_pReader );
 		break;
 
 	case IntPacking_e::TABLE:
-		m_fnReadValue = &Accessor_INT_T<T>::ReadValue_Table;
+		m_fnReadValue = &Accessor_INT_T<T,RD>::ReadValue_Table;
 		m_tBlockTable.ReadHeader ( *m_pReader );
 		break;
 
 	case IntPacking_e::DELTA:
-		m_fnReadValue = &Accessor_INT_T<T>::ReadValue_Delta;
+		m_fnReadValue = &Accessor_INT_T<T,RD>::ReadValue_Delta;
 		m_tBlockPFOR.ReadHeader ( *m_pReader, m_iNumSubblocks );
 		break;
 
 	case IntPacking_e::GENERIC:
-		m_fnReadValue = &Accessor_INT_T<T>::ReadValue_Generic;
+		m_fnReadValue = &Accessor_INT_T<T,RD>::ReadValue_Generic;
 		m_tBlockPFOR.ReadHeader ( *m_pReader, m_iNumSubblocks );
 		break;
 
 	case IntPacking_e::HASH:
-		m_fnReadValue = &Accessor_INT_T<T>::ReadValue_Hash;
+		m_fnReadValue = &Accessor_INT_T<T,RD>::ReadValue_Hash;
 		m_tBlockPFOR.ReadHeader ( *m_pReader, m_iNumSubblocks );
 		break;
 
@@ -356,14 +365,14 @@ void Accessor_INT_T<T>::SetCurBlock ( uint32_t uBlockId )
 	}
 }
 
-template<typename T>
-int64_t Accessor_INT_T<T>::ReadValue_Const()
+template<typename T, typename RD>
+int64_t Accessor_INT_T<T,RD>::ReadValue_Const()
 {
 	return m_tBlockConst.GetValue();
 }
 
-template<typename T>
-int64_t Accessor_INT_T<T>::ReadValue_Table()
+template<typename T, typename RD>
+int64_t Accessor_INT_T<T,RD>::ReadValue_Table()
 {
 	uint32_t uIdInBlock = m_tRequestedRowID - m_tStartBlockRowId;
 	int iSubblockId = StoredBlockTraits_t::GetSubblockId(uIdInBlock);
@@ -371,8 +380,8 @@ int64_t Accessor_INT_T<T>::ReadValue_Table()
 	return m_tBlockTable.GetValue ( GetValueIdInSubblock(uIdInBlock) );
 }
 
-template<typename T>
-int64_t Accessor_INT_T<T>::ReadValue_Delta()
+template<typename T, typename RD>
+int64_t Accessor_INT_T<T,RD>::ReadValue_Delta()
 {
 	uint32_t uIdInBlock = m_tRequestedRowID - m_tStartBlockRowId;
 	int iSubblockId = StoredBlockTraits_t::GetSubblockId(uIdInBlock);
@@ -380,8 +389,8 @@ int64_t Accessor_INT_T<T>::ReadValue_Delta()
 	return m_tBlockPFOR.GetValue ( GetValueIdInSubblock(uIdInBlock) );
 }
 
-template<typename T>
-int64_t Accessor_INT_T<T>::ReadValue_Generic()
+template<typename T, typename RD>
+int64_t Accessor_INT_T<T,RD>::ReadValue_Generic()
 {
 	uint32_t uIdInBlock = m_tRequestedRowID - m_tStartBlockRowId;
 	int iSubblockId = StoredBlockTraits_t::GetSubblockId(uIdInBlock);
@@ -389,8 +398,8 @@ int64_t Accessor_INT_T<T>::ReadValue_Generic()
 	return m_tBlockPFOR.GetValue ( GetValueIdInSubblock(uIdInBlock) );
 }
 
-template<typename T>
-int64_t Accessor_INT_T<T>::ReadValue_Hash()
+template<typename T, typename RD>
+int64_t Accessor_INT_T<T,RD>::ReadValue_Hash()
 {
 	uint32_t uIdInBlock = m_tRequestedRowID - m_tStartBlockRowId;
 	int iSubblockId = GetSubblockId(uIdInBlock);
@@ -400,10 +409,10 @@ int64_t Accessor_INT_T<T>::ReadValue_Hash()
 
 //////////////////////////////////////////////////////////////////////////
 
-template<typename T>
-class Iterator_INT_T : public Iterator_i, public Accessor_INT_T<T>
+template<typename T, typename RD=util::FileReader_c>
+class Iterator_INT_T : public Iterator_i, public Accessor_INT_T<T,RD>
 {
-	using BASE = Accessor_INT_T<T>;
+	using BASE = Accessor_INT_T<T,RD>;
 	using BASE::Accessor_INT_T;
 
 public:
@@ -420,8 +429,8 @@ private:
 	FORCE_INLINE int64_t DoGet ( uint32_t tRowID );
 };
 
-template<typename T>
-void Iterator_INT_T<T>::Fetch ( const Span_T<uint32_t> & dRowIDs, Span_T<int64_t> & dValues )
+template<typename T, typename RD>
+void Iterator_INT_T<T,RD>::Fetch ( const Span_T<uint32_t> & dRowIDs, Span_T<int64_t> & dValues )
 {
 	uint32_t * pRowID = dRowIDs.begin();
 	uint32_t * pRowIDEnd = dRowIDs.end();
@@ -430,8 +439,8 @@ void Iterator_INT_T<T>::Fetch ( const Span_T<uint32_t> & dRowIDs, Span_T<int64_t
 		*pValue++ = DoGet ( *pRowID++ );
 }
 
-template<typename T>
-int64_t Iterator_INT_T<T>::DoGet ( uint32_t tRowID )
+template<typename T, typename RD>
+int64_t Iterator_INT_T<T,RD>::DoGet ( uint32_t tRowID )
 {
 	assert ( tRowID < BASE::m_tHeader.GetNumDocs() );
 
@@ -860,14 +869,14 @@ int AnalyzerBlock_Int_Values_T<float,uint32_t>::ProcessSubblock_Range ( uint32_t
 // a mega-class of all integer analyzers
 // splitting it into a class hierarchy would yield cleaner code
 // but virtual function calls give very noticeable performance penalties
-template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS>
-class Analyzer_INT_T : public Analyzer_T<HAVE_MATCHING_BLOCKS>, public Accessor_INT_T<ACCESSOR_VALUES>
+template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS, typename RD=util::FileReader_c>
+class Analyzer_INT_T : public Analyzer_T<HAVE_MATCHING_BLOCKS>, public Accessor_INT_T<ACCESSOR_VALUES,RD>
 {
 	using ANALYZER = Analyzer_T<HAVE_MATCHING_BLOCKS>;
-	using ACCESSOR = Accessor_INT_T<ACCESSOR_VALUES>;
+	using ACCESSOR = Accessor_INT_T<ACCESSOR_VALUES,RD>;
 
 public:
-					Analyzer_INT_T ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader, const Filter_t & tSettings );
+					Analyzer_INT_T ( const AttributeHeader_i & tHeader, uint32_t uVersion, RD * pReader, const Filter_t & tSettings );
 
 	bool			GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBlock ) final;
 	void			AddDesc ( std::vector<IteratorDesc_t> & dDesc ) const final { dDesc.push_back ( { ACCESSOR::m_tHeader.GetName(), "ColumnarScan" } ); }
@@ -910,8 +919,8 @@ private:
 	bool				MoveToBlock ( int iNextBlock ) final;
 };
 
-template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS>
-Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::Analyzer_INT_T ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader, const Filter_t & tSettings )
+template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS, typename RD>
+Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::Analyzer_INT_T ( const AttributeHeader_i & tHeader, uint32_t uVersion, RD * pReader, const Filter_t & tSettings )
 	: ANALYZER ( tHeader.GetSettings().m_iSubblockSize )
 	, ACCESSOR ( tHeader, uVersion, pReader )
 	, m_tBlockConst ( ANALYZER::m_tRowID )
@@ -928,78 +937,78 @@ Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::Analyzer
 	SetupPackingFuncs();
 }
 
-template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS>
-void Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::SetupPackingFuncs_SingleValue()
+template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS, typename RD>
+void Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::SetupPackingFuncs_SingleValue()
 {
 	auto & dFuncs = m_dProcessingFuncs;
 	if ( m_tSettings.m_bExclude )
 	{
-		dFuncs [ to_underlying ( IntPacking_e::TABLE ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockTable_SingleValue<false>;
-		dFuncs [ to_underlying ( IntPacking_e::DELTA ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockDelta_SingleValue<false>;
-		dFuncs [ to_underlying ( IntPacking_e::GENERIC )]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockGeneric_SingleValue<false>;
-		dFuncs [ to_underlying ( IntPacking_e::HASH )]		= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockHash_SingleValue<false>;
+		dFuncs [ to_underlying ( IntPacking_e::TABLE ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockTable_SingleValue<false>;
+		dFuncs [ to_underlying ( IntPacking_e::DELTA ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockDelta_SingleValue<false>;
+		dFuncs [ to_underlying ( IntPacking_e::GENERIC )]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockGeneric_SingleValue<false>;
+		dFuncs [ to_underlying ( IntPacking_e::HASH )]		= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockHash_SingleValue<false>;
 	}
 	else
 	{
-		dFuncs [ to_underlying ( IntPacking_e::TABLE ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockTable_SingleValue<true>;
-		dFuncs [ to_underlying ( IntPacking_e::DELTA ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockDelta_SingleValue<true>;
-		dFuncs [ to_underlying ( IntPacking_e::GENERIC )]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockGeneric_SingleValue<true>;
-		dFuncs [ to_underlying ( IntPacking_e::HASH )]		= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockHash_SingleValue<true>;
+		dFuncs [ to_underlying ( IntPacking_e::TABLE ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockTable_SingleValue<true>;
+		dFuncs [ to_underlying ( IntPacking_e::DELTA ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockDelta_SingleValue<true>;
+		dFuncs [ to_underlying ( IntPacking_e::GENERIC )]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockGeneric_SingleValue<true>;
+		dFuncs [ to_underlying ( IntPacking_e::HASH )]		= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockHash_SingleValue<true>;
 	}
 }
 
-template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS>
-void Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::SetupPackingFuncs_ValuesLinear()
+template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS, typename RD>
+void Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::SetupPackingFuncs_ValuesLinear()
 {
 	auto & dFuncs = m_dProcessingFuncs;
 	if ( m_tSettings.m_bExclude )
 	{
-		dFuncs [ to_underlying ( IntPacking_e::TABLE ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockTable_Values<false,true>;
-		dFuncs [ to_underlying ( IntPacking_e::DELTA ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockDelta_Values<false,true>;
-		dFuncs [ to_underlying ( IntPacking_e::GENERIC ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockGeneric_Values<false,true>;
-		dFuncs [ to_underlying ( IntPacking_e::HASH )]		= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockHash_Values<false,true>;
+		dFuncs [ to_underlying ( IntPacking_e::TABLE ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockTable_Values<false,true>;
+		dFuncs [ to_underlying ( IntPacking_e::DELTA ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockDelta_Values<false,true>;
+		dFuncs [ to_underlying ( IntPacking_e::GENERIC ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockGeneric_Values<false,true>;
+		dFuncs [ to_underlying ( IntPacking_e::HASH )]		= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockHash_Values<false,true>;
 	}
 	else
 	{
-		dFuncs [ to_underlying ( IntPacking_e::TABLE ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockTable_Values<true,true>;
-		dFuncs [ to_underlying ( IntPacking_e::DELTA ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockDelta_Values<true,true>;
-		dFuncs [ to_underlying ( IntPacking_e::GENERIC ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockGeneric_Values<true,true>;
-		dFuncs [ to_underlying ( IntPacking_e::HASH )]		= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockHash_Values<true,true>;
+		dFuncs [ to_underlying ( IntPacking_e::TABLE ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockTable_Values<true,true>;
+		dFuncs [ to_underlying ( IntPacking_e::DELTA ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockDelta_Values<true,true>;
+		dFuncs [ to_underlying ( IntPacking_e::GENERIC ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockGeneric_Values<true,true>;
+		dFuncs [ to_underlying ( IntPacking_e::HASH )]		= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockHash_Values<true,true>;
 	}
 }
 
-template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS>
-void Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::SetupPackingFuncs_ValuesBinary()
+template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS, typename RD>
+void Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::SetupPackingFuncs_ValuesBinary()
 {
 	auto & dFuncs = m_dProcessingFuncs;
 	if ( m_tSettings.m_bExclude )
 	{
-		dFuncs [ to_underlying ( IntPacking_e::TABLE ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockTable_Values<false,false>;
-		dFuncs [ to_underlying ( IntPacking_e::DELTA ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockDelta_Values<false,false>;
-		dFuncs [ to_underlying ( IntPacking_e::GENERIC ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockGeneric_Values<false,false>;
-		dFuncs [ to_underlying ( IntPacking_e::HASH ) ]		= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockHash_Values<false,false>;
+		dFuncs [ to_underlying ( IntPacking_e::TABLE ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockTable_Values<false,false>;
+		dFuncs [ to_underlying ( IntPacking_e::DELTA ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockDelta_Values<false,false>;
+		dFuncs [ to_underlying ( IntPacking_e::GENERIC ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockGeneric_Values<false,false>;
+		dFuncs [ to_underlying ( IntPacking_e::HASH ) ]		= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockHash_Values<false,false>;
 	}
 	else
 	{
-		dFuncs [ to_underlying ( IntPacking_e::TABLE ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockTable_Values<true,false>;
-		dFuncs [ to_underlying ( IntPacking_e::DELTA ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockDelta_Values<true,false>;
-		dFuncs [ to_underlying ( IntPacking_e::GENERIC ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockGeneric_Values<true,false>;
-		dFuncs [ to_underlying ( IntPacking_e::HASH ) ]		= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockHash_Values<true,false>;
+		dFuncs [ to_underlying ( IntPacking_e::TABLE ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockTable_Values<true,false>;
+		dFuncs [ to_underlying ( IntPacking_e::DELTA ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockDelta_Values<true,false>;
+		dFuncs [ to_underlying ( IntPacking_e::GENERIC ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockGeneric_Values<true,false>;
+		dFuncs [ to_underlying ( IntPacking_e::HASH ) ]		= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockHash_Values<true,false>;
 	}
 }
 
-template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS>
-void Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::SetupPackingFuncs_Range()
+template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS, typename RD>
+void Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::SetupPackingFuncs_Range()
 {
 	auto & dFuncs = m_dProcessingFuncs;
-	dFuncs [ to_underlying ( IntPacking_e::TABLE ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockTable_Range;
-	dFuncs [ to_underlying ( IntPacking_e::DELTA ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockDelta_Range;
-	dFuncs [ to_underlying ( IntPacking_e::GENERIC ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockGeneric_Range;
+	dFuncs [ to_underlying ( IntPacking_e::TABLE ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockTable_Range;
+	dFuncs [ to_underlying ( IntPacking_e::DELTA ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockDelta_Range;
+	dFuncs [ to_underlying ( IntPacking_e::GENERIC ) ]	= &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockGeneric_Range;
 	// no range analyzer for HASH packing
 }
 
-template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS>
-void Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::SetupPackingFuncs()
+template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS, typename RD>
+void Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::SetupPackingFuncs()
 {
 	auto & dFuncs = m_dProcessingFuncs;
 	for ( auto & i : dFuncs )
@@ -1008,7 +1017,7 @@ void Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::Set
 	const int LINEAR_SEARCH_THRESH = 128;
 
 	// doesn't depend on filter type; just fills result with rowids
-	dFuncs [ to_underlying ( IntPacking_e::CONST ) ] = &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockConst;
+	dFuncs [ to_underlying ( IntPacking_e::CONST ) ] = &Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockConst;
 
 	switch ( m_tSettings.m_eType )
 	{
@@ -1032,23 +1041,23 @@ void Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::Set
 	}
 }
 
-template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS>
-int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockConst ( uint32_t * & pRowID, int iSubblockIdInBlock )
+template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS, typename RD>
+int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockConst ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
 	return m_tBlockConst.ProcessSubblock ( pRowID, StoredBlockTraits_t::GetNumSubblockValues(iSubblockIdInBlock) );
 }
 
-template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS>
+template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS, typename RD>
 template <bool EQ>
-int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockGeneric_SingleValue ( uint32_t * & pRowID, int iSubblockIdInBlock )
+int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockGeneric_SingleValue ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
 	ACCESSOR::m_tBlockPFOR.ReadSubblock_Generic ( iSubblockIdInBlock, StoredBlockTraits_t::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
 	return m_tBlockValues.template ProcessSubblock_SingleValue<EQ> ( pRowID, ACCESSOR::m_tBlockPFOR.GetAllValues() );
 }
 
-template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS>
+template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS, typename RD>
 template <bool EQ, bool LINEAR>
-int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockGeneric_Values ( uint32_t * & pRowID, int iSubblockIdInBlock )
+int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockGeneric_Values ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
 	ACCESSOR::m_tBlockPFOR.ReadSubblock_Generic ( iSubblockIdInBlock, StoredBlockTraits_t::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
 
@@ -1058,24 +1067,24 @@ int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::Proc
 	return m_tBlockValues.template ProcessSubblock_ValuesBinary<EQ> ( pRowID, ACCESSOR::m_tBlockPFOR.GetAllValues() );
 }
 
-template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS>
-int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockGeneric_Range ( uint32_t * & pRowID, int iSubblockIdInBlock )
+template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS, typename RD>
+int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockGeneric_Range ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
 	ACCESSOR::m_tBlockPFOR.ReadSubblock_Generic ( iSubblockIdInBlock, StoredBlockTraits_t::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
 	return m_tBlockValues.template ProcessSubblock_Range<RANGE_EVAL> ( pRowID, ACCESSOR::m_tBlockPFOR.GetAllValues() );
 }
 
-template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS>
+template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS, typename RD>
 template <bool EQ>
-int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockHash_SingleValue ( uint32_t * & pRowID, int iSubblockIdInBlock )
+int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockHash_SingleValue ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
 	ACCESSOR::m_tBlockPFOR.ReadSubblock_Hash ( iSubblockIdInBlock, StoredBlockTraits_t::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
 	return m_tBlockValues.template ProcessSubblock_SingleValue<EQ> ( pRowID, ACCESSOR::m_tBlockPFOR.GetAllValues() );
 }
 
-template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS>
+template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS, typename RD>
 template <bool EQ, bool LINEAR>
-int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockHash_Values ( uint32_t * & pRowID, int iSubblockIdInBlock )
+int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockHash_Values ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
 	ACCESSOR::m_tBlockPFOR.ReadSubblock_Hash ( iSubblockIdInBlock, StoredBlockTraits_t::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
 
@@ -1085,17 +1094,17 @@ int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::Proc
 	return m_tBlockValues.template ProcessSubblock_ValuesBinary<EQ> ( pRowID, ACCESSOR::m_tBlockPFOR.GetAllValues() );
 }
 
-template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS>
+template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS, typename RD>
 template <bool EQ>
-int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockDelta_SingleValue ( uint32_t * & pRowID, int iSubblockIdInBlock )
+int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockDelta_SingleValue ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
 	ACCESSOR::m_tBlockPFOR.ReadSubblock_Delta ( iSubblockIdInBlock, StoredBlockTraits_t::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
 	return m_tBlockValues.template ProcessSubblock_SingleValue<EQ> ( pRowID, ACCESSOR::m_tBlockPFOR.GetAllValues() );
 }
 
-template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS>
+template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS, typename RD>
 template <bool EQ, bool LINEAR>
-int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockDelta_Values ( uint32_t * & pRowID, int iSubblockIdInBlock )
+int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockDelta_Values ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
 	ACCESSOR::m_tBlockPFOR.ReadSubblock_Delta ( iSubblockIdInBlock, StoredBlockTraits_t::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
 
@@ -1105,24 +1114,24 @@ int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::Proc
 	return m_tBlockValues.template ProcessSubblock_ValuesBinary<EQ> ( pRowID, ACCESSOR::m_tBlockPFOR.GetAllValues() );
 }
 
-template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS>
-int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockDelta_Range ( uint32_t * & pRowID, int iSubblockIdInBlock )
+template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS, typename RD>
+int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockDelta_Range ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
 	ACCESSOR::m_tBlockPFOR.ReadSubblock_Delta ( iSubblockIdInBlock, StoredBlockTraits_t::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
 	return m_tBlockValues.template ProcessSubblock_Range<RANGE_EVAL> ( pRowID, ACCESSOR::m_tBlockPFOR.GetAllValues() );
 }
 
-template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS>
+template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS, typename RD>
 template <bool EQ>
-int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockTable_SingleValue ( uint32_t * & pRowID, int iSubblockIdInBlock )
+int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockTable_SingleValue ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
 	ACCESSOR::m_tBlockTable.ReadSubblock ( iSubblockIdInBlock, StoredBlockTraits_t::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
 	return m_tBlockTable.template ProcessSubblock_SingleValue<EQ> ( pRowID, ACCESSOR::m_tBlockTable.GetValueIndexes() );
 }
 
-template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS>
+template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS, typename RD>
 template <bool EQ, bool LINEAR>
-int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockTable_Values ( uint32_t * & pRowID, int iSubblockIdInBlock )
+int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockTable_Values ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
 	ACCESSOR::m_tBlockTable.ReadSubblock ( iSubblockIdInBlock, StoredBlockTraits_t::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
 
@@ -1132,21 +1141,21 @@ int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::Proc
 	return m_tBlockTable.template ProcessSubblock_ValuesBinary<EQ> ( pRowID, ACCESSOR::m_tBlockTable.GetValueIndexes() );
 }
 
-template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS>
-int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::ProcessSubblockTable_Range ( uint32_t * & pRowID, int iSubblockIdInBlock )
+template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS, typename RD>
+int Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::ProcessSubblockTable_Range ( uint32_t * & pRowID, int iSubblockIdInBlock )
 {
 	ACCESSOR::m_tBlockTable.ReadSubblock ( iSubblockIdInBlock, StoredBlockTraits_t::GetNumSubblockValues(iSubblockIdInBlock), *ACCESSOR::m_pReader );
 	return m_tBlockTable.ProcessSubblock_Range ( pRowID, ACCESSOR::m_tBlockTable.GetValueIndexes() );
 }
 
-template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS>
-bool Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBlock )
+template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS, typename RD>
+bool Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::GetNextRowIdBlock ( Span_T<uint32_t> & dRowIdBlock )
 {
 	return ANALYZER::GetNextRowIdBlock ( (ACCESSOR&)*this, dRowIdBlock, [this] ( uint32_t * & pRowID, int iSubblockIdInBlock ){ return (*this.*m_fnProcessSubblock) ( pRowID, iSubblockIdInBlock ); } );
 }
 
-template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS>
-bool Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS>::MoveToBlock ( int iNextBlock )
+template<typename VALUES, typename ACCESSOR_VALUES, typename RANGE_EVAL, bool HAVE_MATCHING_BLOCKS, typename RD>
+bool Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::MoveToBlock ( int iNextBlock )
 {
 	// can be different from block packing
 	IntPacking_e ePackingForProcessingFunc = IntPacking_e::CONST;
@@ -1200,36 +1209,31 @@ struct ValueInInterval_T
 
 //////////////////////////////////////////////////////////////////////////
 
-Iterator_i * CreateIteratorUint32 ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader )
-{
-	return ::new Iterator_INT_T<uint32_t> ( tHeader, uVersion, pReader );
-}
+Iterator_i * CreateIteratorUint32 ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader )		{ return ::new Iterator_INT_T<uint32_t,FileReader_c> ( tHeader, uVersion, pReader ); }
+Iterator_i * CreateIteratorUint32 ( const AttributeHeader_i & tHeader, uint32_t uVersion, MappedReader_c * pReader )		{ return ::new Iterator_INT_T<uint32_t,MappedReader_c> ( tHeader, uVersion, pReader ); }
 
-
-Iterator_i * CreateIteratorUint64 ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader )
-{
-	return ::new Iterator_INT_T<uint64_t> ( tHeader, uVersion, pReader );
-}
+Iterator_i * CreateIteratorUint64 ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader )		{ return ::new Iterator_INT_T<uint64_t,FileReader_c> ( tHeader, uVersion, pReader ); }
+Iterator_i * CreateIteratorUint64 ( const AttributeHeader_i & tHeader, uint32_t uVersion, MappedReader_c * pReader )		{ return ::new Iterator_INT_T<uint64_t,MappedReader_c> ( tHeader, uVersion, pReader ); }
 
 //////////////////////////////////////////////////////////////////////////
 
-template <typename RANGE_EVAL, bool MATCHING_BLOCKS>
-static Analyzer_i * CreateAnalyzerInt ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader, const Filter_t & tSettings )
+template <typename RANGE_EVAL, bool MATCHING_BLOCKS, typename RD>
+static Analyzer_i * CreateAnalyzerInt ( const AttributeHeader_i & tHeader, uint32_t uVersion, RD * pReader, const Filter_t & tSettings )
 {
 	switch ( tHeader.GetType() )
 	{
 	case AttrType_e::UINT32:
 	case AttrType_e::TIMESTAMP:
-		return ::new Analyzer_INT_T<uint32_t, uint32_t, RANGE_EVAL, MATCHING_BLOCKS> ( tHeader, uVersion, pReader, tSettings );
+		return ::new Analyzer_INT_T<uint32_t, uint32_t, RANGE_EVAL, MATCHING_BLOCKS, RD> ( tHeader, uVersion, pReader, tSettings );
 
 	case AttrType_e::INT64:
-		return ::new Analyzer_INT_T<int64_t, uint64_t, RANGE_EVAL, MATCHING_BLOCKS> ( tHeader, uVersion, pReader, tSettings );
+		return ::new Analyzer_INT_T<int64_t, uint64_t, RANGE_EVAL, MATCHING_BLOCKS, RD> ( tHeader, uVersion, pReader, tSettings );
 
 	case AttrType_e::UINT64:
-		return ::new Analyzer_INT_T<uint64_t, uint64_t, RANGE_EVAL, MATCHING_BLOCKS> ( tHeader, uVersion, pReader, tSettings );
+		return ::new Analyzer_INT_T<uint64_t, uint64_t, RANGE_EVAL, MATCHING_BLOCKS, RD> ( tHeader, uVersion, pReader, tSettings );
 
 	case AttrType_e::FLOAT:
-		return ::new Analyzer_INT_T<float, uint32_t, RANGE_EVAL, MATCHING_BLOCKS> ( tHeader, uVersion, pReader, tSettings );
+		return ::new Analyzer_INT_T<float, uint32_t, RANGE_EVAL, MATCHING_BLOCKS, RD> ( tHeader, uVersion, pReader, tSettings );
 
 	default:
 		assert ( 0 && "Unknown int analyzer" );
@@ -1238,7 +1242,8 @@ static Analyzer_i * CreateAnalyzerInt ( const AttributeHeader_i & tHeader, uint3
 }
 
 
-Analyzer_i * CreateAnalyzerInt ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader, const Filter_t & tSettings, bool bHaveMatchingBlocks )
+template <typename RD>
+static Analyzer_i * NewAnalyzerInt ( const AttributeHeader_i & tHeader, uint32_t uVersion, RD * pReader, const Filter_t & tSettings, bool bHaveMatchingBlocks )
 {
 	if ( tSettings.m_eType!=FilterType_e::VALUES && tSettings.m_eType!=FilterType_e::RANGE && tSettings.m_eType!=FilterType_e::FLOATRANGE )
 		return nullptr;
@@ -1284,6 +1289,10 @@ Analyzer_i * CreateAnalyzerInt ( const AttributeHeader_i & tHeader, uint32_t uVe
 	default:	return nullptr;
 	}
 }
+
+
+Analyzer_i * CreateAnalyzerInt ( const AttributeHeader_i & tHeader, uint32_t uVersion, FileReader_c * pReader, const Filter_t & tSettings, bool bHaveMatchingBlocks )		{ return NewAnalyzerInt ( tHeader, uVersion, pReader, tSettings, bHaveMatchingBlocks ); }
+Analyzer_i * CreateAnalyzerInt ( const AttributeHeader_i & tHeader, uint32_t uVersion, MappedReader_c * pReader, const Filter_t & tSettings, bool bHaveMatchingBlocks )	{ return NewAnalyzerInt ( tHeader, uVersion, pReader, tSettings, bHaveMatchingBlocks ); }
 
 //////////////////////////////////////////////////////////////////////////
 

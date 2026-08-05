@@ -22,6 +22,7 @@
 namespace util
 {
 	class FileReader_c;
+	class MappedReader_c;
 }
 
 namespace columnar
@@ -32,7 +33,9 @@ class Analyzer_i;
 class AttributeHeader_i;
 
 Iterator_i *	CreateIteratorBool ( const AttributeHeader_i & tHeader, util::FileReader_c * pReader );
+Iterator_i *	CreateIteratorBool ( const AttributeHeader_i & tHeader, util::MappedReader_c * pReader );
 Analyzer_i *	CreateAnalyzerBool ( const AttributeHeader_i & tHeader, util::FileReader_c * pReader, const common::Filter_t & tSettings, bool bHaveMatchingBlocks );
+Analyzer_i *	CreateAnalyzerBool ( const AttributeHeader_i & tHeader, util::MappedReader_c * pReader, const common::Filter_t & tSettings, bool bHaveMatchingBlocks );
 Checker_i *		CreateCheckerBool ( const AttributeHeader_i & tHeader, util::FileReader_c * pReader, Reporter_fn & fnProgress, Reporter_fn & fnError );
 
 } // namespace columnar

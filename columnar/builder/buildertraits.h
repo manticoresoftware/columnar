@@ -167,7 +167,7 @@ FORCE_INLINE int GetSubblockSize ( int iSubblock, int iNumSubblocks, int iNumVal
 }
 
 template <typename T, typename WRITER>
-static void WriteValues_Delta_PFOR ( const util::Span_T<T> & dValues, std::vector<T> & dTmpUncompressed, std::vector<uint32_t> & dTmpCompressed, WRITER & tWriter, util::IntCodec_i * pCodec )
+static void WriteValues_Delta_PFOR ( const util::Span_T<T> & dValues, std::vector<T> & dTmpUncompressed, std::vector<uint32_t> & dTmpCompressed, WRITER & tWriter, util::IntCodec_c * pCodec )
 {
 	dTmpUncompressed.resize ( dValues.size() );
 	memcpy ( dTmpUncompressed.data(), dValues.data(), dValues.size()*sizeof ( dValues[0] ) );
@@ -181,7 +181,7 @@ static void WriteValues_Delta_PFOR ( const util::Span_T<T> & dValues, std::vecto
 }
 
 template <typename T, typename WRITER>
-static void WriteValues_PFOR ( const util::Span_T<T> & dValues, std::vector<T> & dTmpUncompressed, std::vector<uint32_t> & dTmpCompressed, WRITER & tWriter, util::IntCodec_i * pCodec, bool bWriteLength )
+static void WriteValues_PFOR ( const util::Span_T<T> & dValues, std::vector<T> & dTmpUncompressed, std::vector<uint32_t> & dTmpCompressed, WRITER & tWriter, util::IntCodec_c * pCodec, bool bWriteLength )
 {
 	T uMin = (T)0;
 	if ( !dValues.empty() )

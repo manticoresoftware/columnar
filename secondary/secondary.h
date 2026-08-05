@@ -58,6 +58,7 @@ struct IndexAttrInfo_t
 struct IndexSettings_t
 {
 	uint64_t	m_uBlockCacheSize = 0;
+	bool		m_bMmap = false;
 };
 
 struct IteratorSettings_t

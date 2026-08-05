@@ -258,7 +258,7 @@ inline void RawWriter_T<float>::SetAttr ( uint32_t tRowID, const int64_t * pData
 /////////////////////////////////////////////////////////////////////
 
 template<typename VEC>
-static void EncodeRowsBlock ( VEC & dSrcRows, uint32_t iOff, uint32_t iCount, IntCodec_i * pCodec, std::vector<uint32_t> & dBufRows, MemWriter_c & tWriter, bool bWriteSize )
+static void EncodeRowsBlock ( VEC & dSrcRows, uint32_t iOff, uint32_t iCount, IntCodec_c * pCodec, std::vector<uint32_t> & dBufRows, MemWriter_c & tWriter, bool bWriteSize )
 {
 	Span_T<uint32_t> dRows ( dSrcRows.data() + iOff, iCount );
 	if ( FastPForLib::needPaddingTo128Bits( dRows.begin() ) )
@@ -276,7 +276,7 @@ static void EncodeRowsBlock ( VEC & dSrcRows, uint32_t iOff, uint32_t iCount, In
 }
 
 template<typename T, typename WRITER>
-void EncodeBlock ( std::vector<T> & dSrc, IntCodec_i * pCodec, std::vector<uint32_t> & dBuf, WRITER & tWriter )
+void EncodeBlock ( std::vector<T> & dSrc, IntCodec_c * pCodec, std::vector<uint32_t> & dBuf, WRITER & tWriter )
 {
 	Span_T<T> tSpan (dSrc);
 	pCodec->EncodeDelta ( tSpan, dBuf );
@@ -284,7 +284,7 @@ void EncodeBlock ( std::vector<T> & dSrc, IntCodec_i * pCodec, std::vector<uint3
 }
 
 template<typename VEC>
-void EncodeBlockWoDelta ( VEC & dSrc, IntCodec_i * pCodec, std::vector<uint32_t> & dBuf, FileWriter_c & tWriter )
+void EncodeBlockWoDelta ( VEC & dSrc, IntCodec_c * pCodec, std::vector<uint32_t> & dBuf, FileWriter_c & tWriter )
 {
 	dBuf.resize ( 0 );
 
