@@ -66,6 +66,7 @@ public:
 	virtual			~ScalarQuantizer_i() = default;
 
 	virtual void	Train ( const util::Span_T<float> & dPoint ) = 0;
+	virtual void	SetTotalVectors ( int64_t iTotalVectors ) {}
 	virtual bool	FinalizeTraining ( std::string & sError ) = 0;
 	virtual bool	IsFinalized () const = 0;
 	virtual void	Encode ( uint32_t uRowID, const util::Span_T<float> & dPoint, std::vector<uint8_t> & dQuantized, std::vector<uint8_t> & dQuantizedForQuery ) = 0;
