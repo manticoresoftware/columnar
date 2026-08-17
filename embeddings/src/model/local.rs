@@ -35,6 +35,35 @@ const DEFAULT_BATCH_SIZE: usize = 8;
 /// Default intra-op threads: 0 = ORT default (all cores).
 const DEFAULT_INTRA_THREADS: usize = 0;
 
+/// Keep Qwen's temporary attention matrix bounded while retaining its full KV cache.
+/// This preserves full-context results while bounding peak inference memory.
+const QWEN_FORWARD_CHUNK_SIZE: usize = 64;
+
+fn qwen_mean_pool(
+    model: &QwenModel,
+    config: &QwenConfig,
+    tokens: &[u32],
+    device: &Device,
+    chunk_size: usize,
+) -> Result<Tensor, Box<dyn Error>> {
+    let mut cache = Qwen3Cache::new(config.num_hidden_layers);
+    let mut summed: Option<Tensor> = None;
+    for (chunk_index, chunk) in tokens.chunks(chunk_size).enumerate() {
+        let chunk_ids = Tensor::new(chunk, device)?.unsqueeze(0)?;
+        let embeddings =
+            model.forward_with_cache(&chunk_ids, chunk_index * chunk_size, &mut cache)?;
+        let chunk_sum = embeddings.sum(1)?.to_dtype(DType::F32)?;
+        summed = Some(match summed.take() {
+            Some(previous) => (&previous + &chunk_sum)?,
+            None => chunk_sum,
+        });
+    }
+
+    let summed = summed.ok_or(LibError::ModelLoadFailed)?;
+    let divisor = Tensor::new(tokens.len() as f32, device)?;
+    Ok(summed.broadcast_div(&divisor)?)
+}
+
 fn available_cpus() -> usize {
     std::thread::available_parallelism()
         .map(|n| n.get())
@@ -1312,14 +1341,13 @@ impl LocalModel {
                         first_token.unsqueeze(0)?.to_dtype(DType::F32)?
                     }
                     LocalModel::Causal(m) => match &m.kind {
-                        CausalEmbeddingKind::Qwen { model, config } => {
-                            let mut cache = Qwen3Cache::new(config.num_hidden_layers);
-                            let emb = model.forward_with_cache(&token_ids, 0, &mut cache)?;
-                            let (_, n_tokens, _) = emb.dims3()?;
-                            let summed = emb.sum(1)?.to_dtype(DType::F32)?;
-                            let divisor = Tensor::new(n_tokens as f32, &device)?;
-                            summed.broadcast_div(&divisor)?
-                        }
+                        CausalEmbeddingKind::Qwen { model, config } => qwen_mean_pool(
+                            model,
+                            config,
+                            &tokens,
+                            &device,
+                            QWEN_FORWARD_CHUNK_SIZE,
+                        )?,
                         CausalEmbeddingKind::Llama {
                             model,
                             config,
@@ -1625,5 +1653,53 @@ mod tests {
 
         // Llama should map to QuantizedModelKind::Llama
         assert!(matches!("llama", "llama"));
+    }
+
+    #[test]
+    fn test_qwen_chunked_forward_parity() {
+        fn normalized(tensor: Tensor) -> Vec<f32> {
+            let mut values = tensor.squeeze(0).unwrap().to_vec1::<f32>().unwrap();
+            normalize(&mut values);
+            values
+        }
+
+        let cache_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".cache/manticore");
+        let local_model =
+            LocalModel::new("Qwen/Qwen3-Embedding-0.6B", cache_path, false, None).unwrap();
+        let source = "Qwen chunk boundary compatibility sentence. ".repeat(20);
+        local_model.predict(&[source.as_str()], 0).unwrap();
+        let LocalModel::Causal(causal) = local_model else {
+            panic!("Qwen must resolve to the Candle causal-model path");
+        };
+        let CausalEmbeddingKind::Qwen { model, config } = &causal.kind else {
+            panic!("Qwen3 must resolve to the Qwen causal implementation");
+        };
+        let tokens = causal
+            .tokenizer
+            .encode(source, true)
+            .unwrap()
+            .get_ids()
+            .to_vec();
+        assert!(tokens.len() >= 129);
+
+        let pool = |tokens, chunk_size| {
+            normalized(qwen_mean_pool(model, config, tokens, &causal.device, chunk_size).unwrap())
+        };
+        for token_count in [63usize, 64, 65, 129] {
+            let sample = &tokens[..token_count];
+            let single_pass = pool(sample, sample.len());
+            let chunked = pool(sample, QWEN_FORWARD_CHUNK_SIZE);
+            let (cosine, max_abs_diff) = single_pass.iter().zip(&chunked).fold(
+                (0.0f32, 0.0f32),
+                |(cosine, max_diff), (left, right)| {
+                    (cosine + left * right, max_diff.max((left - right).abs()))
+                },
+            );
+            assert!(cosine > 0.9999, "{token_count} tokens: cosine={cosine}");
+            assert!(
+                max_abs_diff < 0.01,
+                "{token_count} tokens: max_abs_diff={max_abs_diff}"
+            );
+        }
     }
 }
