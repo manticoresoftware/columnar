@@ -41,6 +41,9 @@ static void LoadSettings ( IndexSettings_t & tSettings, FileReader_c & tReader, 
 
 	tSettings.m_iHNSWM				= tReader.Read_uint32();
 	tSettings.m_iHNSWEFConstruction	= tReader.Read_uint32();
+
+	if ( uVersion>=4 )
+		tSettings.m_bMulti			= !!tReader.Read_uint32();
 }
 
 
@@ -70,6 +73,7 @@ static void SaveSettings ( const IndexSettings_t & tSettings, FileWriter_c & tWr
 	tWriter.Write_uint32 ( (int)tSettings.m_eQuantization );
 	tWriter.Write_uint32 ( tSettings.m_iHNSWM );
 	tWriter.Write_uint32 ( tSettings.m_iHNSWEFConstruction );
+	tWriter.Write_uint32 ( tSettings.m_bMulti ? 1 : 0 );
 }
 
 
@@ -90,15 +94,29 @@ static void SaveQuantizationSettings ( const QuantizationSettings_t & tSettings,
 class HNSWFilterWrapper_c : public hnswlib::BaseFilterFunctor
 {
 public:
-				HNSWFilterWrapper_c ( KNNFilter_i * pFilter ) : m_pFilter ( pFilter ) {}
+				HNSWFilterWrapper_c ( KNNFilter_i * pFilter, const uint32_t * pVidToRowid = nullptr ) : m_pFilter ( pFilter ), m_pVidToRowid ( pVidToRowid ) {}
 	virtual		~HNSWFilterWrapper_c() = default;
 
-	bool		operator() ( hnswlib::labeltype id ) override	{ return m_pFilter->IsAllowed ( (uint32_t)id ); }
-	long long	getFilterCount() const override					{ return (long long)m_pFilter->GetFilterCount(); }
+	bool		operator() ( hnswlib::labeltype id ) override	{ return m_pFilter->IsAllowed ( m_pVidToRowid ? m_pVidToRowid[id] : (uint32_t)id ); }
+	long long	getFilterCount() const override;
+	void		SetVectorsPerDoc ( float fVectorsPerDoc )		{ m_fVectorsPerDoc = fVectorsPerDoc; }
 
 private:
-	KNNFilter_i * m_pFilter = nullptr;
+	KNNFilter_i *		m_pFilter = nullptr;
+	const uint32_t *	m_pVidToRowid = nullptr;
+	float				m_fVectorsPerDoc = 1.0f;
 };
+
+
+long long HNSWFilterWrapper_c::getFilterCount() const
+{
+	int64_t iCount = m_pFilter->GetFilterCount();
+	if ( iCount<0 )
+		return -1;						// unknown cardinality, scaling is meaningless
+
+	// hnswlib weighs this against vectors; the daemon's estimate counts documents, hence the scale
+	return (long long)( iCount*m_fVectorsPerDoc );
+}
 
 /////////////////////////////////////////////////////////////////////
 
@@ -211,16 +229,19 @@ class HNSWIndex_c : public HNSWDist_c, public HNSWIndex_i
 public:
 			HNSWIndex_c ( const std::string & sName, int64_t iNumElements, const knn::IndexSettings_t & tSettings, const QuantizationSettings_t & tQuantSettings, ScalarQuantizer_i * pQuantizer );
 
-	bool	Load ( FileReader_c & tReader, std::string & sError ) override	{ return m_pAlg->loadIndex ( tReader, m_pSpace.get(), sError ); 	}
+	bool	Load ( FileReader_c & tReader, std::string & sError ) override;
 	const std::string &	GetName() const override	{ return m_sName; }
 	void	Search ( std::vector<DocDist_t> & dResults, const Span_T<float> & dData, int64_t iResults, int iEf, std::vector<uint8_t> & dQuantized, int64_t * pDistanceComputations = nullptr, KNNFilter_i * pFilter = nullptr, HNSWTerminationPolicy_e ePolicy = HNSWTerminationPolicy_e::NONE ) const override;
-	bool	ShouldUseFullscan ( int64_t iResults, int iEf, int64_t iFilterCount ) const override { return m_pAlg->shouldBypassHnswForFilteredSearch ( iResults, (long long)iFilterCount, iEf ); }
+	bool	ShouldUseFullscan ( int64_t iResults, int iEf, int64_t iFilterCount ) const override;
 
 private:
 	std::string											m_sName;
 	std::unique_ptr<hnswlib::HierarchicalNSW<float>>	m_pAlg;
 	std::unique_ptr<ScalarQuantizer_i>					m_pQuantizer;
 	DistFuncId_e										m_eDistFuncId = DistFuncId_e::NONE;
+	bool												m_bMulti = false;
+	std::vector<uint32_t>								m_dVidToRowid;				// [vector id] -> rowid. Empty in scalar mode
+	float												m_fVectorsPerDoc = 1.0f;	// average vectors per document, used to convert the daemon's document-space filter estimates into the vector space for the hnsw
 };
 
 
@@ -228,10 +249,49 @@ HNSWIndex_c::HNSWIndex_c ( const std::string & sName, int64_t iNumElements, cons
 	: HNSWDist_c ( tSettings.m_iDims, tSettings.m_eHNSWSimilarity,  tSettings.m_eQuantization, false )
 	, m_sName ( sName )
 	, m_pQuantizer ( pQuantizer )
+	, m_bMulti ( tSettings.m_bMulti )
 {
 	m_pSpace->SetQuantizationSettings(*pQuantizer);
 	m_eDistFuncId = m_pSpace->GetDistFuncId();
 	m_pAlg = std::make_unique<hnswlib::HierarchicalNSW<float>>( m_pSpace.get(), iNumElements, tSettings.m_iHNSWM, tSettings.m_iHNSWEFConstruction );
+}
+
+
+bool HNSWIndex_c::Load ( FileReader_c & tReader, std::string & sError )
+{
+	if ( m_bMulti )
+	{
+		const uint64_t uNumVectors = tReader.Read_uint64();
+		m_dVidToRowid.resize ( (size_t)uNumVectors );
+		for ( auto & i : m_dVidToRowid )
+			i = tReader.Read_uint32();
+	}
+
+	if ( !m_pAlg->loadIndex ( tReader, m_pSpace.get(), sError ) )
+		return false;
+
+	assert ( !m_bMulti || m_dVidToRowid.size()==m_pAlg->cur_element_count );
+
+	if ( !m_dVidToRowid.empty() )
+	{
+		// graph needs the map because it needs to collect one result per doc (group)
+		m_pAlg->setGroupMap ( m_dVidToRowid.data() );
+
+		const int64_t iDocs = (int64_t)m_dVidToRowid.back() + 1;
+		m_fVectorsPerDoc = float ( (double)m_dVidToRowid.size() / (double)iDocs );
+	}
+
+	return true;
+}
+
+
+bool HNSWIndex_c::ShouldUseFullscan ( int64_t iResults, int iEf, int64_t iFilterCount ) const
+{
+	// iFilterCount is a doc estimate; need to conver it to vectors first
+	if ( iFilterCount>=0 )
+		iFilterCount = (int64_t)( iFilterCount*m_fVectorsPerDoc );
+
+	return m_pAlg->shouldBypassHnswForFilteredSearch ( iResults, (long long)iFilterCount, iEf );
 }
 
 
@@ -470,7 +530,10 @@ void HNSWIndex_c::Search ( std::vector<DocDist_t> & dResults, const Span_T<float
 
 	std::unique_ptr<HNSWFilterWrapper_c> pFilterWrapper;
 	if ( pFilter )
-		pFilterWrapper = std::make_unique<HNSWFilterWrapper_c>(pFilter);
+	{
+		pFilterWrapper = std::make_unique<HNSWFilterWrapper_c> ( pFilter, m_dVidToRowid.empty() ? nullptr : m_dVidToRowid.data() );
+		pFilterWrapper->SetVectorsPerDoc ( m_fVectorsPerDoc );
+	}
 
 	size_t iSearchEf = iEf;
 	long iBeforeDistanceComputations = 0;
@@ -561,7 +624,7 @@ bool KNN_c::Load ( const std::string & sFilename, std::string & sError )
 		return false;
 
 	uint32_t uVersion = tReader.Read_uint32();
-	if ( uVersion < 2 )
+	if ( uVersion < 2 || uVersion > STORAGE_VERSION )
 	{
 		sError = FormatStr ( "Unable to load KNN index: %s is v.%d, binary is v.%d", sFilename.c_str(), uVersion, STORAGE_VERSION );
 		return false;
@@ -640,7 +703,7 @@ class HNSWIndexBuilder_i
 public:
 	virtual			~HNSWIndexBuilder_i() = default;
 
-	virtual void	Train ( const util::Span_T<float> & dData ) = 0;
+	virtual void	Train ( uint32_t uRowID, const util::Span_T<float> & dData ) = 0;
 	virtual bool	FinalizeTraining ( std::string & sError ) = 0;
 	virtual bool	AddDoc ( uint32_t uRowID, const util::Span_T<float> & dData, BuildContext_t & tBuildCtx, std::string & sError ) = 0;
 	virtual void	Save ( FileWriter_c & tWriter ) = 0;
@@ -654,7 +717,7 @@ class HNSWIndexBuilder_c : public HNSWIndexBuilder_i, public HNSWDist_c
 public:
 			HNSWIndexBuilder_c ( const AttrWithSettings_t & tAttr, int64_t iNumElements, ScalarQuantizer_i * pQuantizer );
 
-	void	Train ( const util::Span_T<float> & dData ) override;
+	void	Train ( uint32_t uRowID, const util::Span_T<float> & dData ) override;
 	bool	FinalizeTraining ( std::string & sError ) override;
 	bool	AddDoc ( uint32_t uRowID, const util::Span_T<float> & dData, BuildContext_t & tBuildCtx, std::string & sError ) override;
 	void	Save ( FileWriter_c & tWriter ) override;
@@ -665,14 +728,20 @@ private:
 	using AddPoint_fn = void (*) ( hnswlib::HierarchicalNSW<float> &, const void *, uint32_t );
 
 	template <typename DistFn>
-	static void	AddPointTyped ( hnswlib::HierarchicalNSW<float> & tAlg, const void * pVec, uint32_t uRowID ) { tAlg.template addPoint<DistFn, false> ( pVec, (size_t)uRowID, -1 ); }
-	static void	AddPointFallback ( hnswlib::HierarchicalNSW<float> & tAlg, const void * pVec, uint32_t uRowID ) { tAlg.addPoint ( pVec, (size_t)uRowID ); }
+	static void	AddPointTyped ( hnswlib::HierarchicalNSW<float> & tAlg, const void * pVec, uint32_t uVecID ) { tAlg.template addPoint<DistFn, false> ( pVec, (size_t)uVecID, -1 ); }
+	static void	AddPointFallback ( hnswlib::HierarchicalNSW<float> & tAlg, const void * pVec, uint32_t uVecID ) { tAlg.addPoint ( pVec, (size_t)uVecID ); }
 	AddPoint_fn SelectAddPointFn() const;
+
+	bool	AddVector ( uint32_t uVecID, const util::Span_T<float> & dVec, BuildContext_t & tBuildCtx );
 
 	AttrWithSettings_t								m_tAttr;
 	std::unique_ptr<ScalarQuantizer_i>				m_pQuantizer;
 	std::unique_ptr<hnswlib::HierarchicalNSW<float>> m_pAlg;
 	AddPoint_fn										m_fnAddPoint = AddPointFallback;
+
+	bool											m_bCountOverflow = false;	// a row held more vectors than a 32-bit id can address
+	std::vector<uint32_t>							m_dCounts;					// [rowid] -> num vectors in that row
+	std::vector<int64_t>							m_dBase;					// [rowid] -> first vector id of that row
 };
 
 
@@ -703,13 +772,37 @@ HNSWIndexBuilder_c::HNSWIndexBuilder_c ( const AttrWithSettings_t & tAttr, int64
 	, m_tAttr ( tAttr )
 	, m_pQuantizer ( pQuantizer )
 {
-	m_pAlg = std::make_unique<hnswlib::HierarchicalNSW<float>>( m_pSpace.get(), iNumElements, m_tAttr.m_iHNSWM, m_tAttr.m_iHNSWEFConstruction );
+	// we don't know total number of vectors in multi mode, so we can't allocate the graph yet - do it in FinalizeTraining()
+	if ( m_tAttr.m_bMulti )
+		m_dCounts.resize ( (size_t)iNumElements, 0 );
+	else
+		m_pAlg = std::make_unique<hnswlib::HierarchicalNSW<float>>( m_pSpace.get(), iNumElements, m_tAttr.m_iHNSWM, m_tAttr.m_iHNSWEFConstruction );
+
 	m_fnAddPoint = SelectAddPointFn();
 }
 
 
-void HNSWIndexBuilder_c::Train ( const util::Span_T<float> & dData )
+void HNSWIndexBuilder_c::Train ( uint32_t uRowID, const util::Span_T<float> & dData )
 {
+	if ( m_tAttr.m_bMulti )
+	{
+		assert ( uRowID<m_dCounts.size() );
+		assert ( m_tAttr.m_iDims>0 && !( dData.size() % (size_t)m_tAttr.m_iDims ) );
+
+		const size_t uCount = dData.size() / (size_t)m_tAttr.m_iDims;
+		if ( uCount>(size_t)UINT32_MAX )
+			m_bCountOverflow = true;
+
+		m_dCounts[uRowID] = (uint32_t)uCount;
+
+		// train the quantizer per vector slot
+		if ( m_pQuantizer )
+			for ( size_t i = 0; i < dData.size(); i += (size_t)m_tAttr.m_iDims )
+				m_pQuantizer->Train ( { dData.data()+i, (size_t)m_tAttr.m_iDims } );
+
+		return;
+	}
+
 	if ( m_pQuantizer )
 		m_pQuantizer->Train(dData);
 }
@@ -717,6 +810,31 @@ void HNSWIndexBuilder_c::Train ( const util::Span_T<float> & dData )
 
 bool HNSWIndexBuilder_c::FinalizeTraining ( std::string & sError )
 {
+	if ( m_tAttr.m_bMulti )
+	{
+		int64_t iTotal = 0;
+		m_dBase.resize ( m_dCounts.size()+1 );
+		for ( size_t i = 0; i < m_dCounts.size(); i++ )
+		{
+			m_dBase[i] = iTotal;
+			iTotal += m_dCounts[i];
+		}
+
+		m_dBase[m_dCounts.size()] = iTotal;
+
+		if ( m_bCountOverflow || iTotal > (int64_t)UINT32_MAX )
+		{
+			sError = FormatStr ( "HNSW error: index '%s' needs %lld vectors but at most %u are addressable per chunk; store fewer vectors per document, or split the table so chunks stay smaller", m_tAttr.m_sName.c_str(), (long long)iTotal, (unsigned)UINT32_MAX );
+			return false;
+		}
+
+		m_pAlg = std::make_unique<hnswlib::HierarchicalNSW<float>>( m_pSpace.get(), iTotal, m_tAttr.m_iHNSWM, m_tAttr.m_iHNSWEFConstruction );
+
+		// nothing to encode if there are no vectors at all; skip sizing the quantizer temp buffer
+		if ( m_pQuantizer && iTotal )
+			m_pQuantizer->SetTotalVectors(iTotal);
+	}
+
 	if ( !m_pQuantizer )
 		return true;
 
@@ -731,21 +849,15 @@ bool HNSWIndexBuilder_c::FinalizeTraining ( std::string & sError )
 }
 
 
-bool HNSWIndexBuilder_c::AddDoc ( uint32_t uRowID, const util::Span_T<float> & dData, BuildContext_t & tBuildCtx, std::string & sError )
+bool HNSWIndexBuilder_c::AddVector ( uint32_t uVecID, const util::Span_T<float> & dVec, BuildContext_t & tBuildCtx )
 {
-	if ( dData.size()!=(size_t)m_tAttr.m_iDims )
-	{
-		sError = FormatStr ( "HNSW error: data has %llu values, index '%s' needs %d values", dData.size(), m_tAttr.m_sName.c_str(), m_tAttr.m_iDims );
-		return false;
-	}
-
-	assert ( !m_pQuantizer || m_pQuantizer->IsFinalized() );
-
-	Span_T<float> dToAdd = dData;
+	Span_T<float> dToAdd = dVec;
 	if ( m_tAttr.m_eHNSWSimilarity==HNSWSimilarity_e::COSINE )
 	{
-		tBuildCtx.m_dNormalized.resize ( dData.size() );
-		memcpy ( tBuildCtx.m_dNormalized.data(), dData.data(), dData.size()*sizeof(dData[0] ) );
+		// PER VECTOR. Normalizing a whole multi-vector row as one long vector would scale every slot
+		// by the wrong magnitude and silently corrupt every cosine distance in the index.
+		tBuildCtx.m_dNormalized.resize ( dVec.size() );
+		memcpy ( tBuildCtx.m_dNormalized.data(), dVec.data(), dVec.size()*sizeof(dVec[0]) );
 		VecNormalize ( tBuildCtx.m_dNormalized );
 		dToAdd = tBuildCtx.m_dNormalized;
 	}
@@ -753,15 +865,50 @@ bool HNSWIndexBuilder_c::AddDoc ( uint32_t uRowID, const util::Span_T<float> & d
 	const void * pVec = nullptr;
 	if ( m_pQuantizer )
 	{
-		m_pQuantizer->Encode ( uRowID, dToAdd, tBuildCtx.m_dQuantized, tBuildCtx.m_dQuantizedForQuery );
+		m_pQuantizer->Encode ( uVecID, dToAdd, tBuildCtx.m_dQuantized, tBuildCtx.m_dQuantizedForQuery );
 		pVec = (void*)tBuildCtx.m_dQuantized.data();
 	}
 	else
 		pVec = (void*)dToAdd.data();
 
-	m_fnAddPoint ( *m_pAlg, pVec, uRowID );
-
+	m_fnAddPoint ( *m_pAlg, pVec, uVecID );
 	return true;
+}
+
+
+bool HNSWIndexBuilder_c::AddDoc ( uint32_t uRowID, const util::Span_T<float> & dData, BuildContext_t & tBuildCtx, std::string & sError )
+{
+	assert ( !m_pQuantizer || m_pQuantizer->IsFinalized() );
+
+	const size_t uDims = (size_t)m_tAttr.m_iDims;
+
+	if ( m_tAttr.m_bMulti )
+	{
+		if ( dData.size() % uDims )
+		{
+			sError = FormatStr ( "HNSW error: data has %llu values, index '%s' needs a multiple of %d", dData.size(), m_tAttr.m_sName.c_str(), m_tAttr.m_iDims );
+			return false;
+		}
+
+		const size_t uCount = dData.size() / uDims;
+		assert ( uRowID+1<m_dBase.size() );
+		assert ( m_dBase[uRowID] + (int64_t)uCount == m_dBase[uRowID+1] );	// Train() saw the same row
+
+		const int64_t iBase = m_dBase[uRowID];
+		for ( size_t i = 0; i < uCount; i++ )
+			if ( !AddVector ( (uint32_t)( iBase + (int64_t)i ), { dData.data() + i*uDims, uDims }, tBuildCtx ) )
+				return false;
+
+		return true;
+	}
+
+	if ( dData.size()!=uDims )
+	{
+		sError = FormatStr ( "HNSW error: data has %llu values, index '%s' needs %d values", dData.size(), m_tAttr.m_sName.c_str(), m_tAttr.m_iDims );
+		return false;
+	}
+
+	return AddVector ( uRowID, dData, tBuildCtx );
 }
 
 
@@ -769,6 +916,16 @@ void HNSWIndexBuilder_c::Save ( FileWriter_c & tWriter )
 {
 	if ( m_pQuantizer )
 		m_pQuantizer->FinalizeEncoding();
+
+	if ( m_tAttr.m_bMulti )
+	{
+		const int64_t iTotal = m_dBase.empty() ? 0 : m_dBase.back();
+		tWriter.Write_uint64 ( (uint64_t)iTotal );
+
+		for ( size_t uRowID = 0; uRowID < m_dCounts.size(); uRowID++ )
+			for ( uint32_t i = 0; i < m_dCounts[uRowID]; i++ )
+				tWriter.Write_uint32 ( (uint32_t)uRowID );
+	}
 
 	m_pAlg->saveIndex(tWriter);
 }
@@ -780,7 +937,7 @@ class HNSWBuilder_c : public Builder_i
 public:
 			HNSWBuilder_c ( const Schema_t & tSchema, int64_t iNumElements, const std::string & sTmpFilename );
 
-	void	Train ( int iAttr, uint32_t uRowID, const util::Span_T<float> & dData ) override								{ m_dIndexes[iAttr]->Train(dData); }
+	void	Train ( int iAttr, uint32_t uRowID, const util::Span_T<float> & dData ) override								{ m_dIndexes[iAttr]->Train ( uRowID, dData ); }
 	bool	SetAttr ( int iAttr, uint32_t uRowID, const util::Span_T<float> & dData, BuildContext_t & tBuildCtx ) override	{ return m_dIndexes[iAttr]->AddDoc ( uRowID, dData, tBuildCtx, tBuildCtx.m_sError ); }
 	bool	FinalizeTraining ( std::string & sError ) override;
 	bool	Save ( const std::string & sFilename, size_t tBufferSize, std::string & sError ) override;

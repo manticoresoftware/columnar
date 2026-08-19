@@ -648,6 +648,7 @@ public:
 			~ScalarQuantizerBinary_T() { Reset(); }
 
 	void	Train ( const Span_T<float> & dPoint ) override;
+	void	SetTotalVectors ( int64_t iTotalVectors ) override { m_uTotalVecs = (size_t)iTotalVectors; }
 	bool	FinalizeTraining ( std::string & sError ) override;
 	bool	IsFinalized() const override { return m_bFinalized; }
 	void	Encode ( uint32_t uRowID, const Span_T<float> & dPoint, std::vector<uint8_t> & dQuantized, std::vector<uint8_t> & dQuantizedForQuery ) override;
@@ -801,10 +802,28 @@ bool ScalarQuantizerBinary_T<BUILD>::FinalizeTraining ( std::string & sError )
 		return false;
 	}
 
-	int64_t iTmpFileSize = m_uTotalVecs*m_uQuantized4BitEntrySize;
-	fseek ( pFile, iTmpFileSize-1, SEEK_SET );
-	fwrite ( "", 1, 1, pFile );
-	fclose ( pFile );
+	if ( !m_uTotalVecs || !m_uQuantized4BitEntrySize || (int64_t)m_uTotalVecs > INT64_MAX / (int64_t)m_uQuantized4BitEntrySize )
+	{
+		fclose ( pFile );
+		sError = FormatStr ( "Invalid quantizer buffer size for %llu vectors of %llu bytes", (unsigned long long)m_uTotalVecs, (unsigned long long)m_uQuantized4BitEntrySize );
+		return false;
+	}
+
+	int64_t iTmpFileSize = (int64_t)m_uTotalVecs * (int64_t)m_uQuantized4BitEntrySize;
+
+#ifdef _MSC_VER
+	bool bSeekOk = _fseeki64 ( pFile, iTmpFileSize-1, SEEK_SET )==0;
+#else
+	bool bSeekOk = fseeko ( pFile, (off_t)( iTmpFileSize-1 ), SEEK_SET )==0;
+#endif
+
+	bool bWriteOk = bSeekOk && fwrite ( "", 1, 1, pFile )==1;
+	bool bCloseOk = fclose ( pFile )==0;
+	if ( !bSeekOk || !bWriteOk || !bCloseOk )
+	{
+		sError = FormatStr ( "Failed to size quantizer file '%s' to %lld bytes", m_sTmpFilename.c_str(), (long long)iTmpFileSize );
+		return false;
+	}
 
 	if ( !m_tBuffer4Bit.Open ( m_sTmpFilename.c_str(), true, sError ) )
 		return false;

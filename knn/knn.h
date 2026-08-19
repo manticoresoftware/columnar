@@ -26,8 +26,8 @@
 namespace knn
 {
 
-static const int LIB_VERSION = 16;
-static const uint32_t STORAGE_VERSION = 3;
+static const int LIB_VERSION = 17;
+static const uint32_t STORAGE_VERSION = 4;
 
 enum class HNSWSimilarity_e
 {
@@ -52,6 +52,7 @@ struct IndexSettings_t
 	Quantization_e		m_eQuantization = Quantization_e::NONE;
 	int					m_iHNSWM = 16;
 	int					m_iHNSWEFConstruction = 200;
+	bool				m_bMulti = false;
 };
 
 struct ModelSettings_t
