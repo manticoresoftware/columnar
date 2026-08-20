@@ -7,6 +7,7 @@ edition = "2021"
 # For local dev with ../../candle, add a [patch] section to use path deps.
 [dependencies]
 tokenizers = "0.15.2"
+unicode-segmentation = "1"
 hf-hub = { git = "https://github.com/huggingface/hf-hub.git", rev = "ac22200ea0b5af4d8c362f699be0340647b19060", default-features = false,features = ["ureq"] }
 anyhow = "1.0.81"
 serde_json = "1.0.114"

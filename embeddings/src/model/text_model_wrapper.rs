@@ -1,7 +1,13 @@
+use crate::chunk::ChunkSettings;
 use crate::model::{create_model, Model, ModelOptions, TextModel};
 use crate::panic_guard;
 use std::os::raw::c_char;
 use std::{ffi::c_void, ptr};
+
+/// Per-document output vectors (flat across all documents) plus per-document
+/// vector counts, used to build the row-offsets sidecar. One inner `Vec<f32>`
+/// per emitted vector.
+type EmbedResult = Result<(Vec<Vec<f32>>, Vec<usize>), Box<dyn std::error::Error>>;
 
 /// Sentinel written at offset 0 of every live model handle. Lets FFI entry
 /// points detect garbage, null, or freed pointers handed in by the C++ caller
@@ -60,13 +66,27 @@ pub struct FloatVec {
     pub cap: usize,
 }
 
-/// cbindgen:field-names=[m_szError,m_tEmbedding,len,cap]
+/// Embedding result for one `make_vect_embeddings` call.
+///
+/// `m_tEmbedding` is a FLAT array of `len` vectors — every input document's
+/// vectors concatenated. `m_pRowOffsets` (length `rows + 1`) groups them per
+/// input document, Arrow-style: document `i` owns
+/// `m_tEmbedding[m_pRowOffsets[i] .. m_pRowOffsets[i + 1]]`. For the v1
+/// strategies (truncate / mean) every document yields exactly one vector, so
+/// `len == rows` and the offsets are `[0, 1, ..., rows]`. The sidecar lets a
+/// future multi-vector strategy return N vectors per document through this same
+/// struct — no second method, cardinality carried as data.
+///
+/// cbindgen:field-names=[m_szError,m_tEmbedding,len,cap,m_pRowOffsets,rows,offsets_cap]
 #[repr(C)]
 pub struct FloatVecResult {
     pub error: *mut c_char,
     pub ptr: *const FloatVec,
     pub len: usize,
     pub cap: usize,
+    pub row_offsets: *const usize,
+    pub rows: usize,
+    pub offsets_cap: usize,
 }
 
 #[repr(C)]
@@ -201,10 +221,20 @@ impl TextModelWrapper {
         }
     }
 
+    /// Generate embeddings for a batch of documents. `settings` selects the
+    /// strategy (null ⇒ `truncate`):
+    /// - `truncate` — embed the first `max_tokens` tokens (one vector/doc).
+    /// - `mean` — split the doc, embed every chunk, average into one vector/doc.
+    /// - `fixed`/`recursive`/`sentence` — split the doc and keep every chunk
+    ///   vector (N vectors/doc).
+    ///
+    /// Output is a flat `FloatVec[]`; `m_pRowOffsets` groups it per document
+    /// (1 vector/doc for truncate/mean, N for the rest). `threads`: 0 = all CPUs.
     pub extern "C" fn make_vect_embeddings(
         &self,
         texts: *const StringItem,
         count: usize,
+        settings: *const ChunkSettings,
         threads: i32, // 0 = use all available CPUs, >0 = cap thread count
     ) -> FloatVecResult {
         panic_guard::catch_panic(|| {
@@ -217,6 +247,9 @@ impl TextModelWrapper {
                         ptr: ptr::null(),
                         len: 0,
                         cap: 0,
+                        row_offsets: ptr::null(),
+                        rows: 0,
+                        offsets_cap: 0,
                     };
                 }
             };
@@ -234,43 +267,112 @@ impl TextModelWrapper {
                 .collect();
 
             let threads = if threads > 0 { threads as usize } else { 0 };
+            let settings_ref = unsafe { settings.as_ref() };
 
-            let mut float_vec_list: Vec<FloatVec> = Vec::new();
-            let embeddings_list = model.predict(&string_refs, threads);
-            let c_error = match embeddings_list {
-                Ok(embeddings_list) => {
-                    for embeddings in embeddings_list.iter() {
-                        let ptr = embeddings.as_ptr();
-                        let len = embeddings.len();
-                        let cap = embeddings.capacity();
-                        let vec = FloatVec { ptr, len, cap };
-                        float_vec_list.push(vec);
+            let strategy = settings_ref
+                .map(|s| s.strategy)
+                .unwrap_or(crate::chunk::STRATEGY_TRUNCATE);
+
+            // Each strategy yields a flat Vec<Vec<f32>> (all documents' output
+            // vectors) plus per-document output counts. truncate/mean emit one
+            // vector/doc; fixed/recursive/sentence emit one vector per chunk.
+            let computed: EmbedResult =
+                if strategy == crate::chunk::STRATEGY_TRUNCATE {
+                    model.predict(&string_refs, threads).map(|vecs| {
+                        let counts = vec![1usize; vecs.len()];
+                        (vecs, counts)
+                    })
+                } else {
+                    let s = settings_ref.unwrap();
+                    let max = crate::chunk::effective_max(s, model.get_max_input_len());
+                    let overlap = s.overlap_tokens as usize;
+                    let max_chunks = s.max_chunks as usize;
+
+                    // Split every document; remember each document's chunk count.
+                    let mut flat: Vec<&str> = Vec::new();
+                    let mut chunk_counts: Vec<usize> = Vec::with_capacity(string_refs.len());
+                    for &text in &string_refs {
+                        let spans = crate::chunk::cap_chunks(
+                            model.chunk(text, max, overlap, strategy),
+                            max_chunks,
+                        );
+                        chunk_counts.push(spans.len());
+                        for (start, end) in spans {
+                            flat.push(&text[start..end]);
+                        }
                     }
 
-                    std::mem::forget(embeddings_list);
-                    ptr::null_mut()
-                }
-                Err(e) => {
-                    // Don't push empty vector on error - return error through szError pattern
-                    let c_error = std::ffi::CString::new(e.to_string()).unwrap();
-                    c_error.into_raw()
-                }
-            };
+                    model.predict(&flat, threads).map(|chunk_vecs| {
+                        if strategy == crate::chunk::STRATEGY_MEAN {
+                            // pool each document's chunks into one vector
+                            let mut out = Vec::with_capacity(chunk_counts.len());
+                            let mut idx = 0usize;
+                            for c in &chunk_counts {
+                                let end = idx + c;
+                                out.push(crate::chunk::mean_pool(&chunk_vecs[idx..end]));
+                                idx = end;
+                            }
+                            let counts = vec![1usize; out.len()];
+                            (out, counts)
+                        } else {
+                            // fixed/recursive/sentence: keep every chunk vector.
+                            (chunk_vecs, chunk_counts)
+                        }
+                    })
+                };
 
-            let vec_result = FloatVecResult {
-                ptr: float_vec_list.as_ptr(),
-                len: float_vec_list.len(),
-                cap: float_vec_list.capacity(),
-                error: c_error,
-            };
-            std::mem::forget(float_vec_list);
-            vec_result
+            match computed {
+                Ok((embeddings_list, counts)) => {
+                    let mut float_vec_list: Vec<FloatVec> =
+                        Vec::with_capacity(embeddings_list.len());
+                    for embeddings in embeddings_list.iter() {
+                        float_vec_list.push(FloatVec {
+                            ptr: embeddings.as_ptr(),
+                            len: embeddings.len(),
+                            cap: embeddings.capacity(),
+                        });
+                    }
+                    std::mem::forget(embeddings_list);
+
+                    // Group the flat vectors per document: truncate/mean → one
+                    // vector/doc (offsets [0,1,..]); fixed/recursive/sentence →
+                    // N vectors/doc, offsets = prefix sums of per-doc counts.
+                    let row_offsets = crate::chunk::row_offsets_from_counts(&counts);
+                    let rows = counts.len();
+
+                    let result = FloatVecResult {
+                        error: ptr::null_mut(),
+                        ptr: float_vec_list.as_ptr(),
+                        len: float_vec_list.len(),
+                        cap: float_vec_list.capacity(),
+                        row_offsets: row_offsets.as_ptr(),
+                        rows,
+                        offsets_cap: row_offsets.capacity(),
+                    };
+                    std::mem::forget(float_vec_list);
+                    std::mem::forget(row_offsets);
+                    result
+                }
+                // Don't push empty vectors on error — surface it via szError.
+                Err(e) => FloatVecResult {
+                    error: to_c_error(&e.to_string()),
+                    ptr: ptr::null(),
+                    len: 0,
+                    cap: 0,
+                    row_offsets: ptr::null(),
+                    rows: 0,
+                    offsets_cap: 0,
+                },
+            }
         })
         .unwrap_or_else(|msg| FloatVecResult {
             error: to_c_error(&format!("embeddings: internal error (panic): {msg}")),
             ptr: ptr::null(),
             len: 0,
             cap: 0,
+            row_offsets: ptr::null(),
+            rows: 0,
+            offsets_cap: 0,
         })
     }
 
@@ -291,6 +393,15 @@ impl TextModelWrapper {
 
                 // Free the FloatVecList's array of FloatVecResult
                 let _ = Vec::from_raw_parts(result.ptr as *mut FloatVec, result.len, result.cap);
+            }
+
+            // Free the per-row offsets sidecar (length = rows + 1).
+            if !result.row_offsets.is_null() && result.offsets_cap > 0 {
+                let _ = Vec::from_raw_parts(
+                    result.row_offsets as *mut usize,
+                    result.rows + 1,
+                    result.offsets_cap,
+                );
             }
 
             // Free the error string if it exists
