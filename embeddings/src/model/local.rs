@@ -1393,6 +1393,19 @@ impl LocalModel {
     }
 }
 
+impl LocalModel {
+    /// Borrow the loaded tokenizer for token-accurate document chunking.
+    fn tokenizer(&self) -> &Tokenizer {
+        match self {
+            LocalModel::Bert(m) => &m.tokenizer,
+            LocalModel::T5(m) => &m.tokenizer,
+            LocalModel::Causal(m) => &m.tokenizer,
+            LocalModel::Quantized(m) => &m.tokenizer,
+            LocalModel::Onnx(m) => &m.tokenizer,
+        }
+    }
+}
+
 impl TextModel for LocalModel {
     fn predict(&self, texts: &[&str], threads: usize) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
         // ONNX manages its own worker count internally — no rayon pool involved.
@@ -1428,6 +1441,18 @@ impl TextModel for LocalModel {
     fn validate_api_key(&self) -> Result<(), Box<dyn std::error::Error>> {
         // Local models don't use API keys, so validation is always successful
         Ok(())
+    }
+
+    fn chunk(
+        &self,
+        text: &str,
+        max_tokens: usize,
+        overlap: usize,
+        strategy: u32,
+    ) -> Vec<(usize, usize)> {
+        // Token-accurate split via the loaded tokenizer; chunk_text picks the
+        // split method (fixed/recursive/sentence) from the strategy.
+        crate::chunk::chunk_text(text, max_tokens, overlap, strategy, Some(self.tokenizer()))
     }
 }
 
