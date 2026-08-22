@@ -26,7 +26,7 @@
 namespace knn
 {
 
-static const int LIB_VERSION = 17;
+static const int LIB_VERSION = 18;
 static const uint32_t STORAGE_VERSION = 4;
 
 enum class HNSWSimilarity_e
@@ -63,6 +63,32 @@ struct ModelSettings_t
 	std::string m_sAPIUrl;
 	int			m_iAPITimeout = 10; // 0 = unlimited, >0 = timeout in seconds (default: 10)
 	bool		m_bUseGPU = false;
+};
+
+/// how a document's text becomes one or many vectors. TRUNCATE/MEAN yield exactly one vector per
+/// document and work with single-vector storage; FIXED/RECURSIVE/SENTENCE yield N and need an
+/// attribute that can hold several vectors per row
+enum class ChunkStrategy_e
+{
+	TRUNCATE	= 0,
+	MEAN		= 1,
+	FIXED		= 2,
+	RECURSIVE	= 3,
+	SENTENCE	= 4
+};
+
+inline bool IsMultiVectorStrategy ( ChunkStrategy_e eStrategy )
+{
+	return eStrategy==ChunkStrategy_e::FIXED || eStrategy==ChunkStrategy_e::RECURSIVE || eStrategy==ChunkStrategy_e::SENTENCE;
+}
+
+/// mirrors the embeddings lib's ChunkSettings
+struct ChunkSettings_t
+{
+	ChunkStrategy_e	m_eStrategy			= ChunkStrategy_e::TRUNCATE;
+	uint32_t		m_uMaxTokens		= 0;	// 0 = the model's own max input length
+	uint32_t		m_uOverlapTokens	= 0;	// 0 = no overlap
+	uint32_t		m_uMaxChunks		= 0;	// 0 = unlimited
 };
 
 struct AttrWithSettings_t : public common::SchemaAttr_t, public IndexSettings_t {};
@@ -149,7 +175,8 @@ class TextToEmbeddings_i
 public:
 	virtual			~TextToEmbeddings_i() = default;
 
-	virtual	bool	Convert ( const std::vector<std::string_view> & dTexts, std::vector<std::vector<float>> & dEmbeddings, std::string & sError, int iThreads = 0 ) const = 0;
+	// text i owns dEmbeddings[(*pRowOffsets)[i] .. (*pRowOffsets)[i+1]] in multi-vector case
+	virtual	bool	Convert ( const std::vector<std::string_view> & dTexts, std::vector<std::vector<float>> & dEmbeddings, std::string & sError, int iThreads = 0, const ChunkSettings_t * pChunk = nullptr, std::vector<size_t> * pRowOffsets = nullptr ) const = 0;
 	virtual int		GetDims() const = 0;
 };
 
