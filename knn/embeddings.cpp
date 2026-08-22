@@ -195,7 +195,7 @@ public:
 			TextToEmbeddings_c ( const ModelSettings_t & tSettings ) : m_tSettings ( tSettings ) {}
 
 	bool	Initialize ( std::shared_ptr<LoadedLib_c> pLib, std::string & sError );
-	bool	Convert ( const std::vector<std::string_view> & dTexts, std::vector<std::vector<float>> & dEmbeddings, std::string & sError, int iThreads = 0 ) const override;
+	bool	Convert ( const std::vector<std::string_view> & dTexts, std::vector<std::vector<float>> & dEmbeddings, std::string & sError, int iThreads = 0, const knn::ChunkSettings_t * pChunk = nullptr, std::vector<size_t> * pRowOffsets = nullptr ) const override;
 	int		GetDims() const override;
 
 private:
@@ -255,7 +255,7 @@ bool TextToEmbeddings_c::Initialize ( std::shared_ptr<LoadedLib_c> pLib, std::st
 }
 
 
-bool TextToEmbeddings_c::Convert ( const std::vector<std::string_view> & dTexts, std::vector<std::vector<float>> & dEmbeddings, std::string & sError, int iThreads ) const
+bool TextToEmbeddings_c::Convert ( const std::vector<std::string_view> & dTexts, std::vector<std::vector<float>> & dEmbeddings, std::string & sError, int iThreads, const knn::ChunkSettings_t * pChunk, std::vector<size_t> * pRowOffsets ) const
 {
 	std::vector<StringItem> dStringItems;
 	for ( const auto & i : dTexts )
@@ -264,10 +264,18 @@ bool TextToEmbeddings_c::Convert ( const std::vector<std::string_view> & dTexts,
 	auto * pFuncs = m_pLib->GetLibFuncs();
 	assert(pFuncs);
 
+	ChunkSettings tChunk;
+	if ( pChunk )
+	{
+		tChunk.strategy			= (uint32_t)pChunk->m_eStrategy;
+		tChunk.max_tokens		= pChunk->m_uMaxTokens;
+		tChunk.overlap_tokens	= pChunk->m_uOverlapTokens;
+		tChunk.max_chunks		= pChunk->m_uMaxChunks;
+	}
+
 	// iThreads: 0 = use all available CPUs (default), >0 = cap worker count in the embeddings lib
-	// nullptr ChunkSettings = truncate strategy (today's behavior). Pass a populated
-	// ChunkSettings (e.g. STRATEGY_MEAN) once the table DDL exposes a chunking option.
-	FloatVecResult tVecResult = pFuncs->make_vect_embeddings ( &m_pModel, dStringItems.data(), dStringItems.size(), nullptr, iThreads );
+	// nullptr ChunkSettings = truncate strategy, i.e. one vector per input text
+	FloatVecResult tVecResult = pFuncs->make_vect_embeddings ( &m_pModel, dStringItems.data(), dStringItems.size(), pChunk ? &tChunk : nullptr, iThreads );
 	if ( tVecResult.m_szError )
 	{
 		sError = tVecResult.m_szError;
@@ -275,15 +283,26 @@ bool TextToEmbeddings_c::Convert ( const std::vector<std::string_view> & dTexts,
 		return false;
 	}
 
-	// truncate/mean return one vector per input row, so tVecResult.len == rows
-	// and this 1:1 copy is correct. A future multi-vector strategy (N vectors
-	// per row) would instead group via tVecResult.m_pRowOffsets[i..i+1].
 	dEmbeddings.resize ( tVecResult.len );
 	for ( size_t i = 0; i < tVecResult.len; i++ )
 	{
 		const FloatVec & tVec = tVecResult.m_tEmbedding[i];
 		dEmbeddings[i].resize ( tVec.len );
 		memcpy ( dEmbeddings[i].data(), tVec.ptr, sizeof(float)*tVec.len );
+	}
+
+	if ( pRowOffsets )
+	{
+		if ( !tVecResult.m_pRowOffsets || tVecResult.rows!=dTexts.size() )
+		{
+			sError = util::FormatStr ( "embeddings library returned a malformed result: %lld rows for %lld input texts%s", (long long)tVecResult.rows, (long long)dTexts.size(), tVecResult.m_pRowOffsets ? "" : ", no row offsets" );
+			pFuncs->free_vec_result(tVecResult);
+			return false;
+		}
+
+		pRowOffsets->resize ( tVecResult.rows+1 );
+		for ( size_t i = 0; i <= tVecResult.rows; i++ )
+			(*pRowOffsets)[i] = (size_t)tVecResult.m_pRowOffsets[i];
 	}
 
 	pFuncs->free_vec_result(tVecResult);
