@@ -29,6 +29,7 @@ mod tests {
             api_url: None,
             api_timeout: None,
             use_gpu: Some(false),
+            max_input_tokens: None,
         };
 
         let result = create_model(options);
@@ -58,6 +59,7 @@ mod tests {
             api_url.as_bytes().len(),
             0, // Use default timeout
             false,
+            0, // max_input_tokens: model's own limit
         );
 
         if result.model.is_null() {
@@ -91,6 +93,7 @@ mod tests {
             api_url: None,
             api_timeout: None,
             use_gpu: Some(false),
+            max_input_tokens: None,
         };
 
         let result = create_model(options);
@@ -113,6 +116,7 @@ mod tests {
             api_url.as_bytes().len(),
             0, // Use default timeout
             false,
+            0, // max_input_tokens: model's own limit
         );
 
         assert!(ffi_result.model.is_null());
@@ -142,6 +146,7 @@ mod tests {
             api_url.as_bytes().len(),
             0, // Use default timeout
             false,
+            0, // max_input_tokens: model's own limit
         );
 
         // Should have error due to empty API key (basic validation)
@@ -180,6 +185,7 @@ mod tests {
             api_url.as_bytes().len(),
             0, // Use default timeout
             false,
+            0, // max_input_tokens: model's own limit
         );
 
         if !model_result.model.is_null() {
@@ -268,6 +274,7 @@ mod tests {
                 api_url: None,
                 api_timeout: None,
                 use_gpu: Some(use_gpu),
+                max_input_tokens: None,
             };
 
             let result = create_model(options);
@@ -316,6 +323,7 @@ mod tests {
                         api_url: None,
                         api_timeout: None,
                         use_gpu: Some(false),
+                        max_input_tokens: None,
                     };
 
                     let result = create_model(options);
@@ -402,6 +410,7 @@ mod tests {
                 api_url_c.as_bytes().len(),
                 0, // Use default timeout
                 false,
+                0, // max_input_tokens: model's own limit
             );
 
             // Should fail for all these cases

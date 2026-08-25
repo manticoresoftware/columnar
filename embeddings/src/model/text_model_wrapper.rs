@@ -117,6 +117,7 @@ impl TextModelWrapper {
         api_url_len: usize,
         api_timeout: i32, // 0 = unlimited, >0 = timeout in seconds
         use_gpu: bool,
+        max_input_tokens: i32, // 0 = model's own limit, >0 = cap on tokens per input text
     ) -> TextModelResult {
         panic_guard::catch_panic(|| {
             let name = unsafe {
@@ -162,6 +163,11 @@ impl TextModelWrapper {
                     None // Unlimited (no timeout)
                 },
                 use_gpu: Some(use_gpu),
+                max_input_tokens: if max_input_tokens > 0 {
+                    Some(max_input_tokens as usize)
+                } else {
+                    None // Model's own limit
+                },
             };
 
             match create_model(options) {

@@ -63,6 +63,7 @@ struct ModelSettings_t
 	std::string m_sAPIUrl;
 	int			m_iAPITimeout = 10; // 0 = unlimited, >0 = timeout in seconds (default: 10)
 	bool		m_bUseGPU = false;
+	int			m_iMaxInputTokens = 0; // 0 = model's own limit, >0 = cap on tokens taken from each input text
 };
 
 /// how a document's text becomes one or many vectors. TRUNCATE/MEAN yield exactly one vector per

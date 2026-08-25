@@ -40,6 +40,7 @@ mod tests {
             api_url.as_bytes().len(),
             0, // Unlimited timeout
             false,
+            0, // max_input_tokens: model's own limit
         );
 
         if result.model.is_null() {
@@ -181,6 +182,7 @@ mod tests {
             api_url.as_bytes().len(),
             0, // Use default timeout
             false,
+            0, // max_input_tokens: model's own limit
         );
 
         // Should fail with invalid model
@@ -216,6 +218,7 @@ mod tests {
             api_url.as_bytes().len(),
             0, // Use default timeout
             false,
+            0, // max_input_tokens: model's own limit
         );
 
         // Should fail with empty API key (basic validation)
@@ -251,6 +254,7 @@ mod tests {
             api_url.as_bytes().len(),
             0, // Use default timeout
             false,
+            0, // max_input_tokens: model's own limit
         );
 
         // Should fail with missing API key
@@ -492,6 +496,7 @@ mod tests {
             api_url: None,
             api_timeout: None,
             use_gpu: Some(true),
+            max_input_tokens: None,
         };
 
         let options2 = ModelOptions {
@@ -501,6 +506,7 @@ mod tests {
             api_url: None,
             api_timeout: None,
             use_gpu: None,
+            max_input_tokens: None,
         };
 
         assert_eq!(options1.model_id, "test-model");
@@ -537,6 +543,7 @@ mod tests {
             empty.as_bytes().len(),
             0,
             false,
+            0, // max_input_tokens: model's own limit
         );
         if loaded.model.is_null() {
             TextModelWrapper::free_model_result(loaded);

@@ -61,6 +61,10 @@ pub struct ModelOptions {
     pub api_url: Option<String>,
     pub api_timeout: Option<u64>, // Timeout in seconds (None means use default: 10 seconds)
     pub use_gpu: Option<bool>,
+    /// Cap on the number of tokens taken from each input text. None = the model's own
+    /// context limit (max_position_embeddings), which for long-context models is far
+    /// beyond what is practical on CPU (see manticoresearch#4816).
+    pub max_input_tokens: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -228,6 +232,7 @@ pub fn create_model(options: ModelOptions) -> Result<Model, Box<dyn Error>> {
             cache_path,
             options.use_gpu.unwrap_or(false),
             hf_token,
+            options.max_input_tokens,
         )?;
 
         Ok(Model::Local(Box::new(model)))

@@ -9,6 +9,7 @@ fn test_create_model_allows_custom_openai_model_when_custom_api_url_is_set() {
         api_url: Some("http://localhost:8080/v1/embeddings".to_string()),
         api_timeout: None,
         use_gpu: None,
+        max_input_tokens: None,
     });
 
     assert!(model.is_ok());
@@ -28,6 +29,7 @@ fn test_create_model_with_custom_url_still_uses_prefixed_jina_as_remote_signal()
         api_url: Some("http://localhost:8080/v1/embeddings".to_string()),
         api_timeout: None,
         use_gpu: None,
+        max_input_tokens: None,
     });
 
     assert!(model.is_ok());
@@ -47,6 +49,7 @@ fn test_create_model_supports_explicit_openai_colon_syntax() {
         api_url: Some("http://localhost:8080/v1/embeddings".to_string()),
         api_timeout: None,
         use_gpu: None,
+        max_input_tokens: None,
     });
 
     assert!(model.is_ok());
@@ -66,6 +69,7 @@ fn test_create_model_supports_explicit_openai_colon_syntax_with_simple_model() {
         api_url: Some("http://localhost:8080/v1/embeddings".to_string()),
         api_timeout: None,
         use_gpu: None,
+        max_input_tokens: None,
     });
 
     assert!(model.is_ok());
