@@ -55,12 +55,44 @@ fn intra_threads() -> usize {
         .unwrap_or(DEFAULT_INTRA_THREADS)
 }
 
-/// Run `f` inside a scoped rayon thread pool of the requested size.
+/// Reusable rayon thread pools, keyed by worker count.
+///
+/// A fresh `ThreadPoolBuilder::build()` per inference spawns `n` brand-new OS
+/// threads and drops them when the call returns. Under glibc that is a memory
+/// leak in disguise: each new thread gets its own malloc arena, freed inference
+/// transients stay resident in that arena, and the arenas are only reclaimed by
+/// `malloc_trim` (which the daemon runs at most every 30 min). Short-lived
+/// client connections therefore ratchet anonymous RSS up until OOM. Caching one
+/// pool per worker count pins all embedding allocation to a bounded set of
+/// threads — hence a bounded set of arenas — regardless of connection count.
+fn thread_pool_for(n: usize) -> Option<Arc<rayon::ThreadPool>> {
+    static POOLS: OnceLock<Mutex<HashMap<usize, Arc<rayon::ThreadPool>>>> = OnceLock::new();
+    let mut pools = POOLS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap();
+    if let Some(pool) = pools.get(&n) {
+        return Some(Arc::clone(pool));
+    }
+    // If the pool can't be built (extremely unlikely), the caller falls back to
+    // the global rayon pool rather than failing the whole inference.
+    let pool = Arc::new(
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(n)
+            .build()
+            .ok()?,
+    );
+    pools.insert(n, Arc::clone(&pool));
+    Some(pool)
+}
+
+/// Run `f` inside a rayon thread pool of the requested size.
 ///
 /// `threads == 0` means "no cap": just run `f` on the existing (global) rayon pool,
-/// which by default uses every available CPU. `threads > 0` builds a fresh pool
-/// of that size (clamped to available CPUs) and installs it for the duration of `f`,
-/// so candle's intra-op rayon work and tokenizers' parallelism both respect the limit.
+/// which by default uses every available CPU. `threads > 0` installs a cached pool
+/// of that size (clamped to available CPUs) for the duration of `f`, so candle's
+/// intra-op rayon work and tokenizers' parallelism both respect the limit. The pool
+/// is reused across calls; see [`thread_pool_for`] for why that matters for memory.
 ///
 /// Errors are stringified across the `pool.install` boundary because `Box<dyn Error>`
 /// is not `Send`; the original error message is preserved.
@@ -73,11 +105,9 @@ where
     }
 
     let n = threads.min(available_cpus()).max(1);
-    let pool = match rayon::ThreadPoolBuilder::new().num_threads(n).build() {
-        Ok(p) => p,
-        // If the pool can't be built (extremely unlikely), fall back to the global pool
-        // rather than failing the whole inference.
-        Err(_) => return f(),
+    let pool = match thread_pool_for(n) {
+        Some(p) => p,
+        None => return f(),
     };
 
     // pool.install requires `R: Send`, but Box<dyn Error> isn't Send. Stringify the
@@ -1434,6 +1464,20 @@ impl TextModel for LocalModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_thread_pool_is_reused_per_worker_count() {
+        // Same worker count must hand back the same pool (bounded arenas), and a
+        // different count must not alias onto it.
+        let a = thread_pool_for(1).unwrap();
+        let b = thread_pool_for(1).unwrap();
+        assert!(Arc::ptr_eq(&a, &b), "same n must reuse the same pool");
+        assert_eq!(a.current_num_threads(), 1);
+        let c = thread_pool_for(2).unwrap();
+        assert!(!Arc::ptr_eq(&a, &c));
+        assert_eq!(c.current_num_threads(), 2);
+    }
+
     #[test]
     fn test_model_arch_detection_qwen3() {
         let qwen_config = r#"{"model_type":"qwen3"}"#;
