@@ -43,6 +43,13 @@ jobs:
         # workflow, and win_test_template runs the test suites on windows-2022
         # runners against those DLLs. The repo pins C++17 while secondary.cpp
         # uses designated initializers, which MSVC rejects under C++17 (C7555).
+        include:
+          - os: ubuntu-24.04
+            arch: x86_64
+          - os: ubuntu-24.04-arm
+            arch: aarch64
+          - os: macos-15
+            arch: arm64
     env:
       # persistent dir for third-party builds (FastPFOR, streamvbyte, hnswlib, PGM);
       # relative on purpose: resolved against the build dir into <workspace>/cache
