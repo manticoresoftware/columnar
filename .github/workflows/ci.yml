@@ -1,0 +1,173 @@
+name: 🧪 Columnar CI
+
+# Isolated, daemon-free checks owned by the columnar repository itself.
+# The manticoresearch repository keeps the integration flow: it builds MCL
+# runtime libs and packages from the pinned submodule SHA (with exact-SHA
+# caching) and runs daemon test suites. This workflow covers what can be
+# validated without any manticore daemon checkout:
+#   - C++ libraries compile on all supported platforms
+#   - embeddings crate: formatting, clippy, unit and API integration tests
+
+on:
+  push:
+    branches:
+      - master
+      - columnar-*
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# cancels the previous workflow run when a new one appears in the same branch
+concurrency:
+  group: ci_${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: C++ ${{ matrix.os }} ${{ matrix.arch }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            arch: x86_64
+          - os: ubuntu-24.04-arm
+            arch: aarch64
+          - os: macos-14
+            arch: arm64
+          - os: windows-2022
+            arch: x64
+    env:
+      # persistent dir for third-party builds (FastPFOR, streamvbyte, hnswlib, PGM)
+      CACHEB: ${{ github.workspace }}/cache
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Cache third-party builds
+        uses: actions/cache@v5
+        with:
+          path: ${{ github.workspace }}/cache
+          key: deps-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('cmake/Get*.cmake', 'libfastpfor/CMakeLists.txt', 'pgm/CMakeLists.txt', 'streamvbyte/CMakeLists.txt') }}
+          restore-keys: |
+            deps-${{ runner.os }}-${{ matrix.arch }}-
+
+      - name: Configure
+        # BUILD_TESTING=OFF: standalone tests need a daemon checkout (MANTICORE_LOCATOR)
+        run: cmake -B build -DBUILD_TESTING=OFF
+
+      - name: Build libraries
+        # building explicit targets skips the AVX2/AVX-512 external projects;
+        # those are covered by the manticoresearch packaging workflows
+        run: cmake --build build --config RelWithDebInfo --target columnar_lib secondary_index knn_lib --parallel
+
+  embeddings:
+    name: Embeddings quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Install protoc
+        run: |
+          set -euo pipefail
+          version="29.3"
+          platform="linux-x86_64"
+          url="https://github.com/protocolbuffers/protobuf/releases/download/v${version}/protoc-${version}-${platform}.zip"
+          dest="${RUNNER_TEMP}/protoc"
+          rm -rf "${dest}"
+          mkdir -p "${dest}"
+          curl --fail --show-error --location --retry 5 --retry-all-errors --retry-delay 2 "${url}" -o "${RUNNER_TEMP}/protoc.zip"
+          unzip -q "${RUNNER_TEMP}/protoc.zip" -d "${dest}"
+          echo "${dest}/bin" >> "${GITHUB_PATH}"
+
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('embeddings/Cargo.lock') }}
+          restore-keys: cargo-registry-${{ runner.os }}-
+
+      - name: Cache cargo build target
+        uses: actions/cache@v5
+        with:
+          path: ./embeddings/target
+          key: cargo-target-${{ runner.os }}-${{ hashFiles('embeddings/Cargo.lock') }}-${{ hashFiles('embeddings/src/**/*.rs') }}
+          restore-keys: |
+            cargo-target-${{ runner.os }}-${{ hashFiles('embeddings/Cargo.lock') }}-
+            cargo-target-${{ runner.os }}-
+
+      - name: Cache ML test models
+        uses: actions/cache@v5
+        with:
+          path: ./embeddings/.cache/manticore
+          key: ml-models-${{ runner.os }}-${{ hashFiles('embeddings/src/model/local_test.rs') }}
+          restore-keys: ml-models-${{ runner.os }}-
+
+      - name: Download ONNX Runtime for unit tests
+        # same source of truth as local builds: cmake/GetONNXRuntime.cmake
+        run: |
+          set -euo pipefail
+          cmake -DORT_PLATFORM=linux -DORT_ARCH=x64 -DORT_OUT_DIR="${RUNNER_TEMP}/ort" -P cmake/GetONNXRuntime.cmake
+          echo "ORT_LIB_LOCATION=$(cat "${RUNNER_TEMP}/ort/lib_path.txt")" >> "$GITHUB_ENV"
+
+      - name: Check code formatting
+        run: cargo fmt --check --manifest-path ./embeddings/Cargo.toml
+
+      - name: Run Clippy (strict mode)
+        run: cargo clippy --lib --manifest-path ./embeddings/Cargo.toml -- -D warnings
+
+      - name: Run unit tests
+        run: cargo test --lib --verbose --manifest-path ./embeddings/Cargo.toml
+        env:
+          RUST_BACKTRACE: 1
+
+      - name: Run API integration tests (if API keys available)
+        run: |
+          cd ./embeddings
+          if [ -n "${{ secrets.OPENAI_API_KEY }}" ]; then
+            echo "✅ Running OpenAI integration tests..."
+            cargo test --lib openai_test::tests --verbose
+          else
+            echo "⏭️  Skipping OpenAI tests - OPENAI_API_KEY not configured"
+          fi
+
+          if [ -n "${{ secrets.VOYAGE_API_KEY }}" ]; then
+            echo "✅ Running Voyager integration tests..."
+            cargo test --lib voyager_test::tests --verbose
+          else
+            echo "⏭️  Skipping Voyager tests - VOYAGE_API_KEY not configured"
+          fi
+
+          if [ -n "${{ secrets.JINA_API_KEY }}" ]; then
+            echo "✅ Running Jina integration tests..."
+            cargo test --lib jina_test::tests --verbose
+          else
+            echo "⏭️  Skipping Jina tests - JINA_API_KEY not configured"
+          fi
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
+          JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
+          RUST_BACKTRACE: 1
+      - name: Clean build target bloat
+        # keeps ./embeddings/target cache under GitHub's 10GB repo limit;
+        # mirrors the daemon-side mcl_embeddings_core.yml quality-check job
+        if: always()
+        run: |
+          rm -rf ./embeddings/target/debug/incremental
+          rm -rf ./embeddings/target/debug/.fingerprint
+          find ./embeddings/target/debug -name "*.d" -delete 2>/dev/null || true
