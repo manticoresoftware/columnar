@@ -48,8 +48,11 @@ jobs:
           - os: windows-2022
             arch: x64
     env:
-      # persistent dir for third-party builds (FastPFOR, streamvbyte, hnswlib, PGM)
-      CACHEB: ${{ github.workspace }}/cache
+      # persistent dir for third-party builds (FastPFOR, streamvbyte, hnswlib, PGM);
+      # relative on purpose: resolved against the build dir into <workspace>/cache
+      # (cmake/init_cache_settings.cmake), and absolute Windows paths break the
+      # APPEND_PREFIX macro in cmake/helpers.cmake (backslash escapes re-parsed)
+      CACHEB: ../cache
     steps:
       - uses: actions/checkout@v5
 
