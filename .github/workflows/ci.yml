@@ -38,15 +38,11 @@ jobs:
         # (including the unguarded ones in util/delta_impl.h and
         # columnar/accessor/accessortraits.h) to SIMDe implementations.
         # macos-15 because GitHub fully deprecates macos-14 on 2026-11-02.
-        include:
-          - os: ubuntu-24.04
-            arch: x86_64
-          - os: ubuntu-24.04-arm
-            arch: aarch64
-          - os: macos-15
-            arch: arm64
-          - os: windows-2022
-            arch: x64
+        # No windows-2022/MSVC entry: nothing ships MSVC-built columnar — Windows
+        # DLLs are cross-compiled from Linux by the manticoresearch mcl_runtime
+        # workflow, and win_test_template runs the test suites on windows-2022
+        # runners against those DLLs. The repo pins C++17 while secondary.cpp
+        # uses designated initializers, which MSVC rejects under C++17 (C7555).
     env:
       # persistent dir for third-party builds (FastPFOR, streamvbyte, hnswlib, PGM);
       # relative on purpose: resolved against the build dir into <workspace>/cache
