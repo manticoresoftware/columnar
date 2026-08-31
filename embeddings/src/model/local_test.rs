@@ -26,7 +26,13 @@ mod tests {
     #[test]
     fn test_local_model_creation_invalid_path() {
         let model_id = "sentence-transformers/all-MiniLM-L6-v2";
-        let cache_path = PathBuf::from("/nonexistent/path");
+        // A cache path under a regular file fails on every platform: hf-hub
+        // create_dir_all()s the download dir under it. A bare "/nonexistent"
+        // path is creatable on Windows (resolves to <drive>:\nonexistent),
+        // which made this test download the model and return Ok there.
+        let blocker = std::env::temp_dir().join("manticore_knn_not_a_dir");
+        std::fs::write(&blocker, b"").unwrap();
+        let cache_path = blocker.join("cache");
 
         let result = LocalModel::new(model_id, cache_path, false, None);
 

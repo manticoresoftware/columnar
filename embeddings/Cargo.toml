@@ -6,7 +6,13 @@ edition = "2021"
 # Candle: git dep so CI works without a local candle clone.
 # For local dev with ../../candle, add a [patch] section to use path deps.
 [dependencies]
-tokenizers = "0.15.2"
+# Inference only: no trainer, no CLI. Default features are avoided because
+# esaxx_fast enables esaxx-rs's "cpp" feature, whose build.rs hardcodes
+# cc::Build::static_crt(true): esaxx.o is compiled /MT while Rust std and
+# the ORT static lib are /MD, so linking any binary on Windows fails with
+# LNK2038. esaxx is used exclusively by the unigram trainer, which we never
+# run. onig stays: tokenizers' SysRegex is onig-backed on non-wasm targets.
+tokenizers = { version = "0.15.2", default-features = false, features = ["onig"] }
 hf-hub = { git = "https://github.com/huggingface/hf-hub.git", rev = "ac22200ea0b5af4d8c362f699be0340647b19060", default-features = false,features = ["ureq"] }
 anyhow = "1.0.81"
 serde_json = "1.0.114"

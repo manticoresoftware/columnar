@@ -1,0 +1,308 @@
+name: 🧪 CI
+
+# Isolated, daemon-free checks owned by the columnar repository itself.
+# The manticoresearch repository keeps the integration flow: it builds MCL
+# runtime libs and packages from the pinned submodule SHA (with exact-SHA
+# caching) and runs daemon test suites. This workflow covers what can be
+# validated without any manticore daemon checkout:
+#   - C++ libraries compile on all supported platforms; Windows is
+#     cross-compiled from Linux in the same external_toolchain container
+#     the daemon's mcl_runtime workflow uses (the shipped configuration)
+#   - embeddings crate: formatting, clippy, unit and API integration tests
+#     across the shipped platform matrix (linux x86_64/aarch64, macos
+#     x86_64/arm64, windows x86_64)
+
+on:
+  push:
+    branches:
+      - master
+      - columnar-*
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# cancels the previous workflow run when a new one appears in the same branch
+concurrency:
+  group: ci_${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: MCL ${{ matrix.os }} ${{ matrix.arch }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        # arm64/aarch64 entries rely on the SIMDe path: on arm, libfastpfor
+        # exports the FastPFOR::SIMDe interface target, columnar_root links it
+        # into every target, and USE_SIMDE redirects the x86 intrinsics
+        # (including the unguarded ones in util/delta_impl.h and
+        # columnar/accessor/accessortraits.h) to SIMDe implementations.
+        # macos-15 because GitHub fully deprecates macos-14 on 2026-11-02.
+        # No windows-2022/MSVC entry: nothing ships MSVC-built columnar — Windows
+        # DLLs are cross-compiled from Linux by the manticoresearch mcl_runtime
+        # workflow, and win_test_template runs the test suites on windows-2022
+        # runners against those DLLs. The repo pins C++17 while secondary.cpp
+        # uses designated initializers, which MSVC rejects under C++17 (C7555).
+        include:
+          - os: ubuntu-24.04
+            arch: x86_64
+          - os: ubuntu-24.04-arm
+            arch: aarch64
+          - os: macos-15
+            arch: arm64
+    env:
+      # persistent dir for third-party builds (FastPFOR, streamvbyte, hnswlib, PGM);
+      # relative on purpose: resolved against the build dir into <workspace>/cache
+      # (cmake/init_cache_settings.cmake), and absolute Windows paths break the
+      # APPEND_PREFIX macro in cmake/helpers.cmake (backslash escapes re-parsed)
+      CACHEB: ../cache
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Cache third-party builds
+        uses: actions/cache@v5
+        with:
+          path: ${{ github.workspace }}/cache
+          key: deps-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('cmake/Get*.cmake', 'libfastpfor/CMakeLists.txt', 'pgm/CMakeLists.txt', 'streamvbyte/CMakeLists.txt') }}
+          restore-keys: |
+            deps-${{ runner.os }}-${{ matrix.arch }}-
+
+      - name: Configure
+        # BUILD_TESTING=OFF: standalone tests need a daemon checkout (MANTICORE_LOCATOR)
+        run: cmake -B build -DBUILD_TESTING=OFF
+
+      - name: Build libraries
+        # building explicit targets skips the AVX2/AVX-512 external projects;
+        # those are covered by the manticoresearch packaging workflows
+        run: cmake --build build --config RelWithDebInfo --target columnar_lib secondary_index knn_lib --parallel
+
+  build-windows:
+    # The shipped Windows configuration: cross-compile from Linux in the same
+    # external_toolchain container the manticoresearch mcl_runtime workflow
+    # uses. Validates the _WIN32 code paths (mmap vs file IO, LoadLibraryEx
+    # shim in knn) on every push, not just when the daemon bumps the submodule.
+    name: MCL windows x64 (cross)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    container:
+      image: manticoresearch/external_toolchain:vcpkg331_20260310
+      env:
+        CACHEB: "../cache"
+        DIAGNOSTIC: 1
+        DISTR: windows
+        boost: boost_80
+        sysroot: roots_mysql83_jan17
+        arch: x64
+        SYSROOT_URL: https://repo.manticoresearch.com/repository/sysroots
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          set-safe-directory: true
+
+      - name: Initialization
+        # entry_point.sh installs the cross toolchain (clang + windows sysroot)
+        run: |
+          bash /sysroot/root/entry_point.sh
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Cache third-party builds
+        uses: actions/cache@v5
+        with:
+          path: cache
+          key: deps-windows-x64-${{ hashFiles('cmake/Get*.cmake', 'libfastpfor/CMakeLists.txt', 'pgm/CMakeLists.txt', 'streamvbyte/CMakeLists.txt') }}
+          restore-keys: |
+            deps-windows-x64-
+
+      - name: Configure
+        run: cmake -B build -DBUILD_TESTING=OFF -G "Ninja Multi-Config"
+
+      - name: Build libraries
+        run: cmake --build build --config RelWithDebInfo --target columnar_lib secondary_index knn_lib --parallel
+
+  embeddings:
+    # Quality gate for every shipped embeddings config — mirrors the
+    # embeddings_builds matrix in the daemon's mcl_pack_publish.yml (linux
+    # x86_64/aarch64, macos x86_64/arm64, windows x86_64). The daemon's own
+    # quality-check job runs on linux x64 only, so this repo owns
+    # fmt/clippy/test coverage for the whole shipped matrix.
+    name: Embeddings quality (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux x86_64
+            slug: linux-x64
+            os: ubuntu-24.04
+            protoc: linux-x86_64
+            ort_platform: linux
+            ort_arch: x64
+            rust_target: ""
+            run_tests: true
+            fmt: true
+            api_tests: true
+          - name: linux aarch64
+            slug: linux-arm64
+            os: ubuntu-24.04-arm
+            protoc: linux-aarch_64
+            ort_platform: linux
+            ort_arch: aarch64
+            rust_target: ""
+            run_tests: true
+            fmt: false
+            api_tests: false
+          - name: macos arm64
+            slug: macos-arm64
+            os: macos-15
+            protoc: osx-aarch_64
+            ort_platform: macos
+            ort_arch: arm64
+            rust_target: ""
+            run_tests: true
+            fmt: false
+            api_tests: false
+          - name: macos x86_64
+            # cross-compiled from the arm64 runner, exactly like the daemon's
+            # mcl_embeddings_core.yml build job; clippy-only because the
+            # Rosetta guard in embeddings/src/model/mod.rs refuses local
+            # inference under x86 emulation, so unit tests would exercise a
+            # configuration that never ships
+            slug: macos-x64-cross
+            os: macos-15
+            protoc: osx-aarch_64
+            ort_platform: macos
+            ort_arch: x86_64
+            rust_target: x86_64-apple-darwin
+            run_tests: false
+            fmt: false
+            api_tests: false
+          - name: windows x86_64
+            slug: windows-x64
+            os: windows-2022
+            protoc: win64
+            ort_platform: windows
+            ort_arch: x64
+            rust_target: ""
+            run_tests: true
+            fmt: false
+            api_tests: false
+    env:
+      # empty for native entries; --target <triple> for the cross-compiled one
+      CARGO_TARGET_FLAG: ${{ matrix.rust_target && format('--target {0}', matrix.rust_target) || '' }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+          target: ${{ matrix.rust_target }}
+
+      - name: Install protoc
+        run: |
+          set -euo pipefail
+          version="29.3"
+          url="https://github.com/protocolbuffers/protobuf/releases/download/v${version}/protoc-${version}-${{ matrix.protoc }}.zip"
+          dest="${RUNNER_TEMP}/protoc"
+          rm -rf "${dest}"
+          mkdir -p "${dest}"
+          curl --fail --show-error --location --retry 5 --retry-all-errors --retry-delay 2 "${url}" -o "${RUNNER_TEMP}/protoc.zip"
+          unzip -q "${RUNNER_TEMP}/protoc.zip" -d "${dest}"
+          echo "${dest}/bin" >> "${GITHUB_PATH}"
+
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('embeddings/Cargo.lock') }}
+          restore-keys: cargo-registry-${{ runner.os }}-
+
+      - name: Cache cargo build target
+        uses: actions/cache@v5
+        with:
+          path: ./embeddings/target
+          key: cargo-target-${{ matrix.slug }}-${{ hashFiles('embeddings/Cargo.lock') }}-${{ hashFiles('embeddings/src/**/*.rs') }}
+          restore-keys: |
+            cargo-target-${{ matrix.slug }}-${{ hashFiles('embeddings/Cargo.lock') }}-
+            cargo-target-${{ matrix.slug }}-
+
+      - name: Cache ML test models
+        if: matrix.run_tests
+        uses: actions/cache@v5
+        with:
+          path: ./embeddings/.cache/manticore
+          key: ml-models-${{ matrix.slug }}-${{ hashFiles('embeddings/src/model/local_test.rs') }}
+          restore-keys: ml-models-${{ matrix.slug }}-
+
+      - name: Download ONNX Runtime
+        # ort build.rs needs the static lib even for clippy; same source of
+        # truth as local builds: cmake/GetONNXRuntime.cmake
+        run: |
+          set -euo pipefail
+          cmake -DORT_PLATFORM=${{ matrix.ort_platform }} -DORT_ARCH=${{ matrix.ort_arch }} -DORT_OUT_DIR="${RUNNER_TEMP}/ort" -P cmake/GetONNXRuntime.cmake
+          echo "ORT_LIB_LOCATION=$(cat "${RUNNER_TEMP}/ort/lib_path.txt")" >> "$GITHUB_ENV"
+
+      - name: Check code formatting
+        # target-independent; one matrix leg is enough
+        if: matrix.fmt
+        run: cargo fmt --check --manifest-path ./embeddings/Cargo.toml
+
+      - name: Run Clippy (strict mode)
+        run: cargo clippy --lib $CARGO_TARGET_FLAG --manifest-path ./embeddings/Cargo.toml -- -D warnings
+
+      - name: Run unit tests
+        if: matrix.run_tests
+        run: cargo test --lib $CARGO_TARGET_FLAG --verbose --manifest-path ./embeddings/Cargo.toml
+        env:
+          RUST_BACKTRACE: 1
+
+      - name: Run API integration tests (if API keys available)
+        # secrets-driven and platform-independent; one matrix leg avoids
+        # burning API quota on every platform
+        if: matrix.api_tests
+        run: |
+          cd ./embeddings
+          if [ -n "${{ secrets.OPENAI_API_KEY }}" ]; then
+            echo "✅ Running OpenAI integration tests..."
+            cargo test --lib openai_test::tests --verbose
+          else
+            echo "⏭️  Skipping OpenAI tests - OPENAI_API_KEY not configured"
+          fi
+
+          if [ -n "${{ secrets.VOYAGE_API_KEY }}" ]; then
+            echo "✅ Running Voyager integration tests..."
+            cargo test --lib voyager_test::tests --verbose
+          else
+            echo "⏭️  Skipping Voyager tests - VOYAGE_API_KEY not configured"
+          fi
+
+          if [ -n "${{ secrets.JINA_API_KEY }}" ]; then
+            echo "✅ Running Jina integration tests..."
+            cargo test --lib jina_test::tests --verbose
+          else
+            echo "⏭️  Skipping Jina tests - JINA_API_KEY not configured"
+          fi
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
+          JINA_API_KEY: ${{ secrets.JINA_API_KEY }}
+          RUST_BACKTRACE: 1
+
+      - name: Clean build target bloat
+        # keeps ./embeddings/target cache under GitHub's 10GB repo limit;
+        # mirrors the daemon-side mcl_embeddings_core.yml quality-check job
+        if: always()
+        run: |
+          rm -rf ./embeddings/target/debug/incremental ./embeddings/target/debug/.fingerprint
+          rm -rf ./embeddings/target/*/debug/incremental ./embeddings/target/*/debug/.fingerprint
+          find ./embeddings/target -name "*.d" -delete 2>/dev/null || true

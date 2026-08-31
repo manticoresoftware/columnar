@@ -228,7 +228,7 @@ impl TextModelWrapper {
             let string_refs: Vec<&str> = string_slice
                 .iter()
                 .map(|item| unsafe {
-                    let bytes = std::slice::from_raw_parts(item.ptr as *const u8, item.len);
+                    let bytes = std::slice::from_raw_parts(item.ptr.cast::<u8>(), item.len);
                     std::str::from_utf8_unchecked(bytes)
                 })
                 .collect();
