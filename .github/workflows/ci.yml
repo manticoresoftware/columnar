@@ -1,4 +1,4 @@
-name: 🧪 Columnar CI
+name: 🧪 CI
 
 # Isolated, daemon-free checks owned by the columnar repository itself.
 # The manticoresearch repository keeps the integration flow: it builds MCL
