@@ -276,50 +276,49 @@ impl TextModelWrapper {
             // Each strategy yields a flat Vec<Vec<f32>> (all documents' output
             // vectors) plus per-document output counts. truncate/mean emit one
             // vector/doc; fixed/recursive/sentence emit one vector per chunk.
-            let computed: EmbedResult =
-                if strategy == crate::chunk::STRATEGY_TRUNCATE {
-                    model.predict(&string_refs, threads).map(|vecs| {
-                        let counts = vec![1usize; vecs.len()];
-                        (vecs, counts)
-                    })
-                } else {
-                    let s = settings_ref.unwrap();
-                    let max = crate::chunk::effective_max(s, model.get_max_input_len());
-                    let overlap = s.overlap_tokens as usize;
-                    let max_chunks = s.max_chunks as usize;
+            let computed: EmbedResult = if strategy == crate::chunk::STRATEGY_TRUNCATE {
+                model.predict(&string_refs, threads).map(|vecs| {
+                    let counts = vec![1usize; vecs.len()];
+                    (vecs, counts)
+                })
+            } else {
+                let s = settings_ref.unwrap();
+                let max = crate::chunk::effective_max(s, model.get_max_input_len());
+                let overlap = s.overlap_tokens as usize;
+                let max_chunks = s.max_chunks as usize;
 
-                    // Split every document; remember each document's chunk count.
-                    let mut flat: Vec<&str> = Vec::new();
-                    let mut chunk_counts: Vec<usize> = Vec::with_capacity(string_refs.len());
-                    for &text in &string_refs {
-                        let spans = crate::chunk::cap_chunks(
-                            model.chunk(text, max, overlap, strategy),
-                            max_chunks,
-                        );
-                        chunk_counts.push(spans.len());
-                        for (start, end) in spans {
-                            flat.push(&text[start..end]);
-                        }
+                // Split every document; remember each document's chunk count.
+                let mut flat: Vec<&str> = Vec::new();
+                let mut chunk_counts: Vec<usize> = Vec::with_capacity(string_refs.len());
+                for &text in &string_refs {
+                    let spans = crate::chunk::cap_chunks(
+                        model.chunk(text, max, overlap, strategy),
+                        max_chunks,
+                    );
+                    chunk_counts.push(spans.len());
+                    for (start, end) in spans {
+                        flat.push(&text[start..end]);
                     }
+                }
 
-                    model.predict(&flat, threads).map(|chunk_vecs| {
-                        if strategy == crate::chunk::STRATEGY_MEAN {
-                            // pool each document's chunks into one vector
-                            let mut out = Vec::with_capacity(chunk_counts.len());
-                            let mut idx = 0usize;
-                            for c in &chunk_counts {
-                                let end = idx + c;
-                                out.push(crate::chunk::mean_pool(&chunk_vecs[idx..end]));
-                                idx = end;
-                            }
-                            let counts = vec![1usize; out.len()];
-                            (out, counts)
-                        } else {
-                            // fixed/recursive/sentence: keep every chunk vector.
-                            (chunk_vecs, chunk_counts)
+                model.predict(&flat, threads).map(|chunk_vecs| {
+                    if strategy == crate::chunk::STRATEGY_MEAN {
+                        // pool each document's chunks into one vector
+                        let mut out = Vec::with_capacity(chunk_counts.len());
+                        let mut idx = 0usize;
+                        for c in &chunk_counts {
+                            let end = idx + c;
+                            out.push(crate::chunk::mean_pool(&chunk_vecs[idx..end]));
+                            idx = end;
                         }
-                    })
-                };
+                        let counts = vec![1usize; out.len()];
+                        (out, counts)
+                    } else {
+                        // fixed/recursive/sentence: keep every chunk vector.
+                        (chunk_vecs, chunk_counts)
+                    }
+                })
+            };
 
             match computed {
                 Ok((embeddings_list, counts)) => {
