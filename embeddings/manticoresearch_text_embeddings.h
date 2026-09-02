@@ -9,6 +9,17 @@
 #include <ostream>
 #include <new>
 
+/// Strategy, mirrored as a `u32` across the FFI in [`ChunkSettings`].
+constexpr static const uint32_t STRATEGY_TRUNCATE = 0;
+
+constexpr static const uint32_t STRATEGY_MEAN = 1;
+
+constexpr static const uint32_t STRATEGY_FIXED = 2;
+
+constexpr static const uint32_t STRATEGY_RECURSIVE = 3;
+
+constexpr static const uint32_t STRATEGY_SENTENCE = 4;
+
 struct TextModelResult {
   void *m_pModel;
   char *m_szError;
@@ -33,11 +44,25 @@ struct FloatVec {
   uintptr_t cap;
 };
 
+/// Embedding result for one `make_vect_embeddings` call.
+///
+/// `m_tEmbedding` is a FLAT array of `len` vectors — every input document's
+/// vectors concatenated. `m_pRowOffsets` (length `rows + 1`) groups them per
+/// input document, Arrow-style: document `i` owns
+/// `m_tEmbedding[m_pRowOffsets[i] .. m_pRowOffsets[i + 1]]`. For the v1
+/// strategies (truncate / mean) every document yields exactly one vector, so
+/// `len == rows` and the offsets are `[0, 1, ..., rows]`. The sidecar lets a
+/// future multi-vector strategy return N vectors per document through this same
+/// struct — no second method, cardinality carried as data.
+///
 struct FloatVecResult {
   char *m_szError;
   const FloatVec *m_tEmbedding;
   uintptr_t len;
   uintptr_t cap;
+  const uintptr_t *m_pRowOffsets;
+  uintptr_t rows;
+  uintptr_t offsets_cap;
 };
 
 using TextModelWrapper = void*;
@@ -47,9 +72,25 @@ struct StringItem {
   uintptr_t len;
 };
 
+/// Chunking parameters. `#[repr(C)]` — passed straight across the FFI by the
+/// daemon, which owns the DDL surface and validates against the model.
+struct ChunkSettings {
+  /// One of the `STRATEGY_*` constants.
+  uint32_t strategy;
+  /// Target chunk size in tokens. `0` ⇒ use the model's max. Always clamped to
+  /// the model's real input limit.
+  uint32_t max_tokens;
+  /// Token overlap between consecutive chunks. `0` ⇒ none.
+  uint32_t overlap_tokens;
+  /// Hard cap on chunks per document. `0` ⇒ unlimited. Overflow merges the
+  /// tail into the last chunk (matches OpenSearch's `max_chunk_limit`).
+  uint32_t max_chunks;
+};
+
 using MakeVectEmbeddingsFn = FloatVecResult(*)(const TextModelWrapper*,
                                                const StringItem*,
                                                uintptr_t,
+                                               const ChunkSettings*,
                                                int32_t);
 
 using FreeVecResultFn = void(*)(FloatVecResult);

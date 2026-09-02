@@ -152,6 +152,9 @@ mod tests {
             ptr: ptr::null(),
             len: 0,
             cap: 0,
+            row_offsets: ptr::null(),
+            rows: 0,
+            offsets_cap: 0,
         };
 
         // Verify error is set and no vectors are present
@@ -194,6 +197,9 @@ mod tests {
             ptr: float_vecs.as_ptr(),
             len: float_vecs.len(),
             cap: float_vecs.capacity(),
+            row_offsets: ptr::null(),
+            rows: 0,
+            offsets_cap: 0,
         };
 
         // Verify successful result structure
