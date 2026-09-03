@@ -18,11 +18,21 @@ cmake_minimum_required ( VERSION 3.21 ) # because of IMPORTED_RUNTIME_ARTIFACTS
 
 include ( GetHNSW )
 
-add_library ( knn_lib MODULE knn.cpp knn.h iterator.cpp iterator.h embeddings.cpp embeddings.h quantizer.cpp quantizer.h quantile.cpp quantile.h space.cpp space.h termination.cpp termination.h ${columnar_SOURCE_DIR}/embeddings/manticoresearch_text_embeddings.h )
+set ( KNN_SOURCES knn.cpp knn.h iterator.cpp iterator.h embeddings.cpp embeddings.h quantizer.cpp quantizer.h quantile.cpp quantile.h space.cpp space.h termination.cpp termination.h graphrepair.cpp graphrepair.h )
+
+add_library ( knn_lib MODULE ${KNN_SOURCES} ${columnar_SOURCE_DIR}/embeddings/manticoresearch_text_embeddings.h )
 target_include_directories(knn_lib PRIVATE ${columnar_SOURCE_DIR}/embeddings)
 
 target_link_libraries ( knn_lib PRIVATE hnswlib::hnswlib columnar_root util common )
 set_target_properties( knn_lib PROPERTIES PREFIX "" OUTPUT_NAME lib_manticore_knn${lib_arch_suffix} )
+
+# Regression test for the HNSW connectivity repair pass. Links the knn sources directly it can reach graphrepair.h (internal, not part of the exported C ABI)
+if ( NOT EXTERNAL_LIB AND BUILD_TESTING )
+	add_executable ( knn_graphrepair_test test_graphrepair.cpp ${KNN_SOURCES} )
+	target_include_directories ( knn_graphrepair_test PRIVATE ${columnar_SOURCE_DIR}/embeddings ${CMAKE_CURRENT_SOURCE_DIR} )
+	target_link_libraries ( knn_graphrepair_test PRIVATE hnswlib::hnswlib columnar_root util common )
+	add_test ( NAME knn_graphrepair COMMAND knn_graphrepair_test )
+endif()
 
 # Try to find manticoresearch text embeddings library
 message(STATUS "Looking for manticoresearch text embeddings library...")

@@ -20,6 +20,7 @@
 #include "quantizer.h"
 #include "termination.h"
 #include "space.h"
+#include "graphrepair.h"
 #include "util/reader.h"
 #include "util_private.h"
 
@@ -914,6 +915,10 @@ bool HNSWIndexBuilder_c::AddDoc ( uint32_t uRowID, const util::Span_T<float> & d
 
 void HNSWIndexBuilder_c::Save ( FileWriter_c & tWriter )
 {
+	// Must run before FinalizeEncoding() because the 4-bit build pool still exists at this point
+	if ( m_pAlg )
+		RepairGraphConnectivity ( *m_pAlg );
+
 	if ( m_pQuantizer )
 		m_pQuantizer->FinalizeEncoding();
 
