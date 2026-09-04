@@ -184,6 +184,7 @@ std::string ToKey ( const ModelSettings_t & tSettings )
 	sKey += tSettings.m_sAPIUrl;
 	sKey += std::to_string ( tSettings.m_iAPITimeout );
 	sKey += std::to_string ( tSettings.m_bUseGPU ? 1 : 0 );
+	sKey += std::to_string ( tSettings.m_iMaxInputTokens );
 	return sKey;
 }
 
@@ -217,7 +218,7 @@ bool TextToEmbeddings_c::Initialize ( std::shared_ptr<LoadedLib_c> pLib, std::st
 	auto * pFuncs = m_pLib->GetLibFuncs();
 	assert(pFuncs);
 	
-	TextModelResult tResult = pFuncs->load_model ( m_tSettings.m_sModelName.c_str(), m_tSettings.m_sModelName.length(), m_tSettings.m_sCachePath.c_str(), m_tSettings.m_sCachePath.length(), m_tSettings.m_sAPIKey.c_str(), m_tSettings.m_sAPIKey.length(), m_tSettings.m_sAPIUrl.c_str(), m_tSettings.m_sAPIUrl.length(), m_tSettings.m_iAPITimeout, m_tSettings.m_bUseGPU );
+	TextModelResult tResult = pFuncs->load_model ( m_tSettings.m_sModelName.c_str(), m_tSettings.m_sModelName.length(), m_tSettings.m_sCachePath.c_str(), m_tSettings.m_sCachePath.length(), m_tSettings.m_sAPIKey.c_str(), m_tSettings.m_sAPIKey.length(), m_tSettings.m_sAPIUrl.c_str(), m_tSettings.m_sAPIUrl.length(), m_tSettings.m_iAPITimeout, m_tSettings.m_bUseGPU, m_tSettings.m_iMaxInputTokens );
 	if ( tResult.m_szError )
 	{
 		sError = tResult.m_szError;
@@ -336,7 +337,7 @@ knn::EmbeddingsLib_i * LoadEmbeddingsLib ( const std::string & sLibPath, std::st
 	if ( !pLib->Load(sError) )
 		return nullptr;
 
-	const int SUPPORTED_EMBEDDINGS_LIB_VER = 8;
+	const int SUPPORTED_EMBEDDINGS_LIB_VER = 9;
 	if ( pLib->GetVersion()!=SUPPORTED_EMBEDDINGS_LIB_VER )
 	{
 		sError = util::FormatStr ( "Unsupported embeddings library version %d (expected %d)", pLib->GetVersion(), SUPPORTED_EMBEDDINGS_LIB_VER );

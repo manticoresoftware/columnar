@@ -23,6 +23,49 @@ mod tests {
     // Note: These tests require actual model files to run successfully
     // They are designed to test the structure and error handling
 
+    /// MAX_INPUT_TOKENS (manticoresearch#4816): the cap lowers the model's input limit,
+    /// never raises it, and really truncates what gets embedded.
+    #[test]
+    fn test_max_input_tokens_cap() {
+        let model_id = "sentence-transformers/all-MiniLM-L6-v2";
+        let cache_path = test_cache_path();
+
+        let uncapped = match LocalModel::new(model_id, cache_path.clone(), false, None, None) {
+            Ok(m) => m,
+            Err(e) => {
+                println!("Model not available, skipping: {}", e);
+                return;
+            }
+        };
+        let model_limit = uncapped.get_max_input_len();
+        assert!(model_limit > 6);
+
+        // A cap below the model limit is applied as-is
+        let capped = LocalModel::new(model_id, cache_path.clone(), false, None, Some(6)).unwrap();
+        assert_eq!(capped.get_max_input_len(), 6);
+
+        // A cap above the model limit never raises it; zero means "no cap"
+        let too_big =
+            LocalModel::new(model_id, cache_path.clone(), false, None, Some(100_000)).unwrap();
+        assert_eq!(too_big.get_max_input_len(), model_limit);
+        let zero = LocalModel::new(model_id, cache_path, false, None, Some(0)).unwrap();
+        assert_eq!(zero.get_max_input_len(), model_limit);
+
+        // With the cap (6 tokens = [CLS] a red apple on the), a text and the same text
+        // plus a long tail embed identically
+        let head = "a red apple on the table";
+        let tail: String = (1..=300)
+            .map(|i| format!(" extra word number {i}"))
+            .collect();
+        let long = format!("{head}{tail}");
+        let capped_vecs = capped.predict(&[head, long.as_str()], 0).unwrap();
+        assert_eq!(capped_vecs[0], capped_vecs[1]);
+
+        // Without the cap the tail changes the vector (control)
+        let uncapped_vecs = uncapped.predict(&[head, long.as_str()], 0).unwrap();
+        assert_ne!(uncapped_vecs[0], uncapped_vecs[1]);
+    }
+
     #[test]
     fn test_local_model_creation_invalid_path() {
         let model_id = "sentence-transformers/all-MiniLM-L6-v2";
@@ -34,7 +77,7 @@ mod tests {
         std::fs::write(&blocker, b"").unwrap();
         let cache_path = blocker.join("cache");
 
-        let result = LocalModel::new(model_id, cache_path, false, None);
+        let result = LocalModel::new(model_id, cache_path, false, None, None);
 
         // Should fail with invalid path
         assert!(result.is_err());
@@ -49,7 +92,7 @@ mod tests {
         let model_id = "";
         let cache_path = PathBuf::from("/tmp/test_cache");
 
-        let result = LocalModel::new(model_id, cache_path, false, None);
+        let result = LocalModel::new(model_id, cache_path, false, None, None);
 
         // Should fail with empty model ID
         assert!(result.is_err());
@@ -61,10 +104,10 @@ mod tests {
         let cache_path = PathBuf::from("/tmp/test_cache");
 
         // Test with GPU enabled (will likely fail without CUDA, but tests the path)
-        let result_gpu = LocalModel::new(model_id, cache_path.clone(), true, None);
+        let result_gpu = LocalModel::new(model_id, cache_path.clone(), true, None, None);
 
         // Test with GPU disabled
-        let result_cpu = LocalModel::new(model_id, cache_path, false, None);
+        let result_cpu = LocalModel::new(model_id, cache_path, false, None, None);
 
         // Both should fail without actual model files, but for different reasons
         if result_gpu.is_err() && result_cpu.is_err() {
@@ -153,7 +196,7 @@ mod tests {
         ];
 
         for model_id in model_ids {
-            let result = LocalModel::new(model_id, cache_path.clone(), false, None);
+            let result = LocalModel::new(model_id, cache_path.clone(), false, None, None);
 
             // All should fail without actual model files
             if result.is_err() {
@@ -183,7 +226,7 @@ mod tests {
         ];
 
         for cache_path in cache_paths {
-            let result = LocalModel::new(model_id, cache_path.clone(), false, None);
+            let result = LocalModel::new(model_id, cache_path.clone(), false, None, None);
 
             // Should handle different path formats gracefully
             if result.is_err() {
@@ -203,7 +246,7 @@ mod tests {
         let model_id = "sentence-transformers/all-MiniLM-L6-v2";
         let cache_path = PathBuf::from("/tmp/test_cache");
 
-        let result = LocalModel::new(model_id, cache_path, false, None);
+        let result = LocalModel::new(model_id, cache_path, false, None, None);
 
         if result.is_err() {
             let error_str = if let Err(error) = result {
@@ -252,7 +295,7 @@ mod tests {
 
         // Test both GPU and CPU modes
         for use_gpu in [true, false] {
-            let result = LocalModel::new(model_id, cache_path.clone(), use_gpu, None);
+            let result = LocalModel::new(model_id, cache_path.clone(), use_gpu, None, None);
 
             if result.is_err() {
                 let error_str = if let Err(error) = result {
@@ -373,7 +416,7 @@ mod tests {
                     let model_id = "sentence-transformers/all-MiniLM-L6-v2";
                     let cache_path = PathBuf::from(format!("/tmp/test_cache_{}", i));
 
-                    let result = LocalModel::new(model_id, cache_path, false, None);
+                    let result = LocalModel::new(model_id, cache_path, false, None, None);
 
                     // Should handle concurrent access gracefully
                     if result.is_err() {
@@ -401,7 +444,7 @@ mod tests {
             let model_id = "sentence-transformers/all-MiniLM-L6-v2";
             let cache_path = PathBuf::from("/tmp/test_cache");
 
-            let result = LocalModel::new(model_id, cache_path, false, None);
+            let result = LocalModel::new(model_id, cache_path, false, None, None);
 
             // Even if creation fails, it should be memory safe
             if result.is_err() {
@@ -422,7 +465,8 @@ mod tests {
         ];
 
         for sentence in &test_sentences {
-            let local_model = LocalModel::new(model_id, cache_path.clone(), false, None).unwrap();
+            let local_model =
+                LocalModel::new(model_id, cache_path.clone(), false, None, None).unwrap();
             let embedding = local_model.predict(&[sentence], 0).unwrap();
             check_embedding_properties(&embedding[0], local_model.get_hidden_size());
         }
@@ -432,7 +476,7 @@ mod tests {
     fn test_embedding_consistency() {
         let model_id = "sentence-transformers/all-MiniLM-L6-v2";
         let cache_path = test_cache_path();
-        let local_model = LocalModel::new(model_id, cache_path, false, None).unwrap();
+        let local_model = LocalModel::new(model_id, cache_path, false, None, None).unwrap();
 
         let sentence = &["This is a test sentence."];
         let embedding1 = local_model.predict(sentence, 0).unwrap();
@@ -447,7 +491,7 @@ mod tests {
     fn test_hidden_size() {
         let model_id = "sentence-transformers/all-MiniLM-L6-v2";
         let cache_path = test_cache_path();
-        let local_model = LocalModel::new(model_id, cache_path, false, None).unwrap();
+        let local_model = LocalModel::new(model_id, cache_path, false, None, None).unwrap();
         assert_eq!(local_model.get_hidden_size(), 384);
     }
 
@@ -455,7 +499,7 @@ mod tests {
     fn test_max_input_len() {
         let model_id = "sentence-transformers/all-MiniLM-L6-v2";
         let cache_path = test_cache_path();
-        let local_model = LocalModel::new(model_id, cache_path, false, None).unwrap();
+        let local_model = LocalModel::new(model_id, cache_path, false, None, None).unwrap();
         assert_eq!(local_model.get_max_input_len(), 512);
     }
 
@@ -465,7 +509,7 @@ mod tests {
         let model_id = "Qwen/Qwen3-Embedding-0.6B";
         let cache_path = test_cache_path();
 
-        let local_model = LocalModel::new(model_id, cache_path.clone(), false, None)
+        let local_model = LocalModel::new(model_id, cache_path.clone(), false, None, None)
             .expect("Qwen model should load successfully");
         assert_eq!(local_model.get_hidden_size(), 1024);
         assert_eq!(local_model.get_max_input_len(), 32768);
@@ -484,7 +528,7 @@ mod tests {
         let model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0";
         let cache_path = test_cache_path();
 
-        let local_model = LocalModel::new(model_id, cache_path.clone(), false, None)
+        let local_model = LocalModel::new(model_id, cache_path.clone(), false, None, None)
             .expect("Llama model should load");
 
         let test_text = &["This is a test sentence for Llama embedding model."];
@@ -499,7 +543,7 @@ mod tests {
         let model_id = "Locutusque/TinyMistral-248M-v2";
         let cache_path = test_cache_path();
 
-        let local_model = LocalModel::new(model_id, cache_path.clone(), false, None)
+        let local_model = LocalModel::new(model_id, cache_path.clone(), false, None, None)
             .expect("Mistral model should load");
         let test_text = &["This is a test sentence for Mistral embedding model."];
         let embeddings = local_model.predict(test_text, 0).unwrap();
@@ -512,7 +556,7 @@ mod tests {
         let model_id = "h2oai/embeddinggemma-300m";
         let cache_path = test_cache_path();
 
-        let local_model = LocalModel::new(model_id, cache_path.clone(), false, None)
+        let local_model = LocalModel::new(model_id, cache_path.clone(), false, None, None)
             .expect("Gemma model should load");
 
         let test_text = &["This is a test sentence for Gemma embedding model."];
@@ -526,7 +570,7 @@ mod tests {
         let model_id = "Qwen/Qwen3-Embedding-0.6B";
         let cache_path = test_cache_path();
 
-        let result = LocalModel::new(model_id, cache_path.clone(), false, None);
+        let result = LocalModel::new(model_id, cache_path.clone(), false, None, None);
 
         let local_model = match result {
             Ok(m) => m,
@@ -590,7 +634,7 @@ mod tests {
         let cache_path = test_cache_path();
 
         // Should work with None token for non-gated models
-        let result = LocalModel::new(model_id, cache_path.clone(), false, None);
+        let result = LocalModel::new(model_id, cache_path.clone(), false, None, None);
         if result.is_err() {
             // If model isn't cached, skip this test
             println!("Skipping test - model not cached");
@@ -645,7 +689,7 @@ mod tests {
         let model_id = "ai-forever/FRIDA";
         let cache_path = test_cache_path();
 
-        let result = LocalModel::new(model_id, cache_path.clone(), false, None);
+        let result = LocalModel::new(model_id, cache_path.clone(), false, None, None);
         let local_model = match result {
             Ok(m) => m,
             Err(e) => {
@@ -683,7 +727,13 @@ mod tests {
         // Try to get HF token from environment
         let hf_token = std::env::var("HF_TOKEN").ok();
 
-        let result = LocalModel::new(model_id, cache_path.clone(), false, hf_token.as_deref());
+        let result = LocalModel::new(
+            model_id,
+            cache_path.clone(),
+            false,
+            hf_token.as_deref(),
+            None,
+        );
 
         let local_model = match result {
             Ok(m) => m,
@@ -732,7 +782,7 @@ mod tests {
         let model_id = "onnx-models/all-MiniLM-L12-v2-onnx";
         let cache_path = test_cache_path();
 
-        let result = LocalModel::new(model_id, cache_path.clone(), false, None);
+        let result = LocalModel::new(model_id, cache_path.clone(), false, None, None);
         let local_model = match result {
             Ok(m) => m,
             Err(e) => {
@@ -757,7 +807,7 @@ mod tests {
         let model_id = "onnx-models/all-MiniLM-L12-v2-onnx";
         let cache_path = test_cache_path();
 
-        let result = LocalModel::new(model_id, cache_path, false, None);
+        let result = LocalModel::new(model_id, cache_path, false, None, None);
         let local_model = match result {
             Ok(m) => m,
             Err(e) => {
@@ -780,7 +830,7 @@ mod tests {
         let model_id = "onnx-models/all-MiniLM-L12-v2-onnx";
         let cache_path = test_cache_path();
 
-        let result = LocalModel::new(model_id, cache_path, false, None);
+        let result = LocalModel::new(model_id, cache_path, false, None, None);
         let local_model = match result {
             Ok(m) => m,
             Err(e) => {
@@ -833,6 +883,7 @@ mod tests {
             cache_path.clone(),
             false,
             None,
+            None,
         ) {
             Ok(m) => m,
             Err(e) => {
@@ -846,6 +897,7 @@ mod tests {
             "onnx-models/all-MiniLM-L12-v2-onnx",
             cache_path,
             false,
+            None,
             None,
         ) {
             Ok(m) => m,

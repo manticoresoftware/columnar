@@ -15,6 +15,7 @@ type LoadModelFn = extern "C" fn(
     usize,         // api_url length
     i32, // api_timeout: timeout in seconds (0 means use default, positive value is timeout in seconds)
     bool, // use_gpu flag
+    i32, // max_input_tokens: cap on tokens per input text (0 means the model's own limit)
 ) -> TextModelResult;
 
 type FreeModelResultFn = extern "C" fn(TextModelResult);
@@ -68,7 +69,7 @@ pub struct EmbedLib {
 const VERSION_STR: &[u8] = concat!(env!("EMBEDDINGS_VERSION_STR"), "\0").as_bytes();
 
 const LIB: EmbedLib = EmbedLib {
-    version: 8usize,
+    version: 9usize,
     version_str: VERSION_STR.as_ptr() as *const c_char,
     load_model: TextModelWrapper::load_model,
     free_model_result: TextModelWrapper::free_model_result,

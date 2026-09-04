@@ -41,6 +41,7 @@ mod tests {
             api_url.as_bytes().len(),
             0, // Use default timeout
             false,
+            0, // max_input_tokens: model's own limit
         );
 
         // Should fail due to empty API key (basic validation)
@@ -82,6 +83,7 @@ mod tests {
                 api_url_c.as_bytes().len(),
                 0, // Use default timeout
                 false,
+                0, // max_input_tokens: model's own limit
             );
 
             // All should fail and have proper error messages
@@ -247,6 +249,7 @@ mod tests {
                 api_url.as_bytes().len(),
                 0, // Use default timeout
                 false,
+                0, // max_input_tokens: model's own limit
             );
 
             // Should fail due to empty API key (basic validation)
@@ -322,6 +325,7 @@ mod tests {
                 api_url.as_bytes().len(),
                 0, // Use default timeout
                 false,
+                0, // max_input_tokens: model's own limit
             );
 
             if should_be_valid {
@@ -412,6 +416,7 @@ mod tests {
                 api_url.as_bytes().len(),
                 0, // Use default timeout
                 false,
+                0, // max_input_tokens: model's own limit
             );
 
             if should_be_valid && model_id.starts_with("openai/") {
@@ -475,6 +480,7 @@ mod tests {
                         api_url.as_bytes().len(),
                         0, // Use default timeout
                         false,
+                        0, // max_input_tokens: model's own limit
                     );
 
                     // Should fail with invalid API key

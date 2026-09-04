@@ -1177,7 +1177,38 @@ pub enum LocalModel {
 }
 
 impl LocalModel {
+    /// Loads a local model. `max_input_tokens` caps the tokens taken from each input
+    /// text; `None` keeps the model's own limit. The cap can only lower the limit.
     pub fn new(
+        model_id: &str,
+        cache_path: PathBuf,
+        use_gpu: bool,
+        hf_token: Option<&str>,
+        max_input_tokens: Option<usize>,
+    ) -> Result<Self, Box<dyn Error>> {
+        let mut model = Self::new_uncapped(model_id, cache_path, use_gpu, hf_token)?;
+        if let Some(cap) = max_input_tokens {
+            model.cap_max_input_len(cap);
+        }
+        Ok(model)
+    }
+
+    /// Lowers `max_input_len` of the loaded architecture to `cap` (never raises it).
+    /// All predict paths truncate on that field, so the cap applies everywhere.
+    fn cap_max_input_len(&mut self, cap: usize) {
+        if cap == 0 {
+            return;
+        }
+        match self {
+            LocalModel::Bert(m) => m.max_input_len = m.max_input_len.min(cap),
+            LocalModel::T5(m) => m.max_input_len = m.max_input_len.min(cap),
+            LocalModel::Causal(m) => m.max_input_len = m.max_input_len.min(cap),
+            LocalModel::Quantized(m) => m.max_input_len = m.max_input_len.min(cap),
+            LocalModel::Onnx(m) => m.max_input_len = m.max_input_len.min(cap),
+        }
+    }
+
+    fn new_uncapped(
         model_id: &str,
         cache_path: PathBuf,
         use_gpu: bool,
@@ -1734,7 +1765,7 @@ mod tests {
 
         let cache_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".cache/manticore");
         let local_model =
-            LocalModel::new("Qwen/Qwen3-Embedding-0.6B", cache_path, false, None).unwrap();
+            LocalModel::new("Qwen/Qwen3-Embedding-0.6B", cache_path, false, None, None).unwrap();
         let source = "Qwen chunk boundary compatibility sentence. ".repeat(20);
         local_model.predict(&[source.as_str()], 0).unwrap();
         let LocalModel::Causal(causal) = local_model else {

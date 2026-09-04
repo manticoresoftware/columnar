@@ -34,7 +34,8 @@ using LoadModelFn = TextModelResult(*)(const char*,
                                        const char*,
                                        uintptr_t,
                                        int32_t,
-                                       bool);
+                                       bool,
+                                       int32_t);
 
 using FreeModelResultFn = void(*)(TextModelResult);
 
