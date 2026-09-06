@@ -22,6 +22,7 @@
 
 #include <unordered_map>
 #include <algorithm>
+#include <mutex>
 
 #ifdef WIN32
 	#define WIN32_LEAN_AND_MEAN
@@ -72,6 +73,8 @@ bool LoadFunc ( T & pFunc, void * pHandle, const char * szFunc, const std::strin
 
 using GetLibFuncs_fn = const EmbedLib * (*)();
 
+using ModelRef_t = std::shared_ptr<void>;
+
 class LoadedLib_c
 {
 public:
@@ -80,14 +83,17 @@ public:
 
 	bool				Initialize ( std::string & sError );
 
-	void				AddModel ( const std::string & sKey, TextModelWrapper pModel ) { m_hModels.insert ( { sKey, pModel } ); }
-	TextModelWrapper	GetModel ( const std::string & sKey ) const;
+	ModelRef_t			AcquireModel ( const std::string & sKey );
+	ModelRef_t			AddModel ( const std::string & sKey, TextModelWrapper pModel );
 	const EmbedLib *	GetLibFuncs() const { return m_pLibFuncs; }
 
 private:
+	void				FreeModel ( TextModelWrapper pModel );
+
 	std::string			m_sLibPath;
 	void *				m_pHandle = nullptr;
-	std::unordered_map<std::string, TextModelWrapper> m_hModels;
+	std::mutex			m_tModelsMutex;
+	std::unordered_map<std::string, std::weak_ptr<void>> m_hModels;
 	const EmbedLib *	m_pLibFuncs = nullptr;
 };
 
@@ -121,21 +127,52 @@ LoadedLib_c::~LoadedLib_c()
 	if ( !m_pHandle )
 		return;
 
-	if ( m_pLibFuncs )
-		for ( auto i : m_hModels )
-		{
-			TextModelResult	tResult = { i.second };
-			m_pLibFuncs->free_model_result(tResult);
-		}
-
 	dlclose(m_pHandle);
 }
 
 
-TextModelWrapper LoadedLib_c::GetModel ( const std::string & sKey ) const
+ModelRef_t LoadedLib_c::AcquireModel ( const std::string & sKey )
 {
+	std::lock_guard<std::mutex> tLock(m_tModelsMutex);
 	const auto & tFound = m_hModels.find(sKey);
-	return tFound==m_hModels.end() ? nullptr : tFound->second;
+	if ( tFound==m_hModels.end() )
+		return {};
+
+	auto pModel = tFound->second.lock();
+	if ( !pModel )
+		m_hModels.erase(tFound);
+
+	return pModel;
+}
+
+
+ModelRef_t LoadedLib_c::AddModel ( const std::string & sKey, TextModelWrapper pModel )
+{
+	ModelRef_t pNewModel ( pModel, [this] ( void * pValue ) { FreeModel(pValue); } );
+
+	ModelRef_t pExistingModel;
+	{
+		std::lock_guard<std::mutex> tLock(m_tModelsMutex);
+		auto & pCachedModel = m_hModels[sKey];
+		pExistingModel = pCachedModel.lock();
+		if ( !pExistingModel )
+		{
+			pCachedModel = pNewModel;
+			return pNewModel;
+		}
+	}
+
+	return pExistingModel;
+}
+
+
+void LoadedLib_c::FreeModel ( TextModelWrapper pModel )
+{
+	if ( !pModel || !m_pLibFuncs )
+		return;
+
+	TextModelResult tResult = { pModel };
+	m_pLibFuncs->free_model_result(tResult);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -175,16 +212,24 @@ bool EmbeddingsLib_c::Load ( std::string & sError )
 
 ///////////////////////////////////////////////////////////////////////////////
 
+static void AddKeyPart ( std::string & sKey, const std::string & sValue )
+{
+	sKey += std::to_string ( sValue.length() );
+	sKey += ':';
+	sKey += sValue;
+}
+
+
 std::string ToKey ( const ModelSettings_t & tSettings )
 {
 	std::string sKey;
-	sKey += tSettings.m_sModelName;
-	sKey += tSettings.m_sCachePath;
-	sKey += tSettings.m_sAPIKey;
-	sKey += tSettings.m_sAPIUrl;
-	sKey += std::to_string ( tSettings.m_iAPITimeout );
-	sKey += std::to_string ( tSettings.m_bUseGPU ? 1 : 0 );
-	sKey += std::to_string ( tSettings.m_iMaxInputTokens );
+	AddKeyPart ( sKey, tSettings.m_sModelName );
+	AddKeyPart ( sKey, tSettings.m_sCachePath );
+	AddKeyPart ( sKey, tSettings.m_sAPIKey );
+	AddKeyPart ( sKey, tSettings.m_sAPIUrl );
+	AddKeyPart ( sKey, std::to_string ( tSettings.m_iAPITimeout ) );
+	AddKeyPart ( sKey, std::to_string ( tSettings.m_bUseGPU ? 1 : 0 ) );
+	AddKeyPart ( sKey, std::to_string ( tSettings.m_iMaxInputTokens ) );
 	return sKey;
 }
 
@@ -202,6 +247,7 @@ public:
 private:
 	ModelSettings_t		m_tSettings;
 	std::shared_ptr<LoadedLib_c> m_pLib;
+	ModelRef_t			m_pModelRef;
 	TextModelWrapper	m_pModel = nullptr;
 };
 
@@ -211,7 +257,9 @@ bool TextToEmbeddings_c::Initialize ( std::shared_ptr<LoadedLib_c> pLib, std::st
 	assert ( !m_pModel && pLib );
 
 	m_pLib = pLib;
-	m_pModel = m_pLib->GetModel ( ToKey(m_tSettings) );
+	const std::string sKey = ToKey(m_tSettings);
+	m_pModelRef = m_pLib->AcquireModel(sKey);
+	m_pModel = m_pModelRef.get();
 	if ( m_pModel )
 		return true;
 
@@ -250,8 +298,8 @@ bool TextToEmbeddings_c::Initialize ( std::shared_ptr<LoadedLib_c> pLib, std::st
 		}
 	}
 
-	m_pModel = tResult.m_pModel;
-	m_pLib->AddModel ( ToKey(m_tSettings), m_pModel );
+	m_pModelRef = m_pLib->AddModel ( sKey, tResult.m_pModel );
+	m_pModel = m_pModelRef.get();
 	return true;
 }
 
