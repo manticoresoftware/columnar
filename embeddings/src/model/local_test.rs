@@ -1,4 +1,7 @@
-use super::local::{build_model_info, download_max_for, reset_download_tracker, LocalModel};
+use super::local::{
+    build_model_info, download_max_for, onnx_uses_token_type_ids, reset_download_tracker,
+    LocalModel,
+};
 
 #[cfg(test)]
 mod tests {
@@ -25,6 +28,19 @@ mod tests {
 
     /// MAX_INPUT_TOKENS (manticoresearch#4816): the cap lowers the model's input limit,
     /// never raises it, and really truncates what gets embedded.
+    #[test]
+    fn test_onnx_token_type_ids_are_optional() {
+        assert!(onnx_uses_token_type_ids(&[
+            "input_ids".to_string(),
+            "attention_mask".to_string(),
+            "token_type_ids".to_string(),
+        ]));
+        assert!(!onnx_uses_token_type_ids(&[
+            "input_ids".to_string(),
+            "attention_mask".to_string(),
+        ]));
+    }
+
     #[test]
     fn test_max_input_tokens_cap() {
         let model_id = "sentence-transformers/all-MiniLM-L6-v2";

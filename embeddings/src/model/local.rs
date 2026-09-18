@@ -84,6 +84,10 @@ fn intra_threads() -> usize {
         .unwrap_or(DEFAULT_INTRA_THREADS)
 }
 
+pub(crate) fn onnx_uses_token_type_ids(input_names: &[String]) -> bool {
+    input_names.iter().any(|name| name == "token_type_ids")
+}
+
 /// Reusable rayon thread pools, keyed by worker count.
 ///
 /// A fresh `ThreadPoolBuilder::build()` per inference spawns `n` brand-new OS
@@ -930,6 +934,7 @@ pub struct OnnxEmbeddingModel {
     tokenizer: Tokenizer,
     max_input_len: usize,
     hidden_size: usize,
+    uses_token_type_ids: bool,
 }
 
 impl OnnxEmbeddingModel {
@@ -963,12 +968,20 @@ impl OnnxEmbeddingModel {
             .map_err(|_| LibError::OnnxModelEvalFailed)?
             .commit_from_file(&onnx_path)
             .map_err(|_| LibError::ModelWeightsLoadFailed)?;
+        let uses_token_type_ids = onnx_uses_token_type_ids(
+            &session
+                .inputs()
+                .iter()
+                .map(|input| input.name().to_string())
+                .collect::<Vec<_>>(),
+        );
 
         Ok(Self {
             session: SessionWrapper::new(session),
             tokenizer,
             max_input_len,
             hidden_size,
+            uses_token_type_ids,
         })
     }
 
@@ -976,6 +989,7 @@ impl OnnxEmbeddingModel {
     fn run_batch(
         session: &SessionWrapper,
         batch: &[Vec<u32>],
+        uses_token_type_ids: bool,
     ) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
         session.with_session(|sess| -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
             let batch_size = batch.len();
@@ -1001,17 +1015,22 @@ impl OnnxEmbeddingModel {
             let attention_mask =
                 ort::value::Tensor::from_array((vec![batch_size, max_len], flat_mask.clone()))
                     .map_err(|_| LibError::OnnxModelEvalFailed)?;
-            let token_type_ids =
-                ort::value::Tensor::from_array((vec![batch_size, max_len], flat_type_ids))
-                    .map_err(|_| LibError::OnnxModelEvalFailed)?;
-
-            let outputs = sess
-                .run(ort::inputs![
+            let outputs = if uses_token_type_ids {
+                let token_type_ids =
+                    ort::value::Tensor::from_array((vec![batch_size, max_len], flat_type_ids))
+                        .map_err(|_| LibError::OnnxModelEvalFailed)?;
+                sess.run(ort::inputs![
                     "input_ids" => input_ids,
                     "attention_mask" => attention_mask,
                     "token_type_ids" => token_type_ids,
                 ])
-                .map_err(|_| LibError::OnnxModelEvalFailed)?;
+            } else {
+                sess.run(ort::inputs![
+                    "input_ids" => input_ids,
+                    "attention_mask" => attention_mask,
+                ])
+            }
+            .map_err(|_| LibError::OnnxModelEvalFailed)?;
 
             let (shape, data) = outputs[0]
                 .try_extract_tensor::<f32>()
@@ -1064,6 +1083,7 @@ impl OnnxEmbeddingModel {
         tokenizer: &Tokenizer,
         texts: &[&str],
         max_input: usize,
+        uses_token_type_ids: bool,
     ) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
         let truncated: Vec<&str> = texts
             .iter()
@@ -1079,7 +1099,7 @@ impl OnnxEmbeddingModel {
                 ids[..ids.len().min(max_input)].to_vec()
             })
             .collect();
-        Self::run_batch(session, &chunks)
+        Self::run_batch(session, &chunks, uses_token_type_ids)
     }
 
     /// Adaptive predict: automatically chooses the best strategy based on input size.
@@ -1098,6 +1118,7 @@ impl OnnxEmbeddingModel {
         let max_input = self.max_input_len;
         let session = &self.session;
         let tokenizer = &self.tokenizer;
+        let uses_token_type_ids = self.uses_token_type_ids;
 
         if texts.is_empty() {
             return Ok(Vec::new());
@@ -1105,7 +1126,13 @@ impl OnnxEmbeddingModel {
 
         // Small input — single tokenize + infer, no threading overhead
         if texts.len() <= bs {
-            return Self::tokenize_and_infer(session, tokenizer, texts, max_input);
+            return Self::tokenize_and_infer(
+                session,
+                tokenizer,
+                texts,
+                max_input,
+                uses_token_type_ids,
+            );
         }
 
         // Adaptive parallelism: scale workers with input size.
@@ -1135,6 +1162,7 @@ impl OnnxEmbeddingModel {
                                 tokenizer,
                                 std::slice::from_ref(text),
                                 max_input,
+                                uses_token_type_ids,
                             )
                             .map_err(|_| LibError::OnnxModelEvalFailed)?;
                             embeddings.extend(embs);
