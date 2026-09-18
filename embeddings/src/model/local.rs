@@ -459,12 +459,24 @@ fn try_find_gguf_file(api: &hf_hub::api::sync::ApiRepo) -> Option<PathBuf> {
     api.get(&gguf_files[0]).ok()
 }
 
-/// Try to find an ONNX model file in the repository
-/// Looks for model.onnx at root or in onnx/ subdirectory
+/// Try to find an ONNX model file in the repository.
+/// Looks for model.onnx at root or in onnx/ subdirectory and fetches the
+/// conventional sidecar used by ONNX external-data models when it exists.
 fn try_find_onnx_file(api: &hf_hub::api::sync::ApiRepo) -> Option<PathBuf> {
-    api.get("model.onnx")
-        .ok()
-        .or_else(|| api.get("onnx/model.onnx").ok())
+    for model_path in ["model.onnx", "onnx/model.onnx"] {
+        if let Ok(onnx_path) = api.get(model_path) {
+            // Large ONNX models commonly keep their tensors in a sibling
+            // `model.onnx_data` file. ORT resolves it relative to model.onnx,
+            // so it must be present in the same Hugging Face snapshot.
+            let _ = api.get(&onnx_external_data_path(model_path));
+            return Some(onnx_path);
+        }
+    }
+    None
+}
+
+pub(crate) fn onnx_external_data_path(model_path: &str) -> String {
+    format!("{model_path}_data")
 }
 
 /// Load tokenizer with fallback for BPE format

@@ -1,6 +1,6 @@
 use super::local::{
-    build_model_info, download_max_for, onnx_uses_token_type_ids, reset_download_tracker,
-    LocalModel,
+    build_model_info, download_max_for, onnx_external_data_path, onnx_uses_token_type_ids,
+    reset_download_tracker, LocalModel,
 };
 
 #[cfg(test)]
@@ -28,6 +28,15 @@ mod tests {
 
     /// MAX_INPUT_TOKENS (manticoresearch#4816): the cap lowers the model's input limit,
     /// never raises it, and really truncates what gets embedded.
+    #[test]
+    fn test_onnx_external_data_path() {
+        assert_eq!(
+            onnx_external_data_path("onnx/model.onnx"),
+            "onnx/model.onnx_data"
+        );
+        assert_eq!(onnx_external_data_path("model.onnx"), "model.onnx_data");
+    }
+
     #[test]
     fn test_onnx_token_type_ids_are_optional() {
         assert!(onnx_uses_token_type_ids(&[
