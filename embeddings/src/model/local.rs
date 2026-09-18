@@ -502,11 +502,6 @@ pub fn load_tokenizer(path: &PathBuf) -> Result<Tokenizer, Box<dyn Error>> {
 /// is sub-100ns; a BERT forward is six orders of magnitude more).
 pub struct BertEmbeddingModel {
     model: Arc<Mutex<BertModel>>,
-    /// Serializes whole BERT predictions before they enter the bounded Rayon pool.
-    /// Holding only `model` around `forward()` lets a second request occupy a
-    /// pool worker while waiting for that mutex; the active forward can then
-    /// wait forever for the exhausted pool.
-    conversion: Arc<Mutex<()>>,
     tokenizer: Tokenizer,
     max_input_len: usize,
     hidden_size: usize,
@@ -544,7 +539,6 @@ impl BertEmbeddingModel {
 
         Ok(Self {
             model: Arc::new(Mutex::new(model)),
-            conversion: Arc::new(Mutex::new(())),
             tokenizer: tokenizer.clone(),
             max_input_len,
             hidden_size,
@@ -554,7 +548,11 @@ impl BertEmbeddingModel {
 
     /// Batched forward pass for multiple token sequences.
     /// Groups chunks into batches, pads to uniform length, runs one forward per batch.
-    fn predict_chunks(&self, chunks: &[Vec<u32>]) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
+    fn predict_chunks(
+        &self,
+        model: &BertModel,
+        chunks: &[Vec<u32>],
+    ) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
         let mut all_embeddings = Vec::with_capacity(chunks.len());
 
         for batch in chunks.chunks(batch_size()) {
@@ -565,10 +563,7 @@ impl BertEmbeddingModel {
                 let chunk = &batch[0];
                 let token_ids = Tensor::new(chunk.as_slice(), &self.device)?.unsqueeze(0)?;
                 let token_type_ids = token_ids.zeros_like()?;
-                let emb = {
-                    let model = self.model.lock().unwrap();
-                    model.forward(&token_ids, &token_type_ids, None)?
-                };
+                let emb = model.forward(&token_ids, &token_type_ids, None)?;
                 let seq_len = token_ids.dims()[1];
                 let summed = emb.sum(1)?.to_dtype(DType::F32)?;
                 let divisor = Tensor::new(seq_len as f32, &self.device)?;
@@ -598,10 +593,7 @@ impl BertEmbeddingModel {
                 Tensor::from_vec(flat_mask.clone(), (batch_size, max_len), &self.device)?;
             let token_type_ids = token_ids.zeros_like()?;
 
-            let emb = {
-                let model = self.model.lock().unwrap();
-                model.forward(&token_ids, &token_type_ids, Some(&attention_mask))?
-            };
+            let emb = model.forward(&token_ids, &token_type_ids, Some(&attention_mask))?;
             // emb: [batch_size, max_len, hidden_size]
 
             // Attention-mask-aware mean pooling: sum(emb * mask) / sum(mask)
@@ -1322,12 +1314,32 @@ impl LocalModel {
     }
 }
 
+/// Mutex-guarded model state, locked by `predict` on the caller thread before the
+/// rayon pool is entered. Locking inside the pool can deadlock it: the worker that
+/// parks on the mutex may be holding a stolen piece of the lock owner's forward,
+/// which then never completes (manticoresearch#4915). Causal models keep no
+/// shared mutable state.
+enum Locked<'a> {
+    Bert(&'a BertModel),
+    T5(&'a mut T5EncoderModel),
+    Causal,
+    QuantizedGemma(&'a mut QuantizedGemmaModel),
+    QuantizedLlama(&'a mut QuantizedLlamaModel),
+}
+
 impl LocalModel {
     /// Inner predict body for non-ONNX local models (BERT / T5 / Causal / Quantized).
     /// Pulled out of the trait impl so the caller can wrap it in a scoped rayon pool.
-    fn predict_local(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
+    fn predict_local(
+        &self,
+        mut locked: Locked<'_>,
+        texts: &[&str],
+    ) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
         // BERT: batched path (batch_size up to batch_size() per forward pass)
         if let LocalModel::Bert(m) = self {
+            let Locked::Bert(model) = locked else {
+                unreachable!()
+            };
             // Dedicated single-text bypass: SELECT KNN(field, k, 'text') hits this
             // path on every query. Skip all batching wrappers, intermediate Vecs,
             // and the chunks.chunks() loop — go straight encode → forward → pool.
@@ -1342,10 +1354,7 @@ impl LocalModel {
 
                 let token_ids = Tensor::new(ids, &m.device)?.unsqueeze(0)?;
                 let token_type_ids = token_ids.zeros_like()?;
-                let emb = {
-                    let model = m.model.lock().unwrap();
-                    model.forward(&token_ids, &token_type_ids, None)?
-                };
+                let emb = model.forward(&token_ids, &token_type_ids, None)?;
                 let seq_len = token_ids.dims()[1];
                 let summed = emb.sum(1)?.to_dtype(DType::F32)?;
                 let divisor = Tensor::new(seq_len as f32, &m.device)?;
@@ -1356,7 +1365,7 @@ impl LocalModel {
             }
 
             return Self::predict_batched(&m.tokenizer, m.max_input_len, texts, |chunks| {
-                m.predict_chunks(chunks)
+                m.predict_chunks(model, chunks)
             });
         }
 
@@ -1399,15 +1408,14 @@ impl LocalModel {
 
             {
                 let token_ids = Tensor::new(&tokens[..], &device)?.unsqueeze(0)?;
-                let embeddings = match self {
-                    LocalModel::T5(m) => {
-                        let mut model = m.model.lock().unwrap();
+                let embeddings = match (self, &mut locked) {
+                    (_, Locked::T5(model)) => {
                         let emb = model.forward(&token_ids)?;
                         let cls_emb = emb.i(0)?;
                         let first_token = cls_emb.i(0)?;
                         first_token.unsqueeze(0)?.to_dtype(DType::F32)?
                     }
-                    LocalModel::Causal(m) => match &m.kind {
+                    (LocalModel::Causal(m), Locked::Causal) => match &m.kind {
                         CausalEmbeddingKind::Qwen { model, config } => qwen_mean_pool(
                             model,
                             config,
@@ -1446,24 +1454,20 @@ impl LocalModel {
                             summed.broadcast_div(&divisor)?
                         }
                     },
-                    LocalModel::Quantized(m) => match &m.model {
-                        QuantizedModelKind::Gemma { model } => {
-                            let mut model = model.lock().unwrap();
-                            let emb = model.forward(&token_ids, 0)?;
-                            let (_, n_tokens, _) = emb.dims3()?;
-                            let summed = emb.sum(1)?.to_dtype(DType::F32)?;
-                            let divisor = Tensor::new(n_tokens as f32, &device)?;
-                            summed.broadcast_div(&divisor)?
-                        }
-                        QuantizedModelKind::Llama { model } => {
-                            let mut model = model.lock().unwrap();
-                            let emb = model.forward(&token_ids, 0)?;
-                            let (_, n_tokens, _) = emb.dims3()?;
-                            let summed = emb.sum(1)?.to_dtype(DType::F32)?;
-                            let divisor = Tensor::new(n_tokens as f32, &device)?;
-                            summed.broadcast_div(&divisor)?
-                        }
-                    },
+                    (_, Locked::QuantizedGemma(model)) => {
+                        let emb = model.forward(&token_ids, 0)?;
+                        let (_, n_tokens, _) = emb.dims3()?;
+                        let summed = emb.sum(1)?.to_dtype(DType::F32)?;
+                        let divisor = Tensor::new(n_tokens as f32, &device)?;
+                        summed.broadcast_div(&divisor)?
+                    }
+                    (_, Locked::QuantizedLlama(model)) => {
+                        let emb = model.forward(&token_ids, 0)?;
+                        let (_, n_tokens, _) = emb.dims3()?;
+                        let summed = emb.sum(1)?.to_dtype(DType::F32)?;
+                        let divisor = Tensor::new(n_tokens as f32, &device)?;
+                        summed.broadcast_div(&divisor)?
+                    }
                     _ => unreachable!(),
                 };
 
@@ -1503,23 +1507,38 @@ impl LocalModel {
 
 impl TextModel for LocalModel {
     fn predict(&self, texts: &[&str], threads: usize) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
-        // A BERT forward internally uses Rayon. Serialize complete conversions
-        // before entering the shared bounded pool: otherwise another request can
-        // occupy a pool worker waiting for the model mutex and starve the forward
-        // that owns it.
-        if let LocalModel::Bert(m) = self {
-            let _conversion = m.conversion.lock().unwrap();
-            return with_thread_limit(threads, || self.predict_local(texts));
-        }
-
-        // ONNX manages its own worker count internally — no rayon pool involved.
-        if let LocalModel::Onnx(m) = self {
-            return m.predict_pipelined(texts, threads);
-        }
-
         // BERT / T5 / Causal / Quantized go through candle, which uses rayon for
-        // intra-op parallelism. Scope the rayon pool so threads > 0 caps the worker count.
-        with_thread_limit(threads, || self.predict_local(texts))
+        // intra-op parallelism. Scope the rayon pool so threads > 0 caps the worker
+        // count. Model mutexes are taken here, on the caller thread — see `Locked`.
+        match self {
+            // ONNX manages its own worker count internally — no rayon pool involved.
+            LocalModel::Onnx(m) => m.predict_pipelined(texts, threads),
+            LocalModel::Bert(m) => {
+                let model = m.model.lock().unwrap();
+                let locked = Locked::Bert(&model);
+                with_thread_limit(threads, move || self.predict_local(locked, texts))
+            }
+            LocalModel::T5(m) => {
+                let mut model = m.model.lock().unwrap();
+                let locked = Locked::T5(&mut model);
+                with_thread_limit(threads, move || self.predict_local(locked, texts))
+            }
+            LocalModel::Causal(_) => {
+                with_thread_limit(threads, || self.predict_local(Locked::Causal, texts))
+            }
+            LocalModel::Quantized(m) => match &m.model {
+                QuantizedModelKind::Gemma { model } => {
+                    let mut model = model.lock().unwrap();
+                    let locked = Locked::QuantizedGemma(&mut model);
+                    with_thread_limit(threads, move || self.predict_local(locked, texts))
+                }
+                QuantizedModelKind::Llama { model } => {
+                    let mut model = model.lock().unwrap();
+                    let locked = Locked::QuantizedLlama(&mut model);
+                    with_thread_limit(threads, move || self.predict_local(locked, texts))
+                }
+            },
+        }
     }
 
     fn get_hidden_size(&self) -> usize {
