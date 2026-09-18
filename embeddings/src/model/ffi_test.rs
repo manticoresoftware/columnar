@@ -525,6 +525,70 @@ mod tests {
         run_concurrent_ffi_embeddings("Qwen/Qwen3-Embedding-0.6B");
     }
 
+    #[test]
+    fn test_concurrent_large_bert_batches_via_ffi() {
+        use std::sync::{Arc, Barrier};
+        use std::thread;
+
+        let model_name = to_c_string("sentence-transformers/all-MiniLM-L6-v2");
+        let empty = to_c_string("");
+        let loaded = TextModelWrapper::load_model(
+            model_name.as_ptr(),
+            model_name.as_bytes().len(),
+            empty.as_ptr(),
+            0,
+            empty.as_ptr(),
+            0,
+            empty.as_ptr(),
+            0,
+            0,
+            false,
+            0,
+        );
+        if loaded.model.is_null() {
+            TextModelWrapper::free_model_result(loaded);
+            eprintln!("skipping: all-MiniLM-L6-v2 not available locally");
+            return;
+        }
+
+        let start = Arc::new(Barrier::new(3));
+        let model_ptr = loaded.model as usize;
+        let handles: Vec<_> = (0..2)
+            .map(|worker| {
+                let start = Arc::clone(&start);
+                thread::spawn(move || {
+                    let texts: Vec<String> = (0..500)
+                        .map(|i| format!("large concurrent BERT batch {worker} document {i}"))
+                        .collect();
+                    let items: Vec<StringItem> =
+                        texts.iter().map(|text| create_string_item(text)).collect();
+                    let wrapper = unsafe {
+                        std::mem::transmute::<*mut std::ffi::c_void, TextModelWrapper>(
+                            model_ptr as *mut std::ffi::c_void,
+                        )
+                    };
+                    start.wait();
+                    let result = TextModelWrapper::make_vect_embeddings(
+                        &wrapper,
+                        items.as_ptr(),
+                        items.len(),
+                        std::ptr::null(),
+                        2,
+                    );
+                    assert!(result.error.is_null());
+                    assert_eq!(result.len, items.len());
+                    TextModelWrapper::free_vec_result(result);
+                })
+            })
+            .collect();
+
+        start.wait();
+        for handle in handles {
+            handle.join().unwrap();
+        }
+        TextModelWrapper::free_model_result(loaded);
+    }
+
     /// End-to-end on the cached MiniLM model: all five strategies. truncate/mean
     /// return one vector/doc; fixed/recursive/sentence return N vectors/doc
     /// grouped by row_offsets. Verifies offsets, normalization, and clean frees.

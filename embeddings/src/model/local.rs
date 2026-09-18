@@ -502,6 +502,11 @@ pub fn load_tokenizer(path: &PathBuf) -> Result<Tokenizer, Box<dyn Error>> {
 /// is sub-100ns; a BERT forward is six orders of magnitude more).
 pub struct BertEmbeddingModel {
     model: Arc<Mutex<BertModel>>,
+    /// Serializes whole BERT predictions before they enter the bounded Rayon pool.
+    /// Holding only `model` around `forward()` lets a second request occupy a
+    /// pool worker while waiting for that mutex; the active forward can then
+    /// wait forever for the exhausted pool.
+    conversion: Arc<Mutex<()>>,
     tokenizer: Tokenizer,
     max_input_len: usize,
     hidden_size: usize,
@@ -539,6 +544,7 @@ impl BertEmbeddingModel {
 
         Ok(Self {
             model: Arc::new(Mutex::new(model)),
+            conversion: Arc::new(Mutex::new(())),
             tokenizer: tokenizer.clone(),
             max_input_len,
             hidden_size,
@@ -1497,6 +1503,15 @@ impl LocalModel {
 
 impl TextModel for LocalModel {
     fn predict(&self, texts: &[&str], threads: usize) -> Result<Vec<Vec<f32>>, Box<dyn Error>> {
+        // A BERT forward internally uses Rayon. Serialize complete conversions
+        // before entering the shared bounded pool: otherwise another request can
+        // occupy a pool worker waiting for the model mutex and starve the forward
+        // that owns it.
+        if let LocalModel::Bert(m) = self {
+            let _conversion = m.conversion.lock().unwrap();
+            return with_thread_limit(threads, || self.predict_local(texts));
+        }
+
         // ONNX manages its own worker count internally — no rayon pool involved.
         if let LocalModel::Onnx(m) = self {
             return m.predict_pipelined(texts, threads);
