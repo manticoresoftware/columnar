@@ -568,6 +568,12 @@ mod tests {
                         )
                     };
                     start.wait();
+                    // The deadlock needs the second request to arrive while the
+                    // first forward is already mid-flight in the pool; requests
+                    // that start simultaneously merely serialize.
+                    if worker == 1 {
+                        thread::sleep(std::time::Duration::from_millis(300));
+                    }
                     let result = TextModelWrapper::make_vect_embeddings(
                         &wrapper,
                         items.as_ptr(),
