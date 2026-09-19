@@ -834,11 +834,442 @@ bool ScalarQuantizerBinary_T<BUILD>::FinalizeTraining ( std::string & sError )
 
 ///////////////////////////////////////////////////////////////////////////////
 
+// Random rotation that spreads a residual evenly over all components before quantization:
+// sign flips + orthonormal Walsh-Hadamard transforms, alternating between the leading and the trailing
+// power-of-two block, so any dimension is mixed without padding. Seeded with a constant because
+// it is not stored: builds and searches must reproduce the same rotation.
+class Rotation_c
+{
+public:
+	explicit	Rotation_c ( size_t uDim );
+
+	void		Apply ( float * pVec ) const;
+
+private:
+	static constexpr int ROUNDS = 4;
+
+	size_t				m_uDim = 0;
+	size_t				m_uBlock = 1;
+	float				m_fBlockScale = 1.0f;
+	std::vector<float>	m_dSigns;
+};
+
+
+Rotation_c::Rotation_c ( size_t uDim )
+	: m_uDim ( uDim )
+{
+	while ( m_uBlock*2 <= uDim )
+		m_uBlock *= 2;
+
+	m_fBlockScale = 1.0f / std::sqrt ( (float)m_uBlock );
+
+	uint64_t uState = 0;
+	m_dSigns.resize ( ROUNDS*uDim );
+	for ( auto & i : m_dSigns )
+	{
+		// splitmix64
+		uState += 0x9E3779B97F4A7C15ULL;
+		uint64_t uRand = uState;
+		uRand = ( uRand ^ ( uRand >> 30 ) ) * 0xBF58476D1CE4E5B9ULL;
+		uRand = ( uRand ^ ( uRand >> 27 ) ) * 0x94D049BB133111EBULL;
+		i = ( ( uRand ^ ( uRand >> 31 ) ) & 1 ) ? 1.0f : -1.0f;
+	}
+}
+
+
+void Rotation_c::Apply ( float * pVec ) const
+{
+	for ( int iRound = 0; iRound < ROUNDS; iRound++ )
+	{
+		const float * pSigns = m_dSigns.data() + iRound*m_uDim;
+		for ( size_t i = 0; i < m_uDim; i++ )
+			pVec[i] *= pSigns[i];
+
+		float * pBlock = pVec + ( ( iRound & 1 ) ? m_uDim-m_uBlock : 0 );
+		for ( size_t h = 1; h < m_uBlock; h *= 2 )
+			for ( size_t i = 0; i < m_uBlock; i += h*2 )
+				for ( size_t j = i; j < i+h; j++ )
+				{
+					float fA = pBlock[j];
+					float fB = pBlock[j+h];
+					pBlock[j] = fA + fB;
+					pBlock[j+h] = fA - fB;
+				}
+
+		for ( size_t i = 0; i < m_uBlock; i++ )
+			pBlock[i] *= m_fBlockScale;
+	}
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+// Quantization of rotated centroid residuals into BITS bits per dimension (RaBitQ-style estimator with
+// extended codes). Stored form: per-vector factors + BITS code bit planes. Query form: 4-bit codes of the
+// rotated query residual.
+// In BUILD mode the query form of every stored vector goes to a temporary pool, the graph construction
+// uses it as the "query" side of a distance.
+template <bool BUILD, int BITS>
+class ScalarQuantizerBits_T : public ScalarQuantizer_i
+{
+public:
+			ScalarQuantizerBits_T ( int64_t iNumElements, const std::string & sTmpFilename );
+			ScalarQuantizerBits_T ( const QuantizationSettings_t & tSettings );
+			~ScalarQuantizerBits_T() override { Reset(); }
+
+	void	Train ( const Span_T<float> & dPoint ) override;
+	void	SetTotalVectors ( int64_t iTotalVectors ) override { m_uTotalVecs = (size_t)iTotalVectors; }
+	bool	FinalizeTraining ( std::string & sError ) override;
+	bool	IsFinalized() const override { return m_bFinalized; }
+	void	Encode ( uint32_t uRowID, const Span_T<float> & dPoint, std::vector<uint8_t> & dQuantized, std::vector<uint8_t> & dQuantizedForQuery ) override;
+	void	FinalizeEncoding() override { Reset(); }
+	const QuantizationSettings_t & GetSettings() override { return m_tSettings; }
+	std::function<const uint8_t *(uint32_t)> GetPoolFetcher() const override;
+	bool	RefineDistances ( const Span_T<float> & dQuery, bool bL2, const std::function<const uint8_t *(uint32_t)> & fnStored, std::vector<DocDist_t> & dResults ) const override;
+
+private:
+	// per-vector scale candidates around the MSE-optimal uniform step for N(0,1) at this code width
+	static constexpr int	SCALE_STEPS = 11;
+	static constexpr int	LEVELS = 1 << BITS;
+	static constexpr float	LEVEL_CENTER = ( LEVELS - 1 ) / 2.0f;
+	static constexpr float	OPTIMAL_STEP = BITS==2 ? 0.9957f : 0.3352f;
+
+	QuantizationSettings_t		m_tSettings;
+	std::unique_ptr<Rotation_c>	m_pRotation;
+	std::string					m_sTmpFilename;
+	std::vector<double>			m_dCentroid64;
+	MappedBuffer_T<uint8_t>		m_tQueryPool;
+	size_t	m_uDim = 0;
+	size_t	m_uTrainedVecs = 0;
+	size_t	m_uTotalVecs = 0;
+	float	m_fCentroidNormSq = 0.0f;
+	bool	m_bFinalized = false;
+
+	void	Init();
+	void	EncodeData ( const float * pRotated, float fResidualNormSq, float fResidualDotCentroid, uint8_t * pOut ) const;
+	void	EncodeQuery ( const float * pRotated, float fDotCentroid, float fResidualNormSq, uint8_t * pOut ) const;
+	void	Reset();
+};
+
+template <bool BUILD, int BITS>
+ScalarQuantizerBits_T<BUILD,BITS>::ScalarQuantizerBits_T ( int64_t iNumElements, const std::string & sTmpFilename )
+	: m_sTmpFilename ( sTmpFilename )
+	, m_uTotalVecs ( iNumElements )
+{}
+
+template <bool BUILD, int BITS>
+ScalarQuantizerBits_T<BUILD,BITS>::ScalarQuantizerBits_T ( const QuantizationSettings_t & tSettings )
+	: m_tSettings ( tSettings )
+	, m_uDim ( tSettings.m_dCentroid.size() )
+	, m_bFinalized ( true )
+{
+	Init();
+}
+
+template <bool BUILD, int BITS>
+void ScalarQuantizerBits_T<BUILD,BITS>::Init()
+{
+	m_pRotation = std::make_unique<Rotation_c>(m_uDim);
+	m_fCentroidNormSq = VecDot ( m_tSettings.m_dCentroid, m_tSettings.m_dCentroid );
+}
+
+template <bool BUILD, int BITS>
+void ScalarQuantizerBits_T<BUILD,BITS>::Train ( const Span_T<float> & dPoint )
+{
+	assert ( !m_bFinalized );
+	if ( !m_uTrainedVecs )
+	{
+		m_uDim = dPoint.size();
+		m_dCentroid64.assign ( m_uDim, 0.0 );
+	}
+
+	for ( size_t i = 0; i < m_uDim; i++ )
+		m_dCentroid64[i] += dPoint[i];
+
+	m_uTrainedVecs++;
+}
+
+template <bool BUILD, int BITS>
+bool ScalarQuantizerBits_T<BUILD,BITS>::FinalizeTraining ( std::string & sError )
+{
+	if ( m_bFinalized )
+		return true;
+
+	if ( !m_uTrainedVecs )
+	{
+		m_bFinalized = true;
+		return true;
+	}
+
+	m_tSettings.m_dCentroid.resize(m_uDim);
+	for ( size_t i = 0; i < m_uDim; i++ )
+		m_tSettings.m_dCentroid[i] = float ( m_dCentroid64[i] / m_uTrainedVecs );
+
+	Init();
+
+	if constexpr ( BUILD )
+	{
+		size_t uEntrySize = QuantQuerySize(m_uDim);
+		if ( !m_uTotalVecs || (int64_t)m_uTotalVecs > INT64_MAX / (int64_t)uEntrySize )
+		{
+			sError = FormatStr ( "Invalid quantizer buffer size for %llu vectors of %llu bytes", (unsigned long long)m_uTotalVecs, (unsigned long long)uEntrySize );
+			return false;
+		}
+
+		FILE * pFile = fopen ( m_sTmpFilename.c_str(), "wb" );
+		if ( !pFile )
+		{
+			sError = FormatStr ( "Failed to create file '%s'", m_sTmpFilename.c_str() );
+			return false;
+		}
+
+		int64_t iTmpFileSize = (int64_t)m_uTotalVecs * (int64_t)uEntrySize;
+#ifdef _MSC_VER
+		bool bSeekOk = _fseeki64 ( pFile, iTmpFileSize-1, SEEK_SET )==0;
+#else
+		bool bSeekOk = fseeko ( pFile, (off_t)( iTmpFileSize-1 ), SEEK_SET )==0;
+#endif
+		bool bWriteOk = bSeekOk && fwrite ( "", 1, 1, pFile )==1;
+		bool bCloseOk = fclose ( pFile )==0;
+		if ( !bSeekOk || !bWriteOk || !bCloseOk )
+		{
+			sError = FormatStr ( "Failed to size quantizer file '%s' to %lld bytes", m_sTmpFilename.c_str(), (long long)iTmpFileSize );
+			return false;
+		}
+
+		if ( !m_tQueryPool.Open ( m_sTmpFilename.c_str(), true, sError ) )
+			return false;
+	}
+
+	m_bFinalized = true;
+	return true;
+}
+
+template <bool BUILD, int BITS>
+void ScalarQuantizerBits_T<BUILD,BITS>::Encode ( uint32_t uRowID, const Span_T<float> & dPoint, std::vector<uint8_t> & dQuantized, std::vector<uint8_t> & /*dQuantizedForQuery*/ )
+{
+	assert ( m_bFinalized && dPoint.size()==m_uDim );
+
+	thread_local std::vector<float> dRotated;
+	dRotated.resize(m_uDim);
+
+	const float * pCentroid = m_tSettings.m_dCentroid.data();
+	float fDotCentroid = 0.0f;
+	float fResidualNormSq = 0.0f;
+	for ( size_t i = 0; i < m_uDim; i++ )
+	{
+		float fResidual = dPoint[i] - pCentroid[i];
+		dRotated[i] = fResidual;
+		fDotCentroid += dPoint[i]*pCentroid[i];
+		fResidualNormSq += fResidual*fResidual;
+	}
+
+	m_pRotation->Apply ( dRotated.data() );
+
+	if constexpr ( !BUILD )
+	{
+		dQuantized.resize ( QuantQuerySize(m_uDim) );
+		EncodeQuery ( dRotated.data(), fDotCentroid, fResidualNormSq, dQuantized.data() );
+		return;
+	}
+
+	EncodeQuery ( dRotated.data(), fDotCentroid, fResidualNormSq, m_tQueryPool.data() + uint64_t(uRowID)*QuantQuerySize(m_uDim) );
+	dQuantized.resize ( QuantDataSize(m_uDim,BITS) );
+	EncodeData ( dRotated.data(), fResidualNormSq, fDotCentroid - m_fCentroidNormSq, dQuantized.data() );
+}
+
+template <bool BUILD, int BITS>
+void ScalarQuantizerBits_T<BUILD,BITS>::EncodeData ( const float * pRotated, float fResidualNormSq, float fResidualDotCentroid, uint8_t * pOut ) const
+{
+	size_t uWords = QuantWords(m_uDim);
+	thread_local std::vector<uint8_t> dCodes, dBest;
+	thread_local std::vector<uint64_t> dPlanes;
+	dCodes.resize(m_uDim);
+	dBest.assign ( m_uDim, 0 );
+	dPlanes.assign ( BITS*uWords, 0 );
+
+	QuantCodeFactors_t tFactors { 0.0f, fResidualDotCentroid, fResidualNormSq, 0.0f };
+	float fNorm = std::sqrt(fResidualNormSq);
+	if ( fNorm > 0.0f )
+	{
+		float fInvNorm = 1.0f / fNorm;
+		float fSigma = 1.0f / std::sqrt ( (float)m_uDim );
+		float fBestCos = -FLT_MAX;
+		float fBestDot = 0.0f;
+		for ( int iStep = 0; iStep < SCALE_STEPS; iStep++ )
+		{
+			float fInvStep = 1.0f / ( OPTIMAL_STEP*fSigma*( 0.6f + 0.1f*iStep ) );
+			float fDot = 0.0f;
+			float fNormSq = 0.0f;
+			for ( size_t i = 0; i < m_uDim; i++ )
+			{
+				float fUnit = pRotated[i]*fInvNorm;
+				int iCode = std::clamp ( (int)std::floor ( fUnit*fInvStep + LEVELS/2.0f ), 0, LEVELS-1 );
+				dCodes[i] = (uint8_t)iCode;
+				float fCentered = iCode - LEVEL_CENTER;
+				fDot += fCentered*fUnit;
+				fNormSq += fCentered*fCentered;
+			}
+
+			float fCos = fDot / std::sqrt(fNormSq);
+			if ( fCos > fBestCos )
+			{
+				fBestCos = fCos;
+				fBestDot = fDot;
+				dCodes.swap(dBest);
+			}
+		}
+
+		if ( fBestDot > 0.0f )
+			tFactors.m_fScale = fNorm / fBestDot;
+	}
+
+	int iCodeSum = 0;
+	for ( size_t i = 0; i < m_uDim; i++ )
+	{
+		iCodeSum += dBest[i];
+		for ( int iPlane = 0; iPlane < BITS; iPlane++ )
+			dPlanes[iPlane*uWords + (i>>6)] |= uint64_t ( ( dBest[i] >> iPlane ) & 1 ) << ( i & 63 );
+	}
+
+	tFactors.m_fCodeSum = (float)iCodeSum;
+	memcpy ( pOut, &tFactors, sizeof(tFactors) );
+	memcpy ( pOut + sizeof(tFactors), dPlanes.data(), dPlanes.size()*sizeof(uint64_t) );
+}
+
+template <bool BUILD, int BITS>
+void ScalarQuantizerBits_T<BUILD,BITS>::EncodeQuery ( const float * pRotated, float fDotCentroid, float fResidualNormSq, uint8_t * pOut ) const
+{
+	size_t uWords = QuantWords(m_uDim);
+	thread_local std::vector<uint64_t> dPlanes;
+	dPlanes.assign ( QUANT_QUERY_BITS*uWords, 0 );
+
+	float fMin, fMax;
+	VecMinMax ( { (float*)pRotated, m_uDim }, fMin, fMax );
+	float fStep = ( fMax - fMin ) / 15.0f;
+	float fInvStep = fStep > 0.0f ? 1.0f / fStep : 0.0f;
+
+	int iCodeSum = 0;
+	for ( size_t i = 0; i < m_uDim; i++ )
+	{
+		int iCode = std::clamp ( (int)std::lround ( ( pRotated[i] - fMin )*fInvStep ), 0, ( 1 << QUANT_QUERY_BITS ) - 1 );
+		iCodeSum += iCode;
+		for ( int iPlane = 0; iPlane < QUANT_QUERY_BITS; iPlane++ )
+			dPlanes[iPlane*uWords + (i>>6)] |= uint64_t ( ( iCode >> iPlane ) & 1 ) << ( i & 63 );
+	}
+
+	QuantQueryFactors_t tFactors { fMin, fStep, (float)iCodeSum, fDotCentroid, fResidualNormSq };
+	memcpy ( pOut, &tFactors, sizeof(tFactors) );
+	memcpy ( pOut + sizeof(tFactors), dPlanes.data(), dPlanes.size()*sizeof(uint64_t) );
+}
+
+// sum of pValues[i] over the dimensions whose bit is set in the plane
+static float MaskedSum ( const float * pValues, const uint8_t * pPlane, size_t uDim )
+{
+	size_t i = 0;
+	float fSum = 0.0f;
+#if defined(USE_AVX2) || defined(USE_AVX512)
+	struct ByteMasks_t
+	{
+		alignas(32) uint32_t m_dMasks[256][8];
+		ByteMasks_t()
+		{
+			for ( int iByte = 0; iByte < 256; iByte++ )
+				for ( int iBit = 0; iBit < 8; iBit++ )
+					m_dMasks[iByte][iBit] = ( iByte >> iBit ) & 1 ? 0xFFFFFFFF : 0;
+		}
+	};
+	static const ByteMasks_t tMasks;
+
+	__m256 vSum = _mm256_setzero_ps();
+	for ( ; i+8 <= uDim; i += 8 )
+	{
+		__m256 vMask = _mm256_castsi256_ps ( _mm256_load_si256 ( (const __m256i *)tMasks.m_dMasks[pPlane[i>>3]] ) );
+		vSum = _mm256_add_ps ( vSum, _mm256_and_ps ( _mm256_loadu_ps ( pValues+i ), vMask ) );
+	}
+
+	alignas(32) float dSum[8];
+	_mm256_store_ps ( dSum, vSum );
+	for ( float fPart : dSum )
+		fSum += fPart;
+#endif
+
+	for ( ; i < uDim; i++ )
+		if ( ( pPlane[i>>3] >> ( i & 7 ) ) & 1 )
+			fSum += pValues[i];
+
+	return fSum;
+}
+
+template <bool BUILD, int BITS>
+bool ScalarQuantizerBits_T<BUILD,BITS>::RefineDistances ( const Span_T<float> & dQuery, bool bL2, const std::function<const uint8_t *(uint32_t)> & fnStored, std::vector<DocDist_t> & dResults ) const
+{
+	thread_local std::vector<float> dRotated;
+	dRotated.resize(m_uDim);
+
+	const float * pCentroid = m_tSettings.m_dCentroid.data();
+	float fDotCentroid = 0.0f;
+	float fResidualNormSq = 0.0f;
+	float fRotatedSum = 0.0f;
+	for ( size_t i = 0; i < m_uDim; i++ )
+	{
+		float fResidual = dQuery[i] - pCentroid[i];
+		dRotated[i] = fResidual;
+		fDotCentroid += dQuery[i]*pCentroid[i];
+		fResidualNormSq += fResidual*fResidual;
+	}
+
+	m_pRotation->Apply ( dRotated.data() );
+	for ( float fValue : dRotated )
+		fRotatedSum += fValue;
+
+	const size_t uPlaneBytes = QuantWords(m_uDim)*sizeof(uint64_t);
+	for ( auto & tResult : dResults )
+	{
+		const uint8_t * pStored = fnStored ( tResult.m_tRowID );
+		QuantCodeFactors_t tData;
+		memcpy ( &tData, pStored, sizeof(tData) );
+		const uint8_t * pPlanes = pStored + sizeof(tData);
+
+		// <code-LEVEL_CENTER, R(y-c)> with the exact rotated query residual
+		float fCodeDot = -LEVEL_CENTER*fRotatedSum;
+		for ( int iPlane = 0; iPlane < BITS; iPlane++ )
+			fCodeDot += float ( 1 << iPlane ) * MaskedSum ( dRotated.data(), pPlanes + iPlane*uPlaneBytes, m_uDim );
+		float fResidualDot = tData.m_fScale*fCodeDot;
+		tResult.m_fDist = bL2 ? tData.m_fResidualNormSq + fResidualNormSq - 2.0f*fResidualDot : 1.0f - ( fResidualDot + tData.m_fResidualDotCentroid + fDotCentroid );
+	}
+
+	return true;
+}
+
+template <bool BUILD, int BITS>
+std::function<const uint8_t *(uint32_t)> ScalarQuantizerBits_T<BUILD,BITS>::GetPoolFetcher() const
+{
+	if constexpr ( !BUILD )
+		return nullptr;
+
+	size_t uEntrySize = QuantQuerySize(m_uDim);
+	return [this, uEntrySize]( uint32_t uKey ) -> const uint8_t * { return m_tQueryPool.data() + uint64_t(uKey)*uEntrySize; };
+}
+
+template <bool BUILD, int BITS>
+void ScalarQuantizerBits_T<BUILD,BITS>::Reset()
+{
+	if constexpr ( BUILD )
+	{
+		m_tQueryPool.Reset();
+		::unlink ( m_sTmpFilename.c_str() );
+	}
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
 ScalarQuantizer_i * CreateQuantizer ( Quantization_e eQuantization, const QuantizationSettings_t & tQuantSettings, HNSWSimilarity_e eSimilarity )
 {
 	switch ( eQuantization )
 	{
 	case Quantization_e::BIT1:	return new ScalarQuantizerBinary_T<false> ( tQuantSettings, eSimilarity );
+	case Quantization_e::BIT2:	return new ScalarQuantizerBits_T<false,2> ( tQuantSettings );
+	case Quantization_e::BIT4:	return new ScalarQuantizerBits_T<false,4> ( tQuantSettings );
 	case Quantization_e::BIT1SIMPLE: return new ScalarQuantizer1Bit_c(tQuantSettings);
 	case Quantization_e::BIT8:	return new ScalarQuantizer8Bit_c(tQuantSettings);
 	default:					return nullptr;
@@ -852,6 +1283,8 @@ ScalarQuantizer_i * CreateQuantizer ( Quantization_e eQuantization, HNSWSimilari
 	switch ( eQuantization )
 	{
 	case Quantization_e::BIT1:	return new ScalarQuantizerBinary_T<true> ( eSimilarity, iNumElements, sTmpFilename );
+	case Quantization_e::BIT2:	return new ScalarQuantizerBits_T<true,2> ( iNumElements, sTmpFilename );
+	case Quantization_e::BIT4:	return new ScalarQuantizerBits_T<true,4> ( iNumElements, sTmpFilename );
 	case Quantization_e::BIT1SIMPLE: return new ScalarQuantizer1Bit_c;
 	case Quantization_e::BIT8:	return new ScalarQuantizer8Bit_c;
 	default:					return nullptr;
