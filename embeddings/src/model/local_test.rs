@@ -1,4 +1,7 @@
-use super::local::{build_model_info, download_max_for, reset_download_tracker, LocalModel};
+use super::local::{
+    build_model_info, download_max_for, onnx_sidecar_files, parse_pooling_config,
+    reset_download_tracker, LocalModel, OnnxPooling,
+};
 
 #[cfg(test)]
 mod tests {
@@ -22,6 +25,39 @@ mod tests {
 
     // Note: These tests require actual model files to run successfully
     // They are designed to test the structure and error handling
+
+    #[test]
+    fn test_onnx_sidecar_files() {
+        let siblings: Vec<String> = [
+            "onnx/model.onnx",
+            "onnx/model.onnx_data",
+            "onnx/model.onnx_data_1",
+            "onnx/model_fp16.onnx",
+            "onnx/Constant_7_attr__value",
+            "model.onnx_data",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        assert_eq!(
+            onnx_sidecar_files("onnx/model.onnx", &siblings),
+            ["onnx/model.onnx_data", "onnx/model.onnx_data_1"]
+        );
+        assert_eq!(
+            onnx_sidecar_files("model.onnx", &siblings),
+            ["model.onnx_data"]
+        );
+    }
+
+    #[test]
+    fn test_parse_pooling_config() {
+        let cls = r#"{"pooling_mode_cls_token": true, "pooling_mode_mean_tokens": false}"#;
+        assert_eq!(parse_pooling_config(cls).unwrap(), OnnxPooling::Cls);
+        let mean = r#"{"pooling_mode_cls_token": false, "pooling_mode_mean_tokens": true}"#;
+        assert_eq!(parse_pooling_config(mean).unwrap(), OnnxPooling::Mean);
+        assert!(parse_pooling_config(r#"{"pooling_mode_max_tokens": true}"#).is_err());
+        assert!(parse_pooling_config("not json").is_err());
+    }
 
     /// MAX_INPUT_TOKENS (manticoresearch#4816): the cap lowers the model's input limit,
     /// never raises it, and really truncates what gets embedded.
@@ -365,6 +401,7 @@ mod tests {
             weights_paths: vec![],
             gguf_path: Some(PathBuf::from("/tmp/model.gguf")),
             onnx_path: None,
+            pooling_config_path: None,
         };
 
         assert!(info.gguf_path.is_some());
@@ -770,6 +807,7 @@ mod tests {
             weights_paths: vec![],
             gguf_path: None,
             onnx_path: Some(PathBuf::from("/tmp/model.onnx")),
+            pooling_config_path: None,
         };
 
         assert!(info.onnx_path.is_some());
@@ -800,6 +838,40 @@ mod tests {
 
         assert_eq!(embeddings.len(), 1);
         check_embedding_properties(&embeddings[0], local_model.get_hidden_size());
+    }
+
+    /// BAAI/bge-m3: XLM-R graph without token_type_ids, weights in the
+    /// model.onnx_data sidecar, CLS-pooled `sentence_embedding` output.
+    #[test]
+    fn test_onnx_bge_m3() {
+        let model_id = "BAAI/bge-m3";
+        let local_model = match LocalModel::new(model_id, test_cache_path(), false, None, None) {
+            Ok(m) => m,
+            Err(e) => {
+                println!("bge-m3 test skipped: {}", e);
+                return;
+            }
+        };
+
+        assert_eq!(local_model.get_hidden_size(), 1024);
+        assert_eq!(local_model.get_max_input_len(), 8192);
+
+        let embeddings = local_model
+            .predict(&["булка", "хлеб", "собака"], 0)
+            .expect("bge-m3 should generate embeddings");
+        assert_eq!(embeddings.len(), 3);
+        for embedding in &embeddings {
+            check_embedding_properties(embedding, 1024);
+        }
+
+        // Leading components of transformers' XLMRobertaModel CLS token,
+        // L2-normalized, for "булка". Mean pooling lands ~0.87 cosine away.
+        let reference = [
+            0.018139, 0.058514, -0.042902, 0.017726, -0.052208, 0.010081, -0.018116, 0.046001,
+        ];
+        for (ours, expected) in embeddings[0].iter().zip(reference) {
+            assert_abs_diff_eq!(ours, &expected, epsilon = 2e-3);
+        }
     }
 
     #[test]
