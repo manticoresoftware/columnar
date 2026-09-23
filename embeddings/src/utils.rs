@@ -28,7 +28,7 @@ pub fn get_max_input_length(contents: &str) -> Result<usize> {
         .get("max_position_embeddings")
         .and_then(Value::as_u64)
     {
-        return Ok(max_len as usize);
+        return Ok(max_len as usize - roberta_position_offset(&config));
     }
 
     // Try n_positions (some models use this)
@@ -43,6 +43,22 @@ pub fn get_max_input_length(contents: &str) -> Result<usize> {
     }
 
     Err(std::io::Error::other("Max position embeddings not found").into())
+}
+
+/// RoBERTa-family models number positions from `pad_token_id + 1`, so the
+/// usable sequence is shorter than the position table (514 -> 512, 8194 -> 8192).
+fn roberta_position_offset(config: &Value) -> usize {
+    match config.get("model_type").and_then(Value::as_str) {
+        Some("roberta" | "xlm-roberta" | "camembert" | "mpnet") => {
+            // HF default pad_token_id for these architectures is 1
+            config
+                .get("pad_token_id")
+                .and_then(Value::as_u64)
+                .unwrap_or(1) as usize
+                + 1
+        }
+        _ => 0,
+    }
 }
 
 /// Get hidden size for the current model
@@ -98,6 +114,19 @@ mod tests {
         // n_positions fallback
         let n_positions_config = r#"{"n_positions": 1024}"#;
         assert_eq!(get_max_input_length(n_positions_config).unwrap(), 1024);
+    }
+
+    #[test]
+    fn test_get_max_input_length_roberta_offset() {
+        let bge_m3 =
+            r#"{"model_type": "xlm-roberta", "max_position_embeddings": 8194, "pad_token_id": 1}"#;
+        assert_eq!(get_max_input_length(bge_m3).unwrap(), 8192);
+
+        let roberta_default_pad = r#"{"model_type": "roberta", "max_position_embeddings": 514}"#;
+        assert_eq!(get_max_input_length(roberta_default_pad).unwrap(), 512);
+
+        let bert = r#"{"model_type": "bert", "max_position_embeddings": 512, "pad_token_id": 0}"#;
+        assert_eq!(get_max_input_length(bert).unwrap(), 512);
     }
 
     #[test]
