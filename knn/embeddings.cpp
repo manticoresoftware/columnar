@@ -331,6 +331,30 @@ bool TextToEmbeddings_c::Convert ( const std::vector<std::string_view> & dTexts,
 	// iThreads: 0 = use all available CPUs (default), >0 = cap worker count in the embeddings lib
 	// nullptr ChunkSettings = truncate strategy, i.e. one vector per input text
 	FloatVecResult tVecResult = pFuncs->make_vect_embeddings ( &m_pModel, dStringItems.data(), dStringItems.size(), pChunk ? &tChunk : nullptr, iThreads );
+	const bool bVecOwnershipValid = tVecResult.cap>=tVecResult.len && ( !tVecResult.cap || tVecResult.m_tEmbedding );
+	const bool bOffsetsOwnershipValid = tVecResult.rows<SIZE_MAX && ( ( !tVecResult.offsets_cap && !tVecResult.m_pRowOffsets ) || ( tVecResult.offsets_cap>=tVecResult.rows+1 && tVecResult.m_pRowOffsets ) );
+	const bool bSpansOwnershipValid = tVecResult.spans_cap>=tVecResult.spans_len && ( ( !tVecResult.spans_cap && !tVecResult.m_pChunkSpans ) || ( tVecResult.spans_cap && tVecResult.m_pChunkSpans ) );
+	bool bInnerOwnershipValid = bVecOwnershipValid;
+	if ( bInnerOwnershipValid )
+		for ( size_t i = 0; i < tVecResult.len; i++ )
+		{
+			const FloatVec & tVec = tVecResult.m_tEmbedding[i];
+			if ( tVec.cap<tVec.len || ( tVec.len && !tVec.ptr ) )
+			{
+				bInnerOwnershipValid = false;
+				break;
+			}
+		}
+
+	const bool bOwnershipValid = bVecOwnershipValid && bOffsetsOwnershipValid && bSpansOwnershipValid && bInnerOwnershipValid;
+	if ( !bOwnershipValid )
+	{
+		sError = "embeddings library returned malformed ownership metadata";
+		// Rust reconstructs Vecs from this metadata. Leaking an invalid provider
+		// result is safer than passing it to Vec::from_raw_parts for destruction.
+		return false;
+	}
+
 	if ( tVecResult.m_szError )
 	{
 		sError = tVecResult.m_szError;
@@ -338,15 +362,10 @@ bool TextToEmbeddings_c::Convert ( const std::vector<std::string_view> & dTexts,
 		return false;
 	}
 
-	const bool bOuterOwnershipValid = tVecResult.cap>=tVecResult.len && ( !tVecResult.cap || tVecResult.m_tEmbedding ) && tVecResult.rows<SIZE_MAX && tVecResult.offsets_cap>=tVecResult.rows+1 && tVecResult.m_pRowOffsets && tVecResult.spans_cap>=tVecResult.spans_len && ( !tVecResult.spans_cap || tVecResult.m_pChunkSpans );
-	if ( !bOuterOwnershipValid || tVecResult.rows!=dTexts.size() )
+	if ( !tVecResult.m_pRowOffsets || tVecResult.rows!=dTexts.size() )
 	{
 		sError = util::FormatStr ( "embeddings library returned a malformed result: %lld vectors, %lld rows for %lld input texts%s%s", (long long)tVecResult.len, (long long)tVecResult.rows, (long long)dTexts.size(), tVecResult.m_tEmbedding || !tVecResult.len ? "" : ", no vectors", tVecResult.m_pRowOffsets ? "" : ", no row offsets" );
-		// Rust's destructor reconstructs Vecs from these capacities. Do not hand
-		// malformed ownership metadata back across the ABI; leaking a broken
-		// provider result is safer than an invalid free.
-		if ( bOuterOwnershipValid )
-			pFuncs->free_vec_result(tVecResult);
+		pFuncs->free_vec_result(tVecResult);
 		return false;
 	}
 
@@ -390,12 +409,6 @@ bool TextToEmbeddings_c::Convert ( const std::vector<std::string_view> & dTexts,
 	for ( size_t i = 0; i < tVecResult.len; i++ )
 	{
 		const FloatVec & tVec = tVecResult.m_tEmbedding[i];
-		if ( tVec.cap<tVec.len || ( tVec.len && !tVec.ptr ) )
-		{
-			sError = "embeddings library returned malformed embedding vector ownership";
-			// As above, a bad inner capacity cannot safely be passed to Vec::from_raw_parts.
-			return false;
-		}
 		dEmbeddings[i].resize ( tVec.len );
 		memcpy ( dEmbeddings[i].data(), tVec.ptr, sizeof(float)*tVec.len );
 	}
