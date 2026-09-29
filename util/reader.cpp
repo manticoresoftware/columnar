@@ -16,7 +16,9 @@
 
 #include "reader.h"
 #include "assert.h"
+#include <atomic>
 #include <errno.h>
+#include <mutex>
 #include <sys/stat.h>
 
 #ifdef _MSC_VER
@@ -232,6 +234,9 @@ static FORCE_INLINE int64_t RoundUpToPage ( int64_t iSize )
 
 
 static void MMapClose ( MappedBufferData_t & tBuf );
+#if !_WIN32
+static bool MMapOverReservation ( int iFD, int64_t iBytesCount, bool bWrite, const std::string & sFile, std::string & sError, void * & pData, int64_t & iReserveLen );
+#endif
 
 static bool MMapOpen ( const std::string & sFile, bool bWrite, std::string & sError, MappedBufferData_t & tBuf )
 {
@@ -305,42 +310,71 @@ static bool MMapOpen ( const std::string & sFile, bool bWrite, std::string & sEr
 	// mmap fails to map zero-size file
 	if ( tBuf.m_iBytesCount>0 )
 	{
-		// Reserve the file's pages plus one trailing guard page, then overlay the file over the front.
-		// The guard page stays anonymous zero-filled and readable, so decoders that over-read past the
-		// end of the last block (StreamVByte reads up to 16 bytes past a stream) can never fault
-		int64_t iMapLen = RoundUpToPage ( tBuf.m_iBytesCount );
-		tBuf.m_iReserveLen = iMapLen + (int64_t)GetPageSize();
-
-		void * pBase = mmap ( NULL, (size_t)tBuf.m_iReserveLen, PROT_READ, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0 );
-		if ( pBase==MAP_FAILED )
+		if ( !MMapOverReservation ( iFD, tBuf.m_iBytesCount, bWrite, sFile, sError, tBuf.m_pData, tBuf.m_iReserveLen ) )
 		{
-			sError = FormatStr ( "failed to reserve mapping for '%s': %s (length=%lld)", sFile.c_str(), strerror(errno), (long long)tBuf.m_iReserveLen );
-			tBuf.m_iReserveLen = 0;
 			MMapClose ( tBuf );
 			return false;
 		}
-
-		// MAP_FIXED atomically replaces the front of our own reservation; the guard page survives
-		void * pFile = mmap ( pBase, tBuf.m_iBytesCount, PROT_READ | ( bWrite ? PROT_WRITE : 0 ), MAP_SHARED|MAP_FIXED, iFD, 0 );
-		if ( pFile==MAP_FAILED )
-		{
-			sError = FormatStr ( "failed to mmap file '%s': %s (length=%lld)", sFile.c_str(), strerror(errno), (long long)tBuf.m_iBytesCount );
-			::munmap ( pBase, (size_t)tBuf.m_iReserveLen );	// not in tBuf yet, so MMapClose can't free it
-			tBuf.m_iReserveLen = 0;
-			MMapClose ( tBuf );
-			return false;
-		}
-
-		// MAP_FIXED (without MAP_FIXED_NOREPLACE) must overlay at exactly the requested address; if it
-		// didn't, the file wouldn't sit at the front of our reservation and the guard-page math is off
-		assert ( pFile==pBase );
-
-		tBuf.m_pData = pBase;
 	}
 #endif
 
 	return true;
 }
+
+
+#if !_WIN32
+// Reserve the file's pages plus one trailing guard page, then overlay the file over the front.
+// The guard page stays anonymous zero-filled and readable, so decoders that over-read past the
+// end of the last block (StreamVByte reads up to 16 bytes past a stream) can never fault.
+// On success pData/iReserveLen describe the whole reservation, which is what munmap() needs.
+static bool MMapOverReservation ( int iFD, int64_t iBytesCount, bool bWrite, const std::string & sFile, std::string & sError, void * & pData, int64_t & iReserveLen )
+{
+	assert ( iBytesCount>0 );
+	int64_t iMapLen = RoundUpToPage ( iBytesCount );
+	int64_t iReserve = iMapLen + (int64_t)GetPageSize();
+
+	void * pBase = mmap ( NULL, (size_t)iReserve, PROT_READ, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0 );
+	if ( pBase==MAP_FAILED )
+	{
+		sError = FormatStr ( "failed to reserve mapping for '%s': %s (length=%lld)", sFile.c_str(), strerror(errno), (long long)iReserve );
+		return false;
+	}
+
+	// MAP_FIXED atomically replaces the front of our own reservation; the guard page survives
+	void * pFile = mmap ( pBase, iBytesCount, PROT_READ | ( bWrite ? PROT_WRITE : 0 ), MAP_SHARED|MAP_FIXED, iFD, 0 );
+	if ( pFile==MAP_FAILED )
+	{
+		sError = FormatStr ( "failed to mmap file '%s': %s (length=%lld)", sFile.c_str(), strerror(errno), (long long)iBytesCount );
+		::munmap ( pBase, (size_t)iReserve );
+		return false;
+	}
+
+	// MAP_FIXED (without MAP_FIXED_NOREPLACE) must overlay at exactly the requested address; if it
+	// didn't, the file wouldn't sit at the front of our reservation and the guard-page math is off
+	assert ( pFile==pBase );
+
+	pData = pBase;
+	iReserveLen = iReserve;
+	return true;
+}
+
+
+// a second read-only mapping of an already open file, advised for random access; see MappedBuffer_i::GetRandomAccessPtr
+static void * MMapOpenRandom ( const MappedBufferData_t & tBuf, const std::string & sFile, int64_t & iReserveLen )
+{
+	if ( tBuf.m_iFD==-1 || tBuf.m_iBytesCount<=0 )
+		return nullptr;
+
+	std::string sError; // no caller to report it to; the primary mapping is the fallback
+	void * pData = nullptr;
+	if ( !MMapOverReservation ( tBuf.m_iFD, tBuf.m_iBytesCount, false, sFile, sError, pData, iReserveLen ) )
+		return nullptr;
+
+	// advise only the file pages, not the anonymous guard page; on failure the mapping still works, just with read-around
+	::madvise ( pData, (size_t)RoundUpToPage ( tBuf.m_iBytesCount ), MADV_RANDOM );
+	return pData;
+}
+#endif
 
 static void MMapClose ( MappedBufferData_t & tBuf )
 {
@@ -410,17 +444,26 @@ class MappedBuffer_c : public MappedBuffer_i
 {
 public:
 					MappedBuffer_c() = default;
-	virtual			~MappedBuffer_c() override			{ MMapClose(m_tBuf); }
+	virtual			~MappedBuffer_c() override			{ Close(); }
 
 	bool			Open ( const std::string & sFile, bool bWrite, std::string & sError ) override;
-	void			Close() override					{ MMapClose(m_tBuf); }
+	void			Close() override;
 	void *			GetPtr() const override				{ return m_tBuf.m_pData; }
 	size_t			GetLengthBytes () const override	{ return m_tBuf.m_iBytesCount; }
 	const char *	GetFileName() const override		{ return m_sFileName.c_str(); }
+	void *			GetRandomAccessPtr() const override;
 
 private:
 	MappedBufferData_t	m_tBuf;
 	std::string			m_sFileName;
+
+	// the random-access mapping is created lazily by concurrent readers, hence the lock and the mutable state
+	mutable std::mutex	m_tRandomLock;
+	mutable std::atomic<void*> m_pRandomData { nullptr };
+	mutable int64_t		m_iRandomReserveLen = 0;
+	mutable bool		m_bRandomTried = false;	// one attempt per Open(); a failure leaves readers on the primary mapping
+
+	void			CloseRandom();
 };
 
 
@@ -428,6 +471,49 @@ bool MappedBuffer_c::Open ( const std::string & sFile, bool bWrite, std::string 
 {
 	m_sFileName = sFile;
 	return MMapOpen ( sFile, bWrite, sError, m_tBuf );
+}
+
+
+void MappedBuffer_c::Close()
+{
+	CloseRandom();
+	MMapClose(m_tBuf);
+}
+
+
+void * MappedBuffer_c::GetRandomAccessPtr() const
+{
+#if _WIN32
+	return nullptr;	// no per-view access advice on Windows
+#else
+	void * pData = m_pRandomData.load ( std::memory_order_acquire );
+	if ( pData )
+		return pData;
+
+	std::lock_guard<std::mutex> tLock ( m_tRandomLock );
+	if ( m_bRandomTried )
+		return m_pRandomData.load ( std::memory_order_relaxed );
+
+	m_bRandomTried = true;
+	pData = MMapOpenRandom ( m_tBuf, m_sFileName, m_iRandomReserveLen );
+	m_pRandomData.store ( pData, std::memory_order_release );
+	return pData;
+#endif
+}
+
+
+void MappedBuffer_c::CloseRandom()
+{
+#if !_WIN32
+	std::lock_guard<std::mutex> tLock ( m_tRandomLock );
+	void * pData = m_pRandomData.load ( std::memory_order_relaxed );
+	if ( pData )
+		::munmap ( pData, (size_t)m_iRandomReserveLen );
+
+	m_pRandomData.store ( nullptr, std::memory_order_relaxed );
+	m_iRandomReserveLen = 0;
+	m_bRandomTried = false;
+#endif
 }
 
 

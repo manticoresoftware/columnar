@@ -289,6 +289,11 @@ public:
 	virtual void *	GetPtr () const = 0;
 	virtual size_t	GetLengthBytes () const = 0;
 	virtual const char * GetFileName() const = 0;
+
+	// A second, read-only mapping of the same file advised for random access (MADV_RANDOM): a page fault through it
+	// reads only the faulting page instead of the kernel's read-around window, while GetPtr() keeps read-around for
+	// sequential scans. Both mappings share the page cache. Created on first use; nullptr where unsupported or on failure.
+	virtual void *	GetRandomAccessPtr () const = 0;
 };
 
 MappedBuffer_i * CreateMappedBuffer();
