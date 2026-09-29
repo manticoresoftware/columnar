@@ -9,7 +9,7 @@
 //! models (no local tokenizer) fall back to a conservative char/byte heuristic.
 //! `ChunkSettings` arrives from the daemon's DDL surface and selects everything.
 
-use crate::utils::normalize;
+use crate::utils::{ceil_char_boundary, floor_char_boundary, normalize};
 use tokenizers::Tokenizer;
 
 /// Strategy, mirrored as a `u32` across the FFI in [`ChunkSettings`].
@@ -202,10 +202,10 @@ pub fn chunk_chars(text: &str, max_tokens: usize, overlap_tokens: usize) -> Vec<
     let mut chunks = Vec::new();
     let mut start = 0usize;
     while start < text.len() {
-        let mut end = text.floor_char_boundary((start + window).min(text.len()));
+        let mut end = floor_char_boundary(text, (start + window).min(text.len()));
         if end <= start {
             // A single char wider than the window — take at least one char.
-            end = text.ceil_char_boundary(start + 1).min(text.len());
+            end = ceil_char_boundary(text, start + 1).min(text.len());
         }
         if end < text.len() {
             if let Some(cut) = snap_back(text, start, end) {
@@ -220,7 +220,7 @@ pub fn chunk_chars(text: &str, max_tokens: usize, overlap_tokens: usize) -> Vec<
         if next <= start {
             next = end;
         }
-        start = text.ceil_char_boundary(next);
+        start = ceil_char_boundary(text, next);
     }
     chunks
 }

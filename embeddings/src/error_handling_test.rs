@@ -157,6 +157,9 @@ mod tests {
             row_offsets: ptr::null(),
             rows: 0,
             offsets_cap: 0,
+            chunk_spans: ptr::null(),
+            spans_len: 0,
+            spans_cap: 0,
         };
 
         // Verify error is set and no vectors are present
@@ -202,6 +205,9 @@ mod tests {
             row_offsets: ptr::null(),
             rows: 0,
             offsets_cap: 0,
+            chunk_spans: ptr::null(),
+            spans_len: 0,
+            spans_cap: 0,
         };
 
         // Verify successful result structure

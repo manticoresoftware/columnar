@@ -8,5 +8,5 @@ derive_eq = false
 derive_neq = false
 
 [export]
-include = ["FloatVecResult", "FloatVec", "TextModelResult", "TextModelWrapper"]
+include = ["FloatVecResult", "FloatVec", "ChunkSpan", "TextModelResult", "TextModelWrapper"]
 
