@@ -338,10 +338,15 @@ bool TextToEmbeddings_c::Convert ( const std::vector<std::string_view> & dTexts,
 		return false;
 	}
 
-	if ( ( tVecResult.len && !tVecResult.m_tEmbedding ) || !tVecResult.m_pRowOffsets || tVecResult.rows!=dTexts.size() )
+	const bool bOuterOwnershipValid = tVecResult.cap>=tVecResult.len && ( !tVecResult.cap || tVecResult.m_tEmbedding ) && tVecResult.rows<SIZE_MAX && tVecResult.offsets_cap>=tVecResult.rows+1 && tVecResult.m_pRowOffsets && tVecResult.spans_cap>=tVecResult.spans_len && ( !tVecResult.spans_cap || tVecResult.m_pChunkSpans );
+	if ( !bOuterOwnershipValid || tVecResult.rows!=dTexts.size() )
 	{
 		sError = util::FormatStr ( "embeddings library returned a malformed result: %lld vectors, %lld rows for %lld input texts%s%s", (long long)tVecResult.len, (long long)tVecResult.rows, (long long)dTexts.size(), tVecResult.m_tEmbedding || !tVecResult.len ? "" : ", no vectors", tVecResult.m_pRowOffsets ? "" : ", no row offsets" );
-		pFuncs->free_vec_result(tVecResult);
+		// Rust's destructor reconstructs Vecs from these capacities. Do not hand
+		// malformed ownership metadata back across the ABI; leaking a broken
+		// provider result is safer than an invalid free.
+		if ( bOuterOwnershipValid )
+			pFuncs->free_vec_result(tVecResult);
 		return false;
 	}
 
@@ -385,10 +390,10 @@ bool TextToEmbeddings_c::Convert ( const std::vector<std::string_view> & dTexts,
 	for ( size_t i = 0; i < tVecResult.len; i++ )
 	{
 		const FloatVec & tVec = tVecResult.m_tEmbedding[i];
-		if ( tVec.len && !tVec.ptr )
+		if ( tVec.cap<tVec.len || ( tVec.len && !tVec.ptr ) )
 		{
-			sError = "embeddings library returned a null embedding vector";
-			pFuncs->free_vec_result(tVecResult);
+			sError = "embeddings library returned malformed embedding vector ownership";
+			// As above, a bad inner capacity cannot safely be passed to Vec::from_raw_parts.
 			return false;
 		}
 		dEmbeddings[i].resize ( tVec.len );
