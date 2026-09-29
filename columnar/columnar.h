@@ -28,7 +28,7 @@
 namespace columnar
 {
 
-static const int LIB_VERSION = 28;
+static const int LIB_VERSION = 29;
 
 class Iterator_i
 {
@@ -61,6 +61,7 @@ struct IteratorHints_t
 {
 	bool	m_bNeedStringHashes = false;
 	bool	m_bBuffered = true;
+	bool	m_bRandomAccess = false;	// scattered single-row reads (e.g. KNN rescore): in mmap mode, read through a mapping advised for random access
 };
 
 

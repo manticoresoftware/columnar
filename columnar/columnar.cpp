@@ -460,7 +460,14 @@ Iterator_i * Columnar_c::CreateIterator ( const std::string & sName, const Itera
 		return nullptr;
 
 	if ( ShouldMmap() )
-		return CreateIteratorReader ( new MappedReader_c ( (uint8_t*)m_pMap->GetPtr(), (int64_t)m_pMap->GetLengthBytes() ), *pHeader, sName, tHints, pCapabilities, sError );
+	{
+		// same file offsets either way; the random-access mapping only changes what a page fault reads around
+		void * pBase = tHints.m_bRandomAccess ? m_pMap->GetRandomAccessPtr() : nullptr;
+		if ( !pBase )
+			pBase = m_pMap->GetPtr();
+
+		return CreateIteratorReader ( new MappedReader_c ( (uint8_t*)pBase, (int64_t)m_pMap->GetLengthBytes() ), *pHeader, sName, tHints, pCapabilities, sError );
+	}
 
 	return CreateIteratorReader ( new FileReader_c ( m_tReader.GetFD() ), *pHeader, sName, tHints, pCapabilities, sError );
 }
