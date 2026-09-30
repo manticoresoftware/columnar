@@ -28,6 +28,10 @@ set ( _CMAKE_BUILD_TYPE ${CMAKE_BUILD_TYPE} )
 # The below version is used for versioning of the package and is replaced by the version from the pack workflow
 project ( columnar VERSION 0.0.0 )
 
+# Enable add_test() before component subdirectories are configured. Daemon
+# ubertests are attached later by testing.cmake when a daemon checkout exists.
+include ( CTest )
+
 set ( COLUMNAR_EMBEDDED_BUILD OFF )
 if (NOT "${columnar_SOURCE_DIR}" STREQUAL "${CMAKE_SOURCE_DIR}")
 	set ( COLUMNAR_EMBEDDED_BUILD ON )
