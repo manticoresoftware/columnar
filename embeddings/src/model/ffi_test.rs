@@ -441,6 +441,40 @@ mod tests {
     }
 
     #[test]
+    fn test_free_vec_result_with_chunk_spans_without_model() {
+        let mut values = vec![1.0f32, 2.0];
+        let inner = FloatVec {
+            ptr: values.as_mut_ptr(),
+            len: values.len(),
+            cap: values.capacity(),
+        };
+        std::mem::forget(values);
+
+        let mut embeddings = vec![inner];
+        let mut offsets = vec![0usize, 1];
+        let mut spans = vec![ChunkSpan { start: 1, end: 3 }];
+        let result = FloatVecResult {
+            error: ptr::null_mut(),
+            ptr: embeddings.as_mut_ptr(),
+            len: embeddings.len(),
+            cap: embeddings.capacity(),
+            row_offsets: offsets.as_mut_ptr(),
+            rows: 1,
+            offsets_cap: offsets.capacity(),
+            chunk_spans: spans.as_mut_ptr(),
+            spans_len: spans.len(),
+            spans_cap: spans.capacity(),
+        };
+        std::mem::forget(embeddings);
+        std::mem::forget(offsets);
+        std::mem::forget(spans);
+
+        // This path owns every allocation above and must release all of them
+        // without requiring a model download or a model-runtime dependency.
+        TextModelWrapper::free_vec_result(result);
+    }
+
+    #[test]
     fn test_c_string_conversion() {
         let test_strings = vec![
             "simple",

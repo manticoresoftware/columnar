@@ -46,6 +46,14 @@ static_assert ( offsetof(ChunkSpan,m_uStart)==0 && offsetof(ChunkSpan,m_uEnd)==s
 static_assert ( sizeof(TextEmbeddingSpan_t)==sizeof(ChunkSpan), "public and embeddings chunk-span layouts differ" );
 static_assert ( offsetof(TextEmbeddingSpan_t,m_uStart)==offsetof(ChunkSpan,m_uStart) && offsetof(TextEmbeddingSpan_t,m_uEnd)==offsetof(ChunkSpan,m_uEnd), "public and embeddings chunk-span offsets differ" );
 
+bool IsUtf8CodepointBoundary ( std::string_view sText, uint64_t uOffset )
+{
+	if ( uOffset>sText.size() )
+		return false;
+
+	return uOffset==sText.size() || ( static_cast<unsigned char>(sText[(size_t)uOffset]) & 0xC0 )!=0x80;
+}
+
 #if _WIN32
 void * dlsym ( void * lib, const char * name )	{ return (void*)GetProcAddress ( (HMODULE)lib, name ); }
 void * dlopen ( const char * libname, int )		{ return LoadLibraryEx ( libname, NULL, 0 ); }
@@ -397,7 +405,7 @@ bool TextToEmbeddings_c::Convert ( const std::vector<std::string_view> & dTexts,
 			for ( size_t i = tVecResult.m_pRowOffsets[iRow]; i < tVecResult.m_pRowOffsets[iRow+1]; i++ )
 			{
 				const ChunkSpan & tSpan = tVecResult.m_pChunkSpans[i];
-				if ( tSpan.m_uStart>tSpan.m_uEnd || tSpan.m_uEnd>(uint64_t)dTexts[iRow].size() )
+				if ( tSpan.m_uStart>tSpan.m_uEnd || !IsUtf8CodepointBoundary ( dTexts[iRow], tSpan.m_uStart ) || !IsUtf8CodepointBoundary ( dTexts[iRow], tSpan.m_uEnd ) )
 				{
 					sError = util::FormatStr ( "embeddings library returned invalid chunk span [%llu,%llu) for input text %lld (%lld bytes)", (unsigned long long)tSpan.m_uStart, (unsigned long long)tSpan.m_uEnd, (long long)iRow, (long long)dTexts[iRow].size() );
 					pFuncs->free_vec_result(tVecResult);
