@@ -36,7 +36,7 @@ if ( NOT EXTERNAL_LIB AND BUILD_TESTING )
 	add_executable ( knn_multivector_slot_test test_multivector_slot.cpp ${KNN_SOURCES} )
 	target_include_directories ( knn_multivector_slot_test PRIVATE ${columnar_SOURCE_DIR}/embeddings ${CMAKE_CURRENT_SOURCE_DIR} )
 	target_link_libraries ( knn_multivector_slot_test PRIVATE hnswlib::hnswlib columnar_root util common )
-	add_test ( NAME knn_multivector_slot COMMAND knn_multivector_slot_test )
+	add_test ( NAME knn_multivector_slot COMMAND $<TARGET_FILE:knn_multivector_slot_test> )
 endif()
 
 # Try to find manticoresearch text embeddings library

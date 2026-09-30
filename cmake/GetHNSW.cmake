@@ -13,8 +13,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-set ( HNSW_GITHUB "https://github.com/sanikolaev/hnswlib/archive/ecdeefbbe87a300ddd28649e44213405402774eb.zip" )
-set ( HNSW_BUNDLEZIP "${LIBS_BUNDLE}/hnswlib-ecdeefb.tar.gz" )
+set ( HNSW_GITHUB "https://github.com/manticoresoftware/hnswlib/archive/72bb56474fc8f7942a433ba310db44391c075dd3.zip" )
+set ( HNSW_BUNDLEZIP "${LIBS_BUNDLE}/hnswlib-72bb564.tar.gz" )
 
 cmake_minimum_required ( VERSION 3.17 FATAL_ERROR )
 include ( update_bundle )

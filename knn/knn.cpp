@@ -32,6 +32,8 @@ namespace knn
 
 using namespace util;
 
+static_assert ( sizeof(hnswlib::labeltype)>=sizeof(uint32_t), "HNSW labels must hold every 32-bit vector id" );
+
 // not member functions because there's no need to expose them in knn.h
 static void LoadSettings ( IndexSettings_t & tSettings, FileReader_c & tReader, uint32_t uVersion )
 {
@@ -263,6 +265,11 @@ bool HNSWIndex_c::Load ( FileReader_c & tReader, std::string & sError )
 	if ( m_bMulti )
 	{
 		const uint64_t uNumVectors = tReader.Read_uint64();
+		if ( uNumVectors>UINT32_MAX )
+		{
+			sError = FormatStr ( "HNSW error: index '%s' contains %llu vectors but at most %u are addressable per chunk", m_sName.c_str(), (unsigned long long)uNumVectors, (unsigned)UINT32_MAX );
+			return false;
+		}
 		m_dVidToRowid.resize ( (size_t)uNumVectors );
 		for ( auto & i : m_dVidToRowid )
 			i = tReader.Read_uint32();
