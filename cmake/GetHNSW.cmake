@@ -13,8 +13,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-set ( HNSW_GITHUB "https://github.com/manticoresoftware/hnswlib/archive/72bb56474fc8f7942a433ba310db44391c075dd3.zip" )
-set ( HNSW_BUNDLEZIP "${LIBS_BUNDLE}/hnswlib-72bb564.tar.gz" )
+# Temporary PR dependency: replace with the canonical upstream merge SHA after
+# https://github.com/manticoresoftware/hnswlib/pull/4 is merged.
+set ( HNSW_GITHUB "https://github.com/sanikolaev/hnswlib/archive/a1166683c062593925ea85b7538e60d13e1ef040.zip" )
+set ( HNSW_BUNDLEZIP "${LIBS_BUNDLE}/hnswlib-a116668.tar.gz" )
 
 cmake_minimum_required ( VERSION 3.17 FATAL_ERROR )
 include ( update_bundle )
