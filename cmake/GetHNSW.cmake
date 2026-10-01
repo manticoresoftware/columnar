@@ -15,7 +15,7 @@
 # limitations under the License.
 # Temporary PR dependency: replace with the canonical upstream merge SHA after
 # https://github.com/manticoresoftware/hnswlib/pull/4 is merged.
-set ( HNSW_GITHUB "https://github.com/sanikolaev/hnswlib/archive/a1166683c062593925ea85b7538e60d13e1ef040.zip" )
+set ( HNSW_GITHUB "https://github.com/manticoresoftware/hnswlib/archive/a1166683c062593925ea85b7538e60d13e1ef040.zip" )
 set ( HNSW_BUNDLEZIP "${LIBS_BUNDLE}/hnswlib-a116668.tar.gz" )
 
 cmake_minimum_required ( VERSION 3.17 FATAL_ERROR )
