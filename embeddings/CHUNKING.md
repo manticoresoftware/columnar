@@ -1,10 +1,11 @@
 # Embedding strategy FFI (embeddings lib → Manticore daemon)
 
-Embeddings lib **v10**. The one embedding call, `make_vect_embeddings`, takes an
-optional `ChunkSettings*` that selects how a document becomes one or many
-vectors. Cardinality is carried as **data** in the return (a per-document
-offsets sidecar), so a single method covers both 1-vector and N-vector
-strategies — no second method.
+Embeddings lib **v10**. Version 9 added `max_input_tokens` to `load_model`;
+version 10 adds source chunk spans to `FloatVecResult`. The one embedding call,
+`make_vect_embeddings`, takes an optional `ChunkSettings*` that selects how a
+document becomes one or many vectors. Cardinality is carried as **data** in the
+return (a per-document offsets sidecar), so a single method covers both 1-vector
+and N-vector strategies — no second method.
 
 ## FFI
 
