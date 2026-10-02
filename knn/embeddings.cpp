@@ -40,6 +40,20 @@
 namespace knn
 {
 
+static_assert ( sizeof(size_t)<=sizeof(uint64_t), "chunk-span offsets must represent source string lengths" );
+static_assert ( sizeof(ChunkSpan)==2*sizeof(uint64_t), "unexpected embeddings chunk-span ABI layout" );
+static_assert ( offsetof(ChunkSpan,m_uStart)==0 && offsetof(ChunkSpan,m_uEnd)==sizeof(uint64_t), "unexpected embeddings chunk-span ABI offsets" );
+static_assert ( sizeof(TextEmbeddingSpan_t)==sizeof(ChunkSpan), "public and embeddings chunk-span layouts differ" );
+static_assert ( offsetof(TextEmbeddingSpan_t,m_uStart)==offsetof(ChunkSpan,m_uStart) && offsetof(TextEmbeddingSpan_t,m_uEnd)==offsetof(ChunkSpan,m_uEnd), "public and embeddings chunk-span offsets differ" );
+
+bool IsUtf8CodepointBoundary ( std::string_view sText, uint64_t uOffset )
+{
+	if ( uOffset>sText.size() )
+		return false;
+
+	return uOffset==sText.size() || ( static_cast<unsigned char>(sText[(size_t)uOffset]) & 0xC0 )!=0x80;
+}
+
 #if _WIN32
 void * dlsym ( void * lib, const char * name )	{ return (void*)GetProcAddress ( (HMODULE)lib, name ); }
 void * dlopen ( const char * libname, int )		{ return LoadLibraryEx ( libname, NULL, 0 ); }
@@ -241,7 +255,7 @@ public:
 			TextToEmbeddings_c ( const ModelSettings_t & tSettings ) : m_tSettings ( tSettings ) {}
 
 	bool	Initialize ( std::shared_ptr<LoadedLib_c> pLib, std::string & sError );
-	bool	Convert ( const std::vector<std::string_view> & dTexts, std::vector<std::vector<float>> & dEmbeddings, std::string & sError, int iThreads = 0, const knn::ChunkSettings_t * pChunk = nullptr, std::vector<size_t> * pRowOffsets = nullptr ) const override;
+	bool	Convert ( const std::vector<std::string_view> & dTexts, std::vector<std::vector<float>> & dEmbeddings, std::string & sError, int iThreads = 0, const knn::ChunkSettings_t * pChunk = nullptr, std::vector<size_t> * pRowOffsets = nullptr, std::vector<TextEmbeddingSpan_t> * pChunkSpans = nullptr ) const override;
 	int		GetDims() const override;
 
 private:
@@ -304,7 +318,7 @@ bool TextToEmbeddings_c::Initialize ( std::shared_ptr<LoadedLib_c> pLib, std::st
 }
 
 
-bool TextToEmbeddings_c::Convert ( const std::vector<std::string_view> & dTexts, std::vector<std::vector<float>> & dEmbeddings, std::string & sError, int iThreads, const knn::ChunkSettings_t * pChunk, std::vector<size_t> * pRowOffsets ) const
+bool TextToEmbeddings_c::Convert ( const std::vector<std::string_view> & dTexts, std::vector<std::vector<float>> & dEmbeddings, std::string & sError, int iThreads, const knn::ChunkSettings_t * pChunk, std::vector<size_t> * pRowOffsets, std::vector<TextEmbeddingSpan_t> * pChunkSpans ) const
 {
 	std::vector<StringItem> dStringItems;
 	for ( const auto & i : dTexts )
@@ -325,12 +339,79 @@ bool TextToEmbeddings_c::Convert ( const std::vector<std::string_view> & dTexts,
 	// iThreads: 0 = use all available CPUs (default), >0 = cap worker count in the embeddings lib
 	// nullptr ChunkSettings = truncate strategy, i.e. one vector per input text
 	FloatVecResult tVecResult = pFuncs->make_vect_embeddings ( &m_pModel, dStringItems.data(), dStringItems.size(), pChunk ? &tChunk : nullptr, iThreads );
+	const bool bVecOwnershipValid = tVecResult.cap>=tVecResult.len && ( !tVecResult.cap || tVecResult.m_tEmbedding );
+	const bool bOffsetsOwnershipValid = tVecResult.rows<SIZE_MAX && ( ( !tVecResult.offsets_cap && !tVecResult.m_pRowOffsets ) || ( tVecResult.offsets_cap>=tVecResult.rows+1 && tVecResult.m_pRowOffsets ) );
+	const bool bSpansOwnershipValid = tVecResult.spans_cap>=tVecResult.spans_len && ( ( !tVecResult.spans_cap && !tVecResult.m_pChunkSpans ) || ( tVecResult.spans_cap && tVecResult.m_pChunkSpans ) );
+	bool bInnerOwnershipValid = bVecOwnershipValid;
+	if ( bInnerOwnershipValid )
+		for ( size_t i = 0; i < tVecResult.len; i++ )
+		{
+			const FloatVec & tVec = tVecResult.m_tEmbedding[i];
+			if ( tVec.cap<tVec.len || ( tVec.len && !tVec.ptr ) )
+			{
+				bInnerOwnershipValid = false;
+				break;
+			}
+		}
+
+	const bool bOwnershipValid = bVecOwnershipValid && bOffsetsOwnershipValid && bSpansOwnershipValid && bInnerOwnershipValid;
+	if ( !bOwnershipValid )
+	{
+		sError = "embeddings library returned malformed ownership metadata";
+		// Rust reconstructs Vecs from this metadata. Leaking an invalid provider
+		// result is safer than passing it to Vec::from_raw_parts for destruction.
+		return false;
+	}
+
 	if ( tVecResult.m_szError )
 	{
 		sError = tVecResult.m_szError;
 		pFuncs->free_vec_result(tVecResult);
 		return false;
 	}
+
+	if ( !tVecResult.m_pRowOffsets || tVecResult.rows!=dTexts.size() )
+	{
+		sError = util::FormatStr ( "embeddings library returned a malformed result: %lld vectors, %lld rows for %lld input texts%s%s", (long long)tVecResult.len, (long long)tVecResult.rows, (long long)dTexts.size(), tVecResult.m_tEmbedding || !tVecResult.len ? "" : ", no vectors", tVecResult.m_pRowOffsets ? "" : ", no row offsets" );
+		pFuncs->free_vec_result(tVecResult);
+		return false;
+	}
+
+	if ( tVecResult.m_pRowOffsets[0]!=0 || tVecResult.m_pRowOffsets[tVecResult.rows]!=tVecResult.len )
+	{
+		sError = "embeddings library returned malformed row offsets";
+		pFuncs->free_vec_result(tVecResult);
+		return false;
+	}
+
+	for ( size_t i = 0; i < tVecResult.rows; i++ )
+		if ( tVecResult.m_pRowOffsets[i]>tVecResult.m_pRowOffsets[i+1] || tVecResult.m_pRowOffsets[i+1]>tVecResult.len )
+		{
+			sError = "embeddings library returned non-monotonic row offsets";
+			pFuncs->free_vec_result(tVecResult);
+			return false;
+		}
+
+	const bool bExpectSpans = pChunk && IsMultiVectorStrategy ( pChunk->m_eStrategy );
+	if ( ( bExpectSpans && ( tVecResult.spans_len!=tVecResult.len || ( tVecResult.spans_len && !tVecResult.m_pChunkSpans ) ) ) || ( !bExpectSpans && ( tVecResult.spans_len || tVecResult.m_pChunkSpans ) ) )
+	{
+		sError = util::FormatStr ( "embeddings library returned malformed chunk spans: %lld spans for %lld vectors", (long long)tVecResult.spans_len, (long long)tVecResult.len );
+		pFuncs->free_vec_result(tVecResult);
+		return false;
+	}
+
+	if ( bExpectSpans )
+		for ( size_t iRow = 0; iRow < tVecResult.rows; iRow++ )
+			for ( size_t i = tVecResult.m_pRowOffsets[iRow]; i < tVecResult.m_pRowOffsets[iRow+1]; i++ )
+			{
+				const ChunkSpan & tSpan = tVecResult.m_pChunkSpans[i];
+				if ( tSpan.m_uStart>tSpan.m_uEnd || !IsUtf8CodepointBoundary ( dTexts[iRow], tSpan.m_uStart ) || !IsUtf8CodepointBoundary ( dTexts[iRow], tSpan.m_uEnd ) )
+				{
+					sError = util::FormatStr ( "embeddings library returned invalid chunk span [%llu,%llu) for input text %lld (%lld bytes)", (unsigned long long)tSpan.m_uStart, (unsigned long long)tSpan.m_uEnd, (long long)iRow, (long long)dTexts[iRow].size() );
+					pFuncs->free_vec_result(tVecResult);
+					return false;
+				}
+			}
 
 	dEmbeddings.resize ( tVecResult.len );
 	for ( size_t i = 0; i < tVecResult.len; i++ )
@@ -341,17 +422,14 @@ bool TextToEmbeddings_c::Convert ( const std::vector<std::string_view> & dTexts,
 	}
 
 	if ( pRowOffsets )
-	{
-		if ( !tVecResult.m_pRowOffsets || tVecResult.rows!=dTexts.size() )
-		{
-			sError = util::FormatStr ( "embeddings library returned a malformed result: %lld rows for %lld input texts%s", (long long)tVecResult.rows, (long long)dTexts.size(), tVecResult.m_pRowOffsets ? "" : ", no row offsets" );
-			pFuncs->free_vec_result(tVecResult);
-			return false;
-		}
+		pRowOffsets->assign ( tVecResult.m_pRowOffsets, tVecResult.m_pRowOffsets+tVecResult.rows+1 );
 
-		pRowOffsets->resize ( tVecResult.rows+1 );
-		for ( size_t i = 0; i <= tVecResult.rows; i++ )
-			(*pRowOffsets)[i] = (size_t)tVecResult.m_pRowOffsets[i];
+	if ( pChunkSpans )
+	{
+		pChunkSpans->clear();
+		pChunkSpans->reserve(tVecResult.spans_len);
+		for ( size_t i = 0; i < tVecResult.spans_len; i++ )
+			pChunkSpans->push_back ( { tVecResult.m_pChunkSpans[i].m_uStart, tVecResult.m_pChunkSpans[i].m_uEnd } );
 	}
 
 	pFuncs->free_vec_result(tVecResult);
@@ -385,7 +463,7 @@ knn::EmbeddingsLib_i * LoadEmbeddingsLib ( const std::string & sLibPath, std::st
 	if ( !pLib->Load(sError) )
 		return nullptr;
 
-	const int SUPPORTED_EMBEDDINGS_LIB_VER = 9;
+	const int SUPPORTED_EMBEDDINGS_LIB_VER = 10;
 	if ( pLib->GetVersion()!=SUPPORTED_EMBEDDINGS_LIB_VER )
 	{
 		sError = util::FormatStr ( "Unsupported embeddings library version %d (expected %d)", pLib->GetVersion(), SUPPORTED_EMBEDDINGS_LIB_VER );
