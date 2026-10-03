@@ -26,8 +26,8 @@
 namespace knn
 {
 
-static const int LIB_VERSION = 18;
-static const uint32_t STORAGE_VERSION = 4;
+static const int LIB_VERSION = 19;
+static const uint32_t STORAGE_VERSION = 5;
 
 enum class HNSWSimilarity_e
 {
@@ -41,8 +41,9 @@ enum class Quantization_e
 	NONE,
 	BIT1,
 	BIT1SIMPLE,
-	BIT4,	// no longer supported
-	BIT8
+	BIT4,
+	BIT8,
+	BIT2
 };
 
 struct IndexSettings_t

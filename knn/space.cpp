@@ -1485,4 +1485,86 @@ void L2SpaceBinaryFloat_c::SetQuantizationSettings ( ScalarQuantizer_i & tQuanti
 	m_tDistFuncParam.m_fnFetcher = tQuantizer.GetPoolFetcher();
 }
 
+///////////////////////////////////////////////////////////////////////////////
+
+template <bool BUILD, bool L2, int BITS>
+static FORCE_INLINE float QuantDistance ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t, const void * pParam )
+{
+	const auto & tParam = *(const DistFuncParamQuant_t*)pParam;
+
+	auto pQuery = (const uint8_t *)pVect1;
+	if constexpr ( BUILD )
+	{
+		// the source point arrives in its stored 2-bit form; its query form lives in the build pool
+		if ( uRowID1!=(size_t)-1 )
+			pQuery = tParam.m_fnFetcher(uRowID1);
+	}
+
+	QuantQueryFactors_t tQuery;
+	QuantCodeFactors_t tData;
+	memcpy ( &tQuery, pQuery, sizeof(tQuery) );
+	memcpy ( &tData, pVect2, sizeof(tData) );
+	const uint8_t * pQueryPlanes = pQuery + sizeof(tQuery);
+	const uint8_t * pDataPlanes = (const uint8_t *)pVect2 + sizeof(tData);
+
+	const size_t uWords = tParam.m_uWords;
+	uint64_t uCodeDot = 0;	// sum of query_code*data_code
+	for ( size_t w = 0; w < uWords; w++ )
+	{
+		for ( size_t iData = 0; iData < BITS; iData++ )
+		{
+			uint64_t uData;
+			memcpy ( &uData, pDataPlanes + (iData*uWords+w)*sizeof(uint64_t), sizeof(uint64_t) );
+			uint64_t uPartial = 0;
+			for ( size_t iQuery = 0; iQuery < QUANT_QUERY_BITS; iQuery++ )
+			{
+				uint64_t uQuery;
+				memcpy ( &uQuery, pQueryPlanes + (iQuery*uWords+w)*sizeof(uint64_t), sizeof(uint64_t) );
+				uPartial += (uint64_t)__builtin_popcountll ( uQuery & uData ) << iQuery;
+			}
+
+			uCodeDot += uPartial << iData;
+		}
+	}
+
+	// <data_code-center, query_min + query_step*query_code> over the real dimensions, scaled to <x-c, y-c>
+	const float fCenter = ( ( 1 << BITS ) - 1 ) / 2.0f;
+	const float fDim = (float)tParam.m_uDim;
+	float fResidualDot = tData.m_fScale * ( tQuery.m_fMin*( tData.m_fCodeSum - fCenter*fDim ) + tQuery.m_fStep*( (float)uCodeDot - fCenter*tQuery.m_fCodeSum ) );
+
+	if constexpr ( L2 )
+		return tData.m_fResidualNormSq + tQuery.m_fResidualNormSq - 2.0f*fResidualDot;
+
+	return 1.0f - ( fResidualDot + tData.m_fResidualDotCentroid + tQuery.m_fDotCentroid );
+}
+
+float IPQuant2Distance ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam )		{ return QuantDistance<false,false,2> ( pVect1, pVect2, uRowID1, uRowID2, pParam ); }
+float IPQuant2DistanceBuild ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam )	{ return QuantDistance<true,false,2> ( pVect1, pVect2, uRowID1, uRowID2, pParam ); }
+float L2Quant2Distance ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam )		{ return QuantDistance<false,true,2> ( pVect1, pVect2, uRowID1, uRowID2, pParam ); }
+float L2Quant2DistanceBuild ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam )	{ return QuantDistance<true,true,2> ( pVect1, pVect2, uRowID1, uRowID2, pParam ); }
+float IPQuant4Distance ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam )		{ return QuantDistance<false,false,4> ( pVect1, pVect2, uRowID1, uRowID2, pParam ); }
+float IPQuant4DistanceBuild ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam )	{ return QuantDistance<true,false,4> ( pVect1, pVect2, uRowID1, uRowID2, pParam ); }
+float L2Quant4Distance ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam )		{ return QuantDistance<false,true,4> ( pVect1, pVect2, uRowID1, uRowID2, pParam ); }
+float L2Quant4DistanceBuild ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam )	{ return QuantDistance<true,true,4> ( pVect1, pVect2, uRowID1, uRowID2, pParam ); }
+
+
+SpaceQuant_c::SpaceQuant_c ( size_t uDim, bool bBuild, bool bL2, int iBits )
+	: Space_c ( uDim )
+	, m_iBits ( iBits )
+{
+	m_tDistFuncParam.m_uDim = uDim;
+	m_tDistFuncParam.m_uWords = QuantWords(uDim);
+
+	if ( iBits==4 )
+	{
+		m_fnDist = bL2 ? ( bBuild ? L2Quant4DistanceBuild : L2Quant4Distance ) : ( bBuild ? IPQuant4DistanceBuild : IPQuant4Distance );
+		m_eDistFuncId = bL2 ? DistFuncId_e::L2_QUANT4 : DistFuncId_e::IP_QUANT4;
+	}
+	else
+	{
+		m_fnDist = bL2 ? ( bBuild ? L2Quant2DistanceBuild : L2Quant2Distance ) : ( bBuild ? IPQuant2DistanceBuild : IPQuant2Distance );
+		m_eDistFuncId = bL2 ? DistFuncId_e::L2_QUANT2 : DistFuncId_e::IP_QUANT2;
+	}
+}
+
 } // namespace knn
