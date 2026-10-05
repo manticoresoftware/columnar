@@ -21,6 +21,7 @@
 namespace knn
 {
 
+bool IsUtf8CodepointBoundary ( std::string_view sText, uint64_t uOffset );
 knn::EmbeddingsLib_i * LoadEmbeddingsLib ( const std::string & sLibPath, std::string & sError );
 
 } // namespace knn

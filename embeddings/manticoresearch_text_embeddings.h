@@ -45,16 +45,24 @@ struct FloatVec {
   uintptr_t cap;
 };
 
+/// Half-open UTF-8 byte range `[m_uStart, m_uEnd)` in the corresponding input
+/// document. Fixed-width integers keep the C ABI independent of `size_t`.
+struct ChunkSpan {
+  uint64_t m_uStart;
+  uint64_t m_uEnd;
+};
+
 /// Embedding result for one `make_vect_embeddings` call.
 ///
 /// `m_tEmbedding` is a FLAT array of `len` vectors — every input document's
 /// vectors concatenated. `m_pRowOffsets` (length `rows + 1`) groups them per
 /// input document, Arrow-style: document `i` owns
-/// `m_tEmbedding[m_pRowOffsets[i] .. m_pRowOffsets[i + 1]]`. For the v1
-/// strategies (truncate / mean) every document yields exactly one vector, so
-/// `len == rows` and the offsets are `[0, 1, ..., rows]`. The sidecar lets a
-/// future multi-vector strategy return N vectors per document through this same
-/// struct — no second method, cardinality carried as data.
+/// `m_tEmbedding[m_pRowOffsets[i] .. m_pRowOffsets[i + 1]]`. For truncate and
+/// mean every document yields exactly one vector, so `len == rows` and the
+/// offsets are `[0, 1, ..., rows]`. `m_pChunkSpans` is a flat 1:1 sidecar for
+/// fixed/recursive/sentence: span `i` describes vector `i`. Truncate and mean
+/// deliberately return no spans (`spans_len == 0`) because their vectors do not
+/// represent one chunk.
 ///
 struct FloatVecResult {
   char *m_szError;
@@ -64,6 +72,9 @@ struct FloatVecResult {
   const uintptr_t *m_pRowOffsets;
   uintptr_t rows;
   uintptr_t offsets_cap;
+  const ChunkSpan *m_pChunkSpans;
+  uintptr_t spans_len;
+  uintptr_t spans_cap;
 };
 
 using TextModelWrapper = void*;

@@ -140,6 +140,9 @@ mod tests {
             row_offsets: ptr::null(),
             rows: 0,
             offsets_cap: 0,
+            chunk_spans: ptr::null(),
+            spans_len: 0,
+            spans_cap: 0,
         };
 
         assert!(result.error.is_null());
@@ -354,6 +357,9 @@ mod tests {
             row_offsets: ptr::null(),
             rows: 0,
             offsets_cap: 0,
+            chunk_spans: ptr::null(),
+            spans_len: 0,
+            spans_cap: 0,
         };
 
         // Verify error is set
@@ -383,6 +389,9 @@ mod tests {
             row_offsets: ptr::null(),
             rows: 0,
             offsets_cap: 0,
+            chunk_spans: ptr::null(),
+            spans_len: 0,
+            spans_cap: 0,
         };
 
         // Should not crash with null pointers
@@ -412,8 +421,13 @@ mod tests {
             mem::size_of::<*const c_char>() + mem::size_of::<usize>()
         );
 
+        assert_eq!(mem::size_of::<ChunkSpan>(), mem::size_of::<u64>() * 2);
+        assert_eq!(mem::offset_of!(ChunkSpan, start), 0);
+        assert_eq!(mem::offset_of!(ChunkSpan, end), mem::size_of::<u64>());
+
         // FloatVecResult: error ptr + embeddings ptr + len + cap
         //   + row_offsets ptr + rows + offsets_cap
+        //   + chunk_spans ptr + spans_len + spans_cap
         assert_eq!(
             mem::size_of::<FloatVecResult>(),
             mem::size_of::<*mut c_char>()
@@ -421,7 +435,43 @@ mod tests {
                 + mem::size_of::<usize>() * 2
                 + mem::size_of::<*const usize>()
                 + mem::size_of::<usize>() * 2
+                + mem::size_of::<*const ChunkSpan>()
+                + mem::size_of::<usize>() * 2
         );
+    }
+
+    #[test]
+    fn test_free_vec_result_with_chunk_spans_without_model() {
+        let mut values = vec![1.0f32, 2.0];
+        let inner = FloatVec {
+            ptr: values.as_mut_ptr(),
+            len: values.len(),
+            cap: values.capacity(),
+        };
+        std::mem::forget(values);
+
+        let mut embeddings = vec![inner];
+        let mut offsets = vec![0usize, 1];
+        let mut spans = vec![ChunkSpan { start: 1, end: 3 }];
+        let result = FloatVecResult {
+            error: ptr::null_mut(),
+            ptr: embeddings.as_mut_ptr(),
+            len: embeddings.len(),
+            cap: embeddings.capacity(),
+            row_offsets: offsets.as_mut_ptr(),
+            rows: 1,
+            offsets_cap: offsets.capacity(),
+            chunk_spans: spans.as_mut_ptr(),
+            spans_len: spans.len(),
+            spans_cap: spans.capacity(),
+        };
+        std::mem::forget(embeddings);
+        std::mem::forget(offsets);
+        std::mem::forget(spans);
+
+        // This path owns every allocation above and must release all of them
+        // without requiring a model download or a model-runtime dependency.
+        TextModelWrapper::free_vec_result(result);
     }
 
     #[test]
@@ -633,6 +683,11 @@ mod tests {
             assert_eq!(res.len, 1, "exactly one vector per input document");
             assert_eq!(res.rows, 1);
             assert!(!res.row_offsets.is_null());
+            assert!(
+                res.chunk_spans.is_null(),
+                "single-vector strategies have no truthful chunk span"
+            );
+            assert_eq!(res.spans_len, 0);
             unsafe {
                 let offs = std::slice::from_raw_parts(res.row_offsets, res.rows + 1);
                 assert_eq!(offs, &[0usize, 1usize], "trivial offsets for 1 vector/doc");
@@ -675,6 +730,7 @@ mod tests {
 
         // multi-vector strategies: fixed/recursive/sentence keep every chunk
         // vector → N vectors/doc, grouped by row_offsets [0, N].
+        let mut fixed_last_end = None;
         for strat in [
             crate::chunk::STRATEGY_FIXED,
             crate::chunk::STRATEGY_RECURSIVE,
@@ -694,11 +750,24 @@ mod tests {
                 "strategy {strat} must emit multiple chunk vectors, got {}",
                 res.len
             );
+            assert_eq!(res.spans_len, res.len, "one source span per chunk vector");
+            assert!(!res.chunk_spans.is_null());
             unsafe {
                 let offs = std::slice::from_raw_parts(res.row_offsets, res.rows + 1);
                 assert_eq!(offs[0], 0);
                 assert_eq!(offs[1], res.len, "row 0 owns all {} chunk vectors", res.len);
                 let fvs = std::slice::from_raw_parts(res.ptr, res.len);
+                let spans = std::slice::from_raw_parts(res.chunk_spans, res.spans_len);
+                assert_eq!(spans.first().unwrap().start, 0);
+                assert!(spans.last().unwrap().end <= long.len() as u64);
+                if strat == crate::chunk::STRATEGY_FIXED {
+                    fixed_last_end = Some(spans.last().unwrap().end);
+                }
+                for span in spans {
+                    assert!(span.start <= span.end && span.end <= long.len() as u64);
+                    assert!(long.is_char_boundary(span.start as usize));
+                    assert!(long.is_char_boundary(span.end as usize));
+                }
                 for fv in fvs {
                     assert_eq!(fv.len, trunc_vec.len(), "chunk vector dimension");
                     let v = std::slice::from_raw_parts(fv.ptr, fv.len);
@@ -723,12 +792,20 @@ mod tests {
         let res = TextModelWrapper::make_vect_embeddings(&wrapper, batch.as_ptr(), 2, &s, 0);
         assert!(res.error.is_null());
         assert_eq!(res.rows, 2, "two documents");
+        assert_eq!(res.spans_len, res.len);
         unsafe {
             let offs = std::slice::from_raw_parts(res.row_offsets, res.rows + 1);
             assert_eq!(offs[0], 0);
             assert_eq!(offs[2], res.len, "last offset == total vectors");
             assert!(offs[1] > 1, "doc A (long) has multiple chunks");
             assert_eq!(offs[2] - offs[1], 1, "doc B (short) has exactly one chunk");
+            let spans = std::slice::from_raw_parts(res.chunk_spans, res.spans_len);
+            assert!(spans[..offs[1]]
+                .iter()
+                .all(|span| span.end <= long.len() as u64));
+            assert!(spans[offs[1]..]
+                .iter()
+                .all(|span| span.end <= short.len() as u64));
         }
         TextModelWrapper::free_vec_result(res);
 
@@ -741,11 +818,19 @@ mod tests {
         };
         let res = TextModelWrapper::make_vect_embeddings(&wrapper, items.as_ptr(), 1, &capped, 0);
         assert!(res.error.is_null());
-        assert!(
-            (1..=3).contains(&res.len),
-            "max_chunks=3 caps to ≤3 vectors, got {}",
-            res.len
+        assert_eq!(
+            res.len, 3,
+            "max_chunks=3 keeps two chunks and merges the tail into the third"
         );
+        assert_eq!(res.spans_len, res.len);
+        unsafe {
+            let spans = std::slice::from_raw_parts(res.chunk_spans, res.spans_len);
+            assert_eq!(
+                spans.last().unwrap().end,
+                fixed_last_end.unwrap(),
+                "post-cap span ends at the same byte as the uncapped chunk sequence"
+            );
+        }
         TextModelWrapper::free_vec_result(res);
 
         TextModelWrapper::free_vec_result(trunc);
