@@ -272,6 +272,9 @@ public:
 	FORCE_INLINE int		GetValueLength() const										{ return (int)m_iLength*sizeof(T); }
 	FORCE_INLINE const std::vector<Span_T<T>> & GetAllValues() const					{ return m_dValuePtrs; }
 
+	// were the values of the current subblock left in the file mapping (as opposed to copied/decoded into m_dValues)?
+	FORCE_INLINE bool		IsZeroCopy() const											{ return m_bZeroCopy; }
+
 private:
 	SpanResizeable_T<uint32_t>	m_dSubblockCumulativeSizes;
 	SpanResizeable_T<uint32_t>	m_dTmp;
@@ -280,6 +283,7 @@ private:
 	std::vector<Span_T<T>>		m_dValuePtrs;
 
 	int							m_iLength = 0;
+	bool						m_bZeroCopy = false;
 
 	FORCE_INLINE void			PrecalcSizeOffset( int iNumSubblockValues )				{ PrecalcSizeOffset ( iNumSubblockValues, m_dValues.data() ); }
 	FORCE_INLINE void			PrecalcSizeOffset( int iNumSubblockValues, T * pBase );
@@ -315,6 +319,7 @@ void StoredBlock_MvaConstLen_T<T,COMPRESSED>::ReadSubblock ( int iSubblockId, in
 		return;
 
 	m_iSubblockId = iSubblockId;
+	m_bZeroCopy = false;
 
 	uint32_t uSize = m_dSubblockCumulativeSizes[iSubblockId];
 	uint32_t uOffset = 0;
@@ -334,20 +339,20 @@ void StoredBlock_MvaConstLen_T<T,COMPRESSED>::ReadSubblock ( int iSubblockId, in
 	{
 		assert ( uSize % 4 == 0 );
 
-		// mmap zero-copy: point the row spans straight into the mapping instead of copying into
-		// m_dValues. Safe only when the reader is mapped (stable pointers) and the block isn't
-		// delta-sorted (ApplyInverseDeltas would mutate the read-only mapping in place).
+		// A non-compressed block holds its values exactly as they were given: the writer never delta-codes it, whatever
+		// the "values are ascending" flag in the block header says (older writers did set that flag on such blocks).
+		// So the flag is ignored here; undoing deltas that were never applied would corrupt the values.
+
+		// mmap zero-copy: point the row spans straight into the mapping instead of copying into m_dValues
 		if constexpr ( RD::IS_MAPPED )
 		{
-			if ( !m_bValuesSortedAsc )
+			tReader.Seek ( iDataOffset );
+			uint8_t * pMapped = nullptr;
+			if ( tReader.ReadFromBuffer ( pMapped, uSize ) )
 			{
-				tReader.Seek ( iDataOffset );
-				uint8_t * pMapped = nullptr;
-				if ( tReader.ReadFromBuffer ( pMapped, uSize ) )
-				{
-					PrecalcSizeOffset ( iNumSubblockValues, (T*)pMapped );
-					return;
-				}
+				PrecalcSizeOffset ( iNumSubblockValues, (T*)pMapped );
+				m_bZeroCopy = true;
+				return;
 			}
 		}
 
@@ -356,12 +361,13 @@ void StoredBlock_MvaConstLen_T<T,COMPRESSED>::ReadSubblock ( int iSubblockId, in
 			tReader.Read ( (uint8_t*)m_dValues.data(), (int)m_dValues.size()*sizeof(m_dValues[0]) );
 		else
 			PreadWrapper ( tReader.GetFD(), (uint8_t*)m_dValues.data(), (int)m_dValues.size()*sizeof(m_dValues[0]), iDataOffset );
+
+		PrecalcSizeOffset(iNumSubblockValues);
+		return;
 	}
-	else
-	{
-		m_dValues.resize(iValuesInSubblock);
-		DecodeValues_PFOR ( m_dValues, tReader, *m_pCodec, m_dTmp, uSize );
-	}
+
+	m_dValues.resize(iValuesInSubblock);
+	DecodeValues_PFOR ( m_dValues, tReader, *m_pCodec, m_dTmp, uSize );
 
 	PrecalcSizeOffset(iNumSubblockValues);
 
@@ -600,19 +606,24 @@ protected:
 	uint8_t *						m_pResult = nullptr;
 	size_t							m_tValueLength = 0;
 
-	template <bool PACK> void		ReadValue_Const()			{ m_tValueLength = m_tBlockConst.template GetValue<PACK>(m_pResult); }
+	// Does m_pResult of the last ReadValue point into the file mapping? Only a non-compressed block read zero-copy does;
+	// every other packing decodes into a buffer of its block object, which the next block or subblock read overwrites
+	// and which dies with the accessor.
+	bool							m_bResultStable = false;
+
+	template <bool PACK> void		ReadValue_Const()			{ m_tValueLength = m_tBlockConst.template GetValue<PACK>(m_pResult); m_bResultStable = false; }
 	int								GetValueLength_Const()		{ return m_tBlockConst.GetValueLength(); }
 
-	template <bool PACK> void		ReadValue_ConstLen()		{ m_tValueLength = m_tBlockConstLen.template GetValue<PACK> ( m_pResult, ReadSubblock(m_tBlockConstLen) ); }
+	template <bool PACK> void		ReadValue_ConstLen()		{ m_tValueLength = m_tBlockConstLen.template GetValue<PACK> ( m_pResult, ReadSubblock(m_tBlockConstLen) ); m_bResultStable = false; }
 	int								GetValueLength_ConstLen()	{ return m_tBlockConstLen.GetValueLength(); }
 
-	template <bool PACK> void		ReadValue_ConstLenNC()		{ m_tValueLength = m_tBlockConstLenNonCompressed.template GetValue<PACK> ( m_pResult, ReadSubblock(m_tBlockConstLenNonCompressed) ); }
+	template <bool PACK> void		ReadValue_ConstLenNC()		{ m_tValueLength = m_tBlockConstLenNonCompressed.template GetValue<PACK> ( m_pResult, ReadSubblock(m_tBlockConstLenNonCompressed) ); m_bResultStable = !PACK && m_tBlockConstLenNonCompressed.IsZeroCopy(); }
 	int								GetValueLength_ConstLenNC()	{ return m_tBlockConstLenNonCompressed.GetValueLength(); }
 
-	template <bool PACK> void		ReadValue_Table()			{ m_tValueLength = m_tBlockTable.template GetValue<PACK> ( m_pResult, ReadSubblock(m_tBlockTable) ); }
+	template <bool PACK> void		ReadValue_Table()			{ m_tValueLength = m_tBlockTable.template GetValue<PACK> ( m_pResult, ReadSubblock(m_tBlockTable) ); m_bResultStable = false; }
 	int								GetValueLength_Table()		{ return m_tBlockTable.GetValueLength ( ReadSubblock(m_tBlockTable) ); }
 
-	template <bool PACK> void		ReadValue_PFOR()			{ m_tValueLength = m_tBlockPFOR.template GetValue<PACK> ( m_pResult, ReadSubblock(m_tBlockPFOR) ); }
+	template <bool PACK> void		ReadValue_PFOR()			{ m_tValueLength = m_tBlockPFOR.template GetValue<PACK> ( m_pResult, ReadSubblock(m_tBlockPFOR) ); m_bResultStable = false; }
 	int								GetValueLength_PFOR()		{ return m_tBlockPFOR.GetValueLength ( ReadSubblock(m_tBlockPFOR) ); }
 
 	template <typename SUBBLOCK>
@@ -715,6 +726,7 @@ public:
 	int			GetLength ( uint32_t tRowID ) final;
 
 	void		AddDesc ( std::vector<IteratorDesc_t> & dDesc ) const final { dDesc.push_back ( { BASE::m_tHeader.GetName(), "iterator" } ); }
+	bool		IsLastValueStable() const final						{ return BASE::m_bResultStable; }
 
 private:
 	FORCE_INLINE void AdvanceTo ( uint32_t tRowID );

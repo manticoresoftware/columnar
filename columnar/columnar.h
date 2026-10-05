@@ -28,7 +28,7 @@
 namespace columnar
 {
 
-static const int LIB_VERSION = 28;
+static const int LIB_VERSION = 29;
 
 class Iterator_i
 {
@@ -43,6 +43,7 @@ public:
 	virtual	int			GetLength ( uint32_t tRowID ) = 0;
 
 	virtual void		AddDesc ( std::vector<common::IteratorDesc_t> & dDesc ) const = 0;
+	virtual bool		IsLastValueStable() const { return false; }
 };
 
 

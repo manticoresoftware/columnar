@@ -88,6 +88,7 @@ protected:
 	void			AnalyzeCollected ( const int64_t * pData, int iLength );
 	MvaPacking_e	ChoosePacking() const;
 	void			OverridePacking ( MvaPacking_e eSrc, MvaPacking_e eDst );
+	void			DisableSortedDelta();	// never mark a block's values as ascending, so they are never delta-coded
 	void			WriteToFile ( MvaPacking_e ePacking );
 
 private:
@@ -114,7 +115,8 @@ private:
 	std::unordered_map<std::vector<T>, int, HashFunc_Vec_T<T>> m_hUnique;
 	int				m_iUniques = 0;
 	int				m_iConstLength = -1;
-	bool			m_bValuesSortedAsc = true;
+	bool			m_bSortedDeltaAllowed = true;
+	bool			m_bValuesSortedAsc = true;	// per block; starts from m_bSortedDeltaAllowed and is only ever cleared while the block is collected
 
 	void			WritePacked_Const();
 	void			WritePacked_ConstLen();
@@ -141,6 +143,13 @@ template <typename T, typename HEADER_T>
 void Packer_MVA_T<T,HEADER_T>::OverridePacking ( MvaPacking_e eSrc, MvaPacking_e eDst )
 {
 	m_dPackingOverrides[to_underlying(eSrc)] = eDst;
+}
+
+template <typename T, typename HEADER_T>
+void Packer_MVA_T<T,HEADER_T>::DisableSortedDelta()
+{
+	m_bSortedDeltaAllowed = false;
+	m_bValuesSortedAsc = false;
 }
 
 template <typename T, typename HEADER_T>
@@ -227,7 +236,7 @@ void Packer_MVA_T<T,HEADER_T>::Flush()
 	m_iConstLength = -1;
 	m_iUniques = 0;
 	m_hUnique.clear();
-	m_bValuesSortedAsc = true;
+	m_bValuesSortedAsc = m_bSortedDeltaAllowed;
 }
 
 template <typename T, typename HEADER_T>
@@ -493,8 +502,12 @@ public:
 Packer_KNN_c::Packer_KNN_c ( const Settings_t & tSettings, const std::string & sName )
 	: Packer_MVA_T ( tSettings, sName, AttrType_e::FLOATVEC )
 {
+	// vectors are stored non-compressed, so that a mapped reader can hand out pointers straight into the file (see Iterator_i::IsLastValueStable)
 	OverridePacking ( MvaPacking_e::CONSTLEN, MvaPacking_e::CONSTLEN_NONCOMPRESSED );
 	OverridePacking ( MvaPacking_e::TABLE, MvaPacking_e::TOTAL );	// disable table compression since it assumes that block sizes are multiples of 128
+
+	// Vectors are not ascending sequences, and a non-compressed block is written as is, never delta-coded
+	DisableSortedDelta();
 }
 
 //////////////////////////////////////////////////////////////////////////
