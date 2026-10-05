@@ -153,6 +153,8 @@ Space_i * HNSWDist_c::CreateSpaceInterface ( bool bBuild ) const
 		switch ( m_eQuantization )
 		{
 		case Quantization_e::BIT1:	return new IPSpaceBinaryFloat_c ( m_iDim, bBuild );
+		case Quantization_e::BIT2:	return new SpaceQuant_c ( m_iDim, bBuild, false, 2 );
+		case Quantization_e::BIT4:	return new SpaceQuant_c ( m_iDim, bBuild, false, 4 );
 		case Quantization_e::BIT1SIMPLE: return new IPSpace1BitFloat_c(m_iDim);
 		case Quantization_e::BIT8:	return new IPSpace8BitFloat_c(m_iDim);
 		default:					return new IPSpace32BitFloat_c(m_iDim);
@@ -162,6 +164,8 @@ Space_i * HNSWDist_c::CreateSpaceInterface ( bool bBuild ) const
 		switch ( m_eQuantization )
 		{
 		case Quantization_e::BIT1:	return new L2SpaceBinaryFloat_c ( m_iDim, bBuild );
+		case Quantization_e::BIT2:	return new SpaceQuant_c ( m_iDim, bBuild, true, 2 );
+		case Quantization_e::BIT4:	return new SpaceQuant_c ( m_iDim, bBuild, true, 4 );
 		case Quantization_e::BIT1SIMPLE: return new L2Space1BitFloat_c(m_iDim);
 		case Quantization_e::BIT8:	return new L2Space8BitFloat_c(m_iDim);
 		default:					return new L2Space32BitFloat_c(m_iDim);
@@ -351,6 +355,10 @@ public:
 #endif
 
 using L2BinaryGenericDistFn_c = DistFnDispatch_c<&L2BinaryFloatDistanceGeneric>;
+using IPQuant2DistFn_c = DistFnDispatch_c<&IPQuant2Distance>;
+using L2Quant2DistFn_c = DistFnDispatch_c<&L2Quant2Distance>;
+using IPQuant4DistFn_c = DistFnDispatch_c<&IPQuant4Distance>;
+using L2Quant4DistFn_c = DistFnDispatch_c<&L2Quant4Distance>;
 class L2FloatDistFn_c : public DistFnDispatch_c<&L2FloatDistance>
 {
 public:
@@ -383,6 +391,10 @@ public:
 // build-mode DistFn classes
 using IPBinaryGenericBuildDistFn_c = DistFnDispatch_c<&IPBinaryFloatDistanceGenericBuild>;
 using L2BinaryGenericBuildDistFn_c = DistFnDispatch_c<&L2BinaryFloatDistanceGenericBuild>;
+using IPQuant2BuildDistFn_c = DistFnDispatch_c<&IPQuant2DistanceBuild>;
+using L2Quant2BuildDistFn_c = DistFnDispatch_c<&L2Quant2DistanceBuild>;
+using IPQuant4BuildDistFn_c = DistFnDispatch_c<&IPQuant4DistanceBuild>;
+using L2Quant4BuildDistFn_c = DistFnDispatch_c<&L2Quant4DistanceBuild>;
 
 #if !defined(USE_SIMDE)
 class IPBinarySIMD16BuildDistFn_c : public DistFnDispatch_c<&IPBinaryFloatDistanceSIMD16Build>
@@ -454,6 +466,10 @@ void Distance_c::CalcDistBatch ( const void * pAnchor, const util::Span_T<const 
 	case DistFuncId_e::IP_BINARY_GENERIC:	CalcDistBatchT<IPBinaryGenericDistFn_c> ( pAnchor, dVectors, dDistances, m_pDistFuncParam );	break;
 	case DistFuncId_e::L2_FLOAT32:			CalcDistBatchT<L2FloatDistFn_c> ( pAnchor, dVectors, dDistances, m_pDistFuncParam );			break;
 	case DistFuncId_e::L2_BINARY_GENERIC:	CalcDistBatchT<L2BinaryGenericDistFn_c> ( pAnchor, dVectors, dDistances, m_pDistFuncParam );	break;
+	case DistFuncId_e::IP_QUANT2:			CalcDistBatchT<IPQuant2DistFn_c> ( pAnchor, dVectors, dDistances, m_pDistFuncParam );			break;
+	case DistFuncId_e::L2_QUANT2:			CalcDistBatchT<L2Quant2DistFn_c> ( pAnchor, dVectors, dDistances, m_pDistFuncParam );			break;
+	case DistFuncId_e::IP_QUANT4:			CalcDistBatchT<IPQuant4DistFn_c> ( pAnchor, dVectors, dDistances, m_pDistFuncParam );			break;
+	case DistFuncId_e::L2_QUANT4:			CalcDistBatchT<L2Quant4DistFn_c> ( pAnchor, dVectors, dDistances, m_pDistFuncParam );			break;
 
 #if !defined(USE_SIMDE)
 	case DistFuncId_e::IP_BINARY_SIMD16:			CalcDistBatchT<IPBinarySIMD16DistFn_c> ( pAnchor, dVectors, dDistances, m_pDistFuncParam );			break;
@@ -578,6 +594,22 @@ void HNSWIndex_c::Search ( std::vector<DocDist_t> & dResults, const Span_T<float
 		RunSearchPath<L2BinaryGenericDistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath );
 		break;
 
+	case DistFuncId_e::IP_QUANT2:
+		RunSearchPath<IPQuant2DistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath );
+		break;
+
+	case DistFuncId_e::L2_QUANT2:
+		RunSearchPath<L2Quant2DistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath );
+		break;
+
+	case DistFuncId_e::IP_QUANT4:
+		RunSearchPath<IPQuant4DistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath );
+		break;
+
+	case DistFuncId_e::L2_QUANT4:
+		RunSearchPath<L2Quant4DistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath );
+		break;
+
 #if !defined(USE_SIMDE)
 	case DistFuncId_e::L2_BINARY_SIMD16:
 		RunSearchPath<L2BinarySIMD16DistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath );
@@ -591,6 +623,13 @@ void HNSWIndex_c::Search ( std::vector<DocDist_t> & dResults, const Span_T<float
 	default:
 		assert ( 0 );
 		break;
+	}
+
+	// labels are row ids only in the single-vector mode
+	if ( m_pQuantizer && !m_bMulti )
+	{
+		auto fnStored = [this]( uint32_t uRowID ) { return (const uint8_t *)m_pAlg->getDataByInternalId ( m_pAlg->label_lookup_.find(uRowID)->second ); };
+		m_pQuantizer->RefineDistances ( dData, m_eSimilarity==HNSWSimilarity_e::L2, fnStored, dResults );
 	}
 
 	if ( pDistanceComputations )
@@ -754,6 +793,10 @@ HNSWIndexBuilder_c::AddPoint_fn HNSWIndexBuilder_c::SelectAddPointFn() const
 	case DistFuncId_e::L2_FLOAT32:					return AddPointTyped<L2FloatDistFn_c>;
 	case DistFuncId_e::IP_BINARY_GENERIC:			return AddPointTyped<IPBinaryGenericBuildDistFn_c>;
 	case DistFuncId_e::L2_BINARY_GENERIC:			return AddPointTyped<L2BinaryGenericBuildDistFn_c>;
+	case DistFuncId_e::IP_QUANT2:					return AddPointTyped<IPQuant2BuildDistFn_c>;
+	case DistFuncId_e::L2_QUANT2:					return AddPointTyped<L2Quant2BuildDistFn_c>;
+	case DistFuncId_e::IP_QUANT4:					return AddPointTyped<IPQuant4BuildDistFn_c>;
+	case DistFuncId_e::L2_QUANT4:					return AddPointTyped<L2Quant4BuildDistFn_c>;
 
 #if !defined(USE_SIMDE)
 	case DistFuncId_e::IP_BINARY_SIMD16:			return AddPointTyped<IPBinarySIMD16BuildDistFn_c>;

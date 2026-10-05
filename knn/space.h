@@ -35,7 +35,11 @@ enum class DistFuncId_e
 	L2_FLOAT32,
 	L2_BINARY_GENERIC,
 	L2_BINARY_SIMD16,
-	L2_BINARY_SIMD16_RESIDUALS
+	L2_BINARY_SIMD16_RESIDUALS,
+	IP_QUANT2,
+	L2_QUANT2,
+	IP_QUANT4,
+	L2_QUANT4
 };
 
 class Space_i : public hnswlib::SpaceInterface<float>
@@ -232,6 +236,38 @@ class L2SpaceBinaryFloat_c : public Space_c
 
 private:
 	DistFuncParamBinary_t m_tDistFuncParam;
+};
+
+
+struct DistFuncParamQuant_t
+{
+	size_t	m_uDim = 0;
+	size_t	m_uWords = 0;
+	std::function<const uint8_t *(uint32_t)> m_fnFetcher;
+};
+
+float	IPQuant2Distance ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam );
+float	IPQuant2DistanceBuild ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam );
+float	L2Quant2Distance ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam );
+float	L2Quant2DistanceBuild ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam );
+float	IPQuant4Distance ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam );
+float	IPQuant4DistanceBuild ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam );
+float	L2Quant4Distance ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam );
+float	L2Quant4DistanceBuild ( const void * pVect1, const void * pVect2, size_t uRowID1, size_t uRowID2, const void * pParam );
+
+class SpaceQuant_c : public Space_c
+{
+ public:
+			SpaceQuant_c ( size_t uDim, bool bBuild, bool bL2, int iBits );
+
+	void *	get_dist_func_param() override	{ return &m_tDistFuncParam; }
+	size_t	get_data_size() override		{ return QuantDataSize ( m_uDim, m_iBits ); }
+
+	void	SetQuantizationSettings ( ScalarQuantizer_i & tQuantizer ) override { m_tDistFuncParam.m_fnFetcher = tQuantizer.GetPoolFetcher(); }
+
+private:
+	DistFuncParamQuant_t	m_tDistFuncParam;
+	int						m_iBits = 2;
 };
 
 

@@ -60,6 +60,31 @@ struct Binary1BitFactorsIP_t
 	float	m_fPopCnt;
 };
 
+// quantized stored vector: header followed by one bit plane per code bit (64-bit words each)
+struct QuantCodeFactors_t
+{
+	float	m_fScale;				// |x-c| / <code, rotated unit residual>
+	float	m_fResidualDotCentroid;	// <x-c, c>
+	float	m_fResidualNormSq;		// |x-c|^2
+	float	m_fCodeSum;				// sum of the codes
+};
+
+// 4-bit query form: header followed by 4 code bit planes (64-bit words each)
+struct QuantQueryFactors_t
+{
+	float	m_fMin;
+	float	m_fStep;
+	float	m_fCodeSum;				// sum of 4-bit codes
+	float	m_fDotCentroid;			// <y, c>
+	float	m_fResidualNormSq;		// |y-c|^2
+};
+
+static const int QUANT_QUERY_BITS = 4;	// query codes always use 4 bits, whatever the stored vectors use
+
+inline size_t QuantWords ( size_t uDim )					{ return ( uDim+63 ) / 64; }
+inline size_t QuantDataSize ( size_t uDim, int iBits )		{ return sizeof(QuantCodeFactors_t) + iBits*QuantWords(uDim)*sizeof(uint64_t); }
+inline size_t QuantQuerySize ( size_t uDim )				{ return sizeof(QuantQueryFactors_t) + QUANT_QUERY_BITS*QuantWords(uDim)*sizeof(uint64_t); }
+
 class ScalarQuantizer_i
 {
 public:
@@ -74,6 +99,9 @@ public:
 	virtual const QuantizationSettings_t & GetSettings() = 0;
 
 	virtual std::function<const uint8_t *(uint32_t)> GetPoolFetcher() const = 0;
+
+	// re-estimate result distances with the unquantized query (fnStored returns a result's stored form); false = no finer estimate
+	virtual bool	RefineDistances ( const util::Span_T<float> & dQuery, bool bL2, const std::function<const uint8_t *(uint32_t)> & fnStored, std::vector<DocDist_t> & dResults ) const { return false; }
 };
 
 ScalarQuantizer_i * CreateQuantizer ( Quantization_e eQuantization, const QuantizationSettings_t & tQuantSettings, HNSWSimilarity_e eSimilarity );
