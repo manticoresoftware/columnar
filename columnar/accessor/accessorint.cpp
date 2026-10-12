@@ -304,7 +304,7 @@ protected:
 
 	IntPacking_e	m_ePacking = IntPacking_e::CONST;
 
-	FORCE_INLINE void SetCurBlock ( uint32_t uBlockId );
+	void SetCurBlock ( uint32_t uBlockId );
 
 	int64_t			ReadValue_Const();
 	int64_t			ReadValue_Table();
