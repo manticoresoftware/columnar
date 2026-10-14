@@ -307,26 +307,34 @@ static void ExtractResults ( std::vector<std::pair<float, hnswlib::labeltype>> &
 {
 	dResults.resize(0);
 	dResults.reserve ( dRaw.size() );
-	for ( auto & tRes : dRaw )
+
+	// scalar vectors: the label is the row id. Kept as tight as before multi-vector rows existed
+	if ( !pVidToRowid )
+	{
+		for ( const auto & tRes : dRaw )
+			dResults.push_back ( { (uint32_t)tRes.second, tRes.first } );
+
+		return;
+	}
+
+	// multi-vector rows: the label is a vector id, the row is its group and the slot its index within the row.
+	// Vector ids of one row are consecutive and the map is sorted by row, so the row's first vector id is the
+	// lower bound of the row id, which can only lie at or before the vector itself
+	const uint32_t * pMap = pVidToRowid->data();
+	const size_t uNumVectors = pVidToRowid->size();
+	for ( const auto & tRes : dRaw )
 	{
 		const size_t uVectorID = (size_t)tRes.second;
-		if ( !pVidToRowid )
-		{
-			dResults.push_back ( { (uint32_t)uVectorID, tRes.first, 0 } );
-			continue;
-		}
-
-		assert ( uVectorID<pVidToRowid->size() );
-		if ( uVectorID>=pVidToRowid->size() )
+		assert ( uVectorID<uNumVectors );
+		if ( uVectorID>=uNumVectors )
 			continue;
 
-		const uint32_t uRowID = (*pVidToRowid)[uVectorID];
-		auto tFirst = std::lower_bound ( pVidToRowid->begin(), pVidToRowid->end(), uRowID );
-		const size_t uSlot = uVectorID - (size_t)( tFirst-pVidToRowid->begin() );
-		assert ( uSlot<=UINT32_MAX );
-		dResults.push_back ( { uRowID, tRes.first, (uint32_t)uSlot } );
+		const uint32_t uRowID = pMap[uVectorID];
+		const uint32_t * pFirst = std::lower_bound ( pMap, pMap+uVectorID+1, uRowID );
+		dResults.push_back ( { uRowID, tRes.first, (uint32_t)( uVectorID-(size_t)( pFirst-pMap ) ) } );
 	}
 }
+
 
 template<float (*DIST_FN)(const void *, const void *, size_t, size_t, const void *)>
 class DistFnDispatch_c
