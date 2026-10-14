@@ -3,8 +3,6 @@ if (__testing_columnar_includedd)
 endif ()
 set ( __testing_columnar_includedd YES )
 
-include ( CTest )
-
 if (NOT BUILD_TESTING)
 	return ()
 endif ()
@@ -71,7 +69,8 @@ if (DEFINED ENV{MANTICORE_LOCATOR} AND NOT "$ENV{MANTICORE_LOCATOR}" STREQUAL ""
 	set ( MANTICORE_LOCATOR $ENV{MANTICORE_LOCATOR} )
 	message ( STATUS "Using MANTICORE_LOCATOR from environment: '${MANTICORE_LOCATOR}'" )
 else ()
-	message ( FATAL_ERROR "BUILD_TESTING in standalone MCL repo now requires MANTICORE_LOCATOR to point to a daemon checkout. CI-based cross-repo autodiscovery via manticore_src.txt has been removed." )
+	message ( STATUS "MANTICORE_LOCATOR is not set; skipping daemon ubertests" )
+	return ()
 endif ()
 
 string ( CONFIGURE "${MANTICORE_LOCATOR}" MANTICORE_LOCATOR )

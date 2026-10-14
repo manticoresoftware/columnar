@@ -32,6 +32,8 @@ namespace knn
 
 using namespace util;
 
+static_assert ( sizeof(hnswlib::labeltype)>=sizeof(uint32_t), "HNSW labels must hold every 32-bit vector id" );
+
 // not member functions because there's no need to expose them in knn.h
 static void LoadSettings ( IndexSettings_t & tSettings, FileReader_c & tReader, uint32_t uVersion )
 {
@@ -263,6 +265,11 @@ bool HNSWIndex_c::Load ( FileReader_c & tReader, std::string & sError )
 	if ( m_bMulti )
 	{
 		const uint64_t uNumVectors = tReader.Read_uint64();
+		if ( uNumVectors>UINT32_MAX )
+		{
+			sError = FormatStr ( "HNSW error: index '%s' contains %llu vectors but at most %u are addressable per chunk", m_sName.c_str(), (unsigned long long)uNumVectors, (unsigned)UINT32_MAX );
+			return false;
+		}
 		m_dVidToRowid.resize ( (size_t)uNumVectors );
 		for ( auto & i : m_dVidToRowid )
 			i = tReader.Read_uint32();
@@ -296,13 +303,38 @@ bool HNSWIndex_c::ShouldUseFullscan ( int64_t iResults, int iEf, int64_t iFilter
 }
 
 
-static void ExtractResults ( std::vector<std::pair<float, hnswlib::labeltype>> && dRaw, std::vector<DocDist_t> & dResults )
+static void ExtractResults ( std::vector<std::pair<float, hnswlib::labeltype>> && dRaw, std::vector<DocDist_t> & dResults, const std::vector<uint32_t> * pVidToRowid )
 {
 	dResults.resize(0);
 	dResults.reserve ( dRaw.size() );
-	for ( auto & tRes : dRaw )
-		dResults.push_back ( { (uint32_t)tRes.second, tRes.first } );
+
+	// scalar vectors: the label is the row id. Kept as tight as before multi-vector rows existed
+	if ( !pVidToRowid )
+	{
+		for ( const auto & tRes : dRaw )
+			dResults.push_back ( { (uint32_t)tRes.second, tRes.first } );
+
+		return;
+	}
+
+	// multi-vector rows: the label is a vector id, the row is its group and the slot its index within the row.
+	// Vector ids of one row are consecutive and the map is sorted by row, so the row's first vector id is the
+	// lower bound of the row id, which can only lie at or before the vector itself
+	const uint32_t * pMap = pVidToRowid->data();
+	const size_t uNumVectors = pVidToRowid->size();
+	for ( const auto & tRes : dRaw )
+	{
+		const size_t uVectorID = (size_t)tRes.second;
+		assert ( uVectorID<uNumVectors );
+		if ( uVectorID>=uNumVectors )
+			continue;
+
+		const uint32_t uRowID = pMap[uVectorID];
+		const uint32_t * pFirst = std::lower_bound ( pMap, pMap+uVectorID+1, uRowID );
+		dResults.push_back ( { uRowID, tRes.first, (uint32_t)( uVectorID-(size_t)( pFirst-pMap ) ) } );
+	}
 }
+
 
 template<float (*DIST_FN)(const void *, const void *, size_t, size_t, const void *)>
 class DistFnDispatch_c
@@ -476,34 +508,34 @@ void Distance_c::CalcDistBatch ( const void * pAnchor, const util::Span_T<const 
 
 
 template <typename DistFn = void>
-static void RunSearchPath ( const hnswlib::HierarchicalNSW<float> & tAlg, std::vector<DocDist_t> & dResults, const void * pData, int64_t iResults, HNSWFilterWrapper_c * pFilter, size_t * pSearchEf, int iSearchPath )
+static void RunSearchPath ( const hnswlib::HierarchicalNSW<float> & tAlg, std::vector<DocDist_t> & dResults, const void * pData, int64_t iResults, HNSWFilterWrapper_c * pFilter, size_t * pSearchEf, int iSearchPath, const std::vector<uint32_t> * pVidToRowid )
 {
 	switch ( iSearchPath )
 	{
 	case 0:
 	case 1:
-		ExtractResults ( tAlg.template searchKnn<hnswlib::NoopTerminationState, false, DistFn> ( pData, iResults, pFilter, pSearchEf ), dResults );
+		ExtractResults ( tAlg.template searchKnn<hnswlib::NoopTerminationState, false, DistFn> ( pData, iResults, pFilter, pSearchEf ), dResults, pVidToRowid );
 		break;
 
 	case 2:
-		ExtractResults ( tAlg.template searchKnn<TerminationQuantile_c, false, DistFn> ( pData, iResults, pFilter, pSearchEf ), dResults );
+		ExtractResults ( tAlg.template searchKnn<TerminationQuantile_c, false, DistFn> ( pData, iResults, pFilter, pSearchEf ), dResults, pVidToRowid );
 		break;
 
 	case 3:
-		ExtractResults ( tAlg.template searchKnn<TerminationQuantileL2_c, false, DistFn> ( pData, iResults, pFilter, pSearchEf ), dResults );
+		ExtractResults ( tAlg.template searchKnn<TerminationQuantileL2_c, false, DistFn> ( pData, iResults, pFilter, pSearchEf ), dResults, pVidToRowid );
 		break;
 
 	case 4:
 	case 5:
-		ExtractResults ( tAlg.template searchKnn<hnswlib::NoopTerminationState, true, DistFn> ( pData, iResults, pFilter, pSearchEf ), dResults );
+		ExtractResults ( tAlg.template searchKnn<hnswlib::NoopTerminationState, true, DistFn> ( pData, iResults, pFilter, pSearchEf ), dResults, pVidToRowid );
 		break;
 
 	case 6:
-		ExtractResults ( tAlg.template searchKnn<TerminationQuantile_c, true, DistFn> ( pData, iResults, pFilter, pSearchEf ), dResults );
+		ExtractResults ( tAlg.template searchKnn<TerminationQuantile_c, true, DistFn> ( pData, iResults, pFilter, pSearchEf ), dResults, pVidToRowid );
 		break;
 
 	case 7:
-		ExtractResults ( tAlg.template searchKnn<TerminationQuantileL2_c, true, DistFn> ( pData, iResults, pFilter, pSearchEf ), dResults );
+		ExtractResults ( tAlg.template searchKnn<TerminationQuantileL2_c, true, DistFn> ( pData, iResults, pFilter, pSearchEf ), dResults, pVidToRowid );
 		break;
 
 	default:
@@ -549,42 +581,42 @@ void HNSWIndex_c::Search ( std::vector<DocDist_t> & dResults, const Span_T<float
 	switch ( m_eDistFuncId )
 	{
 	case DistFuncId_e::NONE:
-		RunSearchPath<> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath );
+		RunSearchPath<> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath, m_dVidToRowid.empty() ? nullptr : &m_dVidToRowid );
 		break;
 
 	case DistFuncId_e::IP_FLOAT32:
-		RunSearchPath<IPFloatDistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath );
+		RunSearchPath<IPFloatDistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath, m_dVidToRowid.empty() ? nullptr : &m_dVidToRowid );
 		break;
 
 	case DistFuncId_e::IP_BINARY_GENERIC:
-		RunSearchPath<IPBinaryGenericDistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath );
+		RunSearchPath<IPBinaryGenericDistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath, m_dVidToRowid.empty() ? nullptr : &m_dVidToRowid );
 		break;
 
 #if !defined(USE_SIMDE)
 	case DistFuncId_e::IP_BINARY_SIMD16:
-		RunSearchPath<IPBinarySIMD16DistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath );
+		RunSearchPath<IPBinarySIMD16DistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath, m_dVidToRowid.empty() ? nullptr : &m_dVidToRowid );
 		break;
 
 	case DistFuncId_e::IP_BINARY_SIMD16_RESIDUALS:
-		RunSearchPath<IPBinarySIMD16ResidualsDistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath );
+		RunSearchPath<IPBinarySIMD16ResidualsDistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath, m_dVidToRowid.empty() ? nullptr : &m_dVidToRowid );
 		break;
 #endif
 
 	case DistFuncId_e::L2_FLOAT32:
-		RunSearchPath<L2FloatDistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath );
+		RunSearchPath<L2FloatDistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath, m_dVidToRowid.empty() ? nullptr : &m_dVidToRowid );
 		break;
 
 	case DistFuncId_e::L2_BINARY_GENERIC:
-		RunSearchPath<L2BinaryGenericDistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath );
+		RunSearchPath<L2BinaryGenericDistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath, m_dVidToRowid.empty() ? nullptr : &m_dVidToRowid );
 		break;
 
 #if !defined(USE_SIMDE)
 	case DistFuncId_e::L2_BINARY_SIMD16:
-		RunSearchPath<L2BinarySIMD16DistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath );
+		RunSearchPath<L2BinarySIMD16DistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath, m_dVidToRowid.empty() ? nullptr : &m_dVidToRowid );
 		break;
 
 	case DistFuncId_e::L2_BINARY_SIMD16_RESIDUALS:
-		RunSearchPath<L2BinarySIMD16ResidualsDistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath );
+		RunSearchPath<L2BinarySIMD16ResidualsDistFn_c> ( *m_pAlg, dResults, pData, iResults, pFilterWrapper.get(), &iSearchEf, iSearchPath, m_dVidToRowid.empty() ? nullptr : &m_dVidToRowid );
 		break;
 #endif
 

@@ -5,9 +5,9 @@ use std::os::raw::c_char;
 use std::{ffi::c_void, ptr};
 
 /// Per-document output vectors (flat across all documents) plus per-document
-/// vector counts, used to build the row-offsets sidecar. One inner `Vec<f32>`
-/// per emitted vector.
-type EmbedResult = Result<(Vec<Vec<f32>>, Vec<usize>), Box<dyn std::error::Error>>;
+/// vector counts and optional chunk byte spans. One inner `Vec<f32>` per
+/// emitted vector. Spans are present only for multi-vector chunk strategies.
+type EmbedResult = Result<(Vec<Vec<f32>>, Vec<usize>, Vec<ChunkSpan>), Box<dyn std::error::Error>>;
 
 /// Sentinel written at offset 0 of every live model handle. Lets FFI entry
 /// points detect garbage, null, or freed pointers handed in by the C++ caller
@@ -66,18 +66,29 @@ pub struct FloatVec {
     pub cap: usize,
 }
 
+/// Half-open UTF-8 byte range `[m_uStart, m_uEnd)` in the corresponding input
+/// document. Fixed-width integers keep the C ABI independent of `size_t`.
+/// cbindgen:field-names=[m_uStart,m_uEnd]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ChunkSpan {
+    pub start: u64,
+    pub end: u64,
+}
+
 /// Embedding result for one `make_vect_embeddings` call.
 ///
 /// `m_tEmbedding` is a FLAT array of `len` vectors — every input document's
 /// vectors concatenated. `m_pRowOffsets` (length `rows + 1`) groups them per
 /// input document, Arrow-style: document `i` owns
-/// `m_tEmbedding[m_pRowOffsets[i] .. m_pRowOffsets[i + 1]]`. For the v1
-/// strategies (truncate / mean) every document yields exactly one vector, so
-/// `len == rows` and the offsets are `[0, 1, ..., rows]`. The sidecar lets a
-/// future multi-vector strategy return N vectors per document through this same
-/// struct — no second method, cardinality carried as data.
+/// `m_tEmbedding[m_pRowOffsets[i] .. m_pRowOffsets[i + 1]]`. For truncate and
+/// mean every document yields exactly one vector, so `len == rows` and the
+/// offsets are `[0, 1, ..., rows]`. `m_pChunkSpans` is a flat 1:1 sidecar for
+/// fixed/recursive/sentence: span `i` describes vector `i`. Truncate and mean
+/// deliberately return no spans (`spans_len == 0`) because their vectors do not
+/// represent one chunk.
 ///
-/// cbindgen:field-names=[m_szError,m_tEmbedding,len,cap,m_pRowOffsets,rows,offsets_cap]
+/// cbindgen:field-names=[m_szError,m_tEmbedding,len,cap,m_pRowOffsets,rows,offsets_cap,m_pChunkSpans,spans_len,spans_cap]
 #[repr(C)]
 pub struct FloatVecResult {
     pub error: *mut c_char,
@@ -87,6 +98,9 @@ pub struct FloatVecResult {
     pub row_offsets: *const usize,
     pub rows: usize,
     pub offsets_cap: usize,
+    pub chunk_spans: *const ChunkSpan,
+    pub spans_len: usize,
+    pub spans_cap: usize,
 }
 
 #[repr(C)]
@@ -256,6 +270,9 @@ impl TextModelWrapper {
                         row_offsets: ptr::null(),
                         rows: 0,
                         offsets_cap: 0,
+                        chunk_spans: ptr::null(),
+                        spans_len: 0,
+                        spans_cap: 0,
                     };
                 }
             };
@@ -281,21 +298,25 @@ impl TextModelWrapper {
 
             // Each strategy yields a flat Vec<Vec<f32>> (all documents' output
             // vectors) plus per-document output counts. truncate/mean emit one
-            // vector/doc; fixed/recursive/sentence emit one vector per chunk.
-            let computed: EmbedResult = if strategy == crate::chunk::STRATEGY_TRUNCATE {
-                model.predict(&string_refs, threads).map(|vecs| {
+            // vector/doc and no spans; fixed/recursive/sentence emit one vector
+            // and one post-cap byte span per chunk.
+            let computed: EmbedResult = (|| {
+                if strategy == crate::chunk::STRATEGY_TRUNCATE {
+                    let vecs = model.predict(&string_refs, threads)?;
                     let counts = vec![1usize; vecs.len()];
-                    (vecs, counts)
-                })
-            } else {
+                    return Ok((vecs, counts, Vec::new()));
+                }
+
                 let s = settings_ref.unwrap();
                 let max = crate::chunk::effective_max(s, model.get_max_input_len());
                 let overlap = s.overlap_tokens as usize;
                 let max_chunks = s.max_chunks as usize;
+                let is_multi = !s.is_single_vector();
 
                 // Split every document; remember each document's chunk count.
                 let mut flat: Vec<&str> = Vec::new();
                 let mut chunk_counts: Vec<usize> = Vec::with_capacity(string_refs.len());
+                let mut chunk_spans: Vec<ChunkSpan> = Vec::new();
                 for &text in &string_refs {
                     let spans = crate::chunk::cap_chunks(
                         model.chunk(text, max, overlap, strategy),
@@ -304,30 +325,43 @@ impl TextModelWrapper {
                     chunk_counts.push(spans.len());
                     for (start, end) in spans {
                         flat.push(&text[start..end]);
+                        if is_multi {
+                            chunk_spans.push(ChunkSpan {
+                                start: u64::try_from(start)?,
+                                end: u64::try_from(end)?,
+                            });
+                        }
                     }
                 }
 
-                model.predict(&flat, threads).map(|chunk_vecs| {
-                    if strategy == crate::chunk::STRATEGY_MEAN {
-                        // pool each document's chunks into one vector
-                        let mut out = Vec::with_capacity(chunk_counts.len());
-                        let mut idx = 0usize;
-                        for c in &chunk_counts {
-                            let end = idx + c;
-                            out.push(crate::chunk::mean_pool(&chunk_vecs[idx..end]));
-                            idx = end;
-                        }
-                        let counts = vec![1usize; out.len()];
-                        (out, counts)
-                    } else {
-                        // fixed/recursive/sentence: keep every chunk vector.
-                        (chunk_vecs, chunk_counts)
+                let chunk_vecs = model.predict(&flat, threads)?;
+                if strategy == crate::chunk::STRATEGY_MEAN {
+                    // Pool each document's chunks into one vector. The pooled
+                    // vector has no single truthful source span.
+                    let mut out = Vec::with_capacity(chunk_counts.len());
+                    let mut idx = 0usize;
+                    for c in &chunk_counts {
+                        let end = idx + c;
+                        out.push(crate::chunk::mean_pool(&chunk_vecs[idx..end]));
+                        idx = end;
                     }
-                })
-            };
+                    let counts = vec![1usize; out.len()];
+                    Ok((out, counts, Vec::new()))
+                } else {
+                    if chunk_vecs.len() != chunk_spans.len() {
+                        return Err(std::io::Error::other(format!(
+                            "embedding model returned {} vectors for {} chunk spans",
+                            chunk_vecs.len(),
+                            chunk_spans.len()
+                        ))
+                        .into());
+                    }
+                    Ok((chunk_vecs, chunk_counts, chunk_spans))
+                }
+            })();
 
             match computed {
-                Ok((embeddings_list, counts)) => {
+                Ok((embeddings_list, counts, chunk_spans)) => {
                     let mut float_vec_list: Vec<FloatVec> =
                         Vec::with_capacity(embeddings_list.len());
                     for embeddings in embeddings_list.iter() {
@@ -344,6 +378,17 @@ impl TextModelWrapper {
                     // N vectors/doc, offsets = prefix sums of per-doc counts.
                     let row_offsets = crate::chunk::row_offsets_from_counts(&counts);
                     let rows = counts.len();
+                    let (chunk_spans_ptr, spans_len, spans_cap) = if chunk_spans.is_empty() {
+                        (ptr::null(), 0, 0)
+                    } else {
+                        let values = (
+                            chunk_spans.as_ptr(),
+                            chunk_spans.len(),
+                            chunk_spans.capacity(),
+                        );
+                        std::mem::forget(chunk_spans);
+                        values
+                    };
 
                     let result = FloatVecResult {
                         error: ptr::null_mut(),
@@ -353,6 +398,9 @@ impl TextModelWrapper {
                         row_offsets: row_offsets.as_ptr(),
                         rows,
                         offsets_cap: row_offsets.capacity(),
+                        chunk_spans: chunk_spans_ptr,
+                        spans_len,
+                        spans_cap,
                     };
                     std::mem::forget(float_vec_list);
                     std::mem::forget(row_offsets);
@@ -367,6 +415,9 @@ impl TextModelWrapper {
                     row_offsets: ptr::null(),
                     rows: 0,
                     offsets_cap: 0,
+                    chunk_spans: ptr::null(),
+                    spans_len: 0,
+                    spans_cap: 0,
                 },
             }
         })
@@ -378,6 +429,9 @@ impl TextModelWrapper {
             row_offsets: ptr::null(),
             rows: 0,
             offsets_cap: 0,
+            chunk_spans: ptr::null(),
+            spans_len: 0,
+            spans_cap: 0,
         })
     }
 
@@ -406,6 +460,15 @@ impl TextModelWrapper {
                     result.row_offsets as *mut usize,
                     result.rows + 1,
                     result.offsets_cap,
+                );
+            }
+
+            // Free the flat chunk-span sidecar when present.
+            if !result.chunk_spans.is_null() && result.spans_cap > 0 {
+                let _ = Vec::from_raw_parts(
+                    result.chunk_spans as *mut ChunkSpan,
+                    result.spans_len,
+                    result.spans_cap,
                 );
             }
 

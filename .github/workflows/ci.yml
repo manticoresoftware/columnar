@@ -72,13 +72,19 @@ jobs:
             deps-${{ runner.os }}-${{ matrix.arch }}-
 
       - name: Configure
-        # BUILD_TESTING=OFF: standalone tests need a daemon checkout (MANTICORE_LOCATOR)
-        run: cmake -B build -DBUILD_TESTING=OFF
+        # The native x86_64 leg also owns the focused daemon-free KNN tests.
+        run: cmake -B build -DBUILD_TESTING=${{ matrix.arch == 'x86_64' && 'ON' || 'OFF' }}
 
       - name: Build libraries
         # building explicit targets skips the AVX2/AVX-512 external projects;
         # those are covered by the manticoresearch packaging workflows
         run: cmake --build build --config RelWithDebInfo --target columnar_lib secondary_index knn_lib --parallel
+
+      - name: Run focused KNN tests
+        if: matrix.arch == 'x86_64'
+        run: |
+          cmake --build build --config RelWithDebInfo --target knn_graphrepair_test knn_multivector_slot_test knn_embedding_span_test --parallel
+          ctest --test-dir build --build-config RelWithDebInfo --output-on-failure -R '^knn_'
 
   build-windows:
     # The shipped Windows configuration: cross-compile from Linux in the same

@@ -69,7 +69,7 @@ pub struct EmbedLib {
 const VERSION_STR: &[u8] = concat!(env!("EMBEDDINGS_VERSION_STR"), "\0").as_bytes();
 
 const LIB: EmbedLib = EmbedLib {
-    version: 9usize,
+    version: 10usize,
     version_str: VERSION_STR.as_ptr() as *const c_char,
     load_model: TextModelWrapper::load_model,
     free_model_result: TextModelWrapper::free_model_result,

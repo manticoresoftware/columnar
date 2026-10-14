@@ -26,7 +26,7 @@
 namespace knn
 {
 
-static const int LIB_VERSION = 18;
+static const int LIB_VERSION = 19;
 static const uint32_t STORAGE_VERSION = 4;
 
 enum class HNSWSimilarity_e
@@ -92,6 +92,13 @@ struct ChunkSettings_t
 	uint32_t		m_uMaxChunks		= 0;	// 0 = unlimited
 };
 
+/// Half-open UTF-8 byte range in the source text for one emitted chunk vector.
+struct TextEmbeddingSpan_t
+{
+	uint64_t	m_uStart = 0;
+	uint64_t	m_uEnd = 0;
+};
+
 struct AttrWithSettings_t : public common::SchemaAttr_t, public IndexSettings_t {};
 using Schema_t = std::vector<AttrWithSettings_t>;
 
@@ -99,6 +106,7 @@ struct DocDist_t
 {
 	uint32_t	m_tRowID;
 	float		m_fDist;
+	uint32_t	m_uVectorSlot = 0;	// local vector/chunk slot within the row
 };
 
 struct SearchStats_t
@@ -176,8 +184,9 @@ class TextToEmbeddings_i
 public:
 	virtual			~TextToEmbeddings_i() = default;
 
-	// text i owns dEmbeddings[(*pRowOffsets)[i] .. (*pRowOffsets)[i+1]] in multi-vector case
-	virtual	bool	Convert ( const std::vector<std::string_view> & dTexts, std::vector<std::vector<float>> & dEmbeddings, std::string & sError, int iThreads = 0, const ChunkSettings_t * pChunk = nullptr, std::vector<size_t> * pRowOffsets = nullptr ) const = 0;
+	// text i owns dEmbeddings[(*pRowOffsets)[i] .. (*pRowOffsets)[i+1]] in multi-vector case;
+	// pChunkSpans, when requested, is a 1:1 flat sidecar for multi-vector strategies only.
+	virtual	bool	Convert ( const std::vector<std::string_view> & dTexts, std::vector<std::vector<float>> & dEmbeddings, std::string & sError, int iThreads = 0, const ChunkSettings_t * pChunk = nullptr, std::vector<size_t> * pRowOffsets = nullptr, std::vector<TextEmbeddingSpan_t> * pChunkSpans = nullptr ) const = 0;
 	virtual int		GetDims() const = 0;
 };
 

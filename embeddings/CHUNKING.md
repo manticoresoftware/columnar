@@ -1,10 +1,11 @@
 # Embedding strategy FFI (embeddings lib → Manticore daemon)
 
-Embeddings lib **v8**. The one embedding call, `make_vect_embeddings`, takes an
-optional `ChunkSettings*` that selects how a document becomes one or many
-vectors. Cardinality is carried as **data** in the return (a per-document
-offsets sidecar), so a single method covers both 1-vector and N-vector
-strategies — no second method.
+Embeddings lib **v10**. Version 9 added `max_input_tokens` to `load_model`;
+version 10 adds source chunk spans to `FloatVecResult`. The one embedding call,
+`make_vect_embeddings`, takes an optional `ChunkSettings*` that selects how a
+document becomes one or many vectors. Cardinality is carried as **data** in the
+return (a per-document offsets sidecar), so a single method covers both 1-vector
+and N-vector strategies — no second method.
 
 ## FFI
 
@@ -28,7 +29,7 @@ FloatVecResult make_vect_embeddings(
     const ChunkSettings*, int32_t threads);
 ```
 
-### Return: flat vectors + per-row offsets (cardinality is data)
+### Return: flat vectors + row offsets + source spans
 
 ```c
 struct FloatVecResult {
@@ -39,6 +40,14 @@ struct FloatVecResult {
   const uintptr_t *m_pRowOffsets;  // length rows+1; doc i = m_tEmbedding[off[i] .. off[i+1]]
   uintptr_t        rows;           // number of input documents
   uintptr_t        offsets_cap;
+  const ChunkSpan *m_pChunkSpans;  // fixed/recursive/sentence only; `len` entries
+  uintptr_t        spans_len;
+  uintptr_t        spans_cap;
+};
+
+struct ChunkSpan {
+  uint64_t m_uStart; // inclusive UTF-8 byte offset in this vector's source document
+  uint64_t m_uEnd;   // exclusive UTF-8 byte offset
 };
 ```
 
@@ -46,10 +55,14 @@ Read document `i`'s vectors as `m_tEmbedding[m_pRowOffsets[i] .. m_pRowOffsets[i
 - `truncate`/`mean` → one vector/doc, so `len == rows == count` and offsets are
   `[0, 1, …, rows]` (you may just index `m_tEmbedding[i]`).
 - `fixed`/`recursive`/`sentence` → N vectors/doc; `len` = total chunks, and the
-  offsets group them per document.
+  offsets group them per document. `m_pChunkSpans[i]` describes
+  `m_tEmbedding[i]`, so the span sidecar is flat and exactly 1:1 with vectors.
+- `truncate`/`mean` return `m_pChunkSpans == nullptr` and `spans_len == 0`:
+  neither result has one truthful chunk range (`truncate` may drop a tail;
+  `mean` pools several chunks).
 
 Free with `free_vec_result` (it frees the offsets too). Load-time check:
-`EmbedLib.version == 8`.
+`EmbedLib.version == 10`.
 
 ## Strategies
 
@@ -63,7 +76,11 @@ Free with `free_vec_result` (it frees the offsets too). Load-time check:
 
 - `max_tokens = 0` → the model's own max input length.
 - `overlap_tokens` → token overlap between chunks (multi-vector + mean).
-- `max_chunks` → cap chunks/doc; overflow merges the tail into the last chunk.
+- `max_chunks` → cap chunks/doc; overflow merges the tail into the last retained
+  chunk. The final returned span is the exact post-cap merged range and can be
+  larger than `max_tokens`; current model/provider input handling may truncate
+  that merged text while embedding it. This documents the existing cap behavior
+  rather than changing its semantics.
 - Local models chunk on the model's real subword tokens; remote API models
   (OpenAI/Voyage/Jina) chunk by a char/byte heuristic (no local tokenizer).
 
