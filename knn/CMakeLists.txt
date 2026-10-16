@@ -26,21 +26,22 @@ target_include_directories(knn_lib PRIVATE ${columnar_SOURCE_DIR}/embeddings)
 target_link_libraries ( knn_lib PRIVATE hnswlib::hnswlib columnar_root util common )
 set_target_properties( knn_lib PROPERTIES PREFIX "" OUTPUT_NAME lib_manticore_knn${lib_arch_suffix} )
 
-# Regression test for the HNSW connectivity repair pass. Links the knn sources directly it can reach graphrepair.h (internal, not part of the exported C ABI)
+# Regression test for the HNSW connectivity repair pass. Links the knn sources directly it can reach graphrepair.h (internal, not part of the exported C ABI).
+# The tests are executables, so unlike the knn module they need libdl explicitly on glibc before 2.34 (embeddings.cpp loads the embeddings library with dlopen).
 if ( NOT EXTERNAL_LIB AND BUILD_TESTING )
 	add_executable ( knn_graphrepair_test test_graphrepair.cpp ${KNN_SOURCES} )
 	target_include_directories ( knn_graphrepair_test PRIVATE ${columnar_SOURCE_DIR}/embeddings ${CMAKE_CURRENT_SOURCE_DIR} )
-	target_link_libraries ( knn_graphrepair_test PRIVATE hnswlib::hnswlib columnar_root util common )
+	target_link_libraries ( knn_graphrepair_test PRIVATE hnswlib::hnswlib columnar_root util common ${CMAKE_DL_LIBS} )
 	add_test ( NAME knn_graphrepair COMMAND knn_graphrepair_test )
 
 	add_executable ( knn_multivector_slot_test test_multivector_slot.cpp ${KNN_SOURCES} )
 	target_include_directories ( knn_multivector_slot_test PRIVATE ${columnar_SOURCE_DIR}/embeddings ${CMAKE_CURRENT_SOURCE_DIR} )
-	target_link_libraries ( knn_multivector_slot_test PRIVATE hnswlib::hnswlib columnar_root util common )
+	target_link_libraries ( knn_multivector_slot_test PRIVATE hnswlib::hnswlib columnar_root util common ${CMAKE_DL_LIBS} )
 	add_test ( NAME knn_multivector_slot COMMAND $<TARGET_FILE:knn_multivector_slot_test> )
 
 	add_executable ( knn_embedding_span_test test_embedding_span.cpp ${KNN_SOURCES} )
 	target_include_directories ( knn_embedding_span_test PRIVATE ${columnar_SOURCE_DIR}/embeddings ${CMAKE_CURRENT_SOURCE_DIR} )
-	target_link_libraries ( knn_embedding_span_test PRIVATE hnswlib::hnswlib columnar_root util common )
+	target_link_libraries ( knn_embedding_span_test PRIVATE hnswlib::hnswlib columnar_root util common ${CMAKE_DL_LIBS} )
 	add_test ( NAME knn_embedding_span COMMAND $<TARGET_FILE:knn_embedding_span_test> )
 endif()
 

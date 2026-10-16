@@ -28,10 +28,6 @@ set ( _CMAKE_BUILD_TYPE ${CMAKE_BUILD_TYPE} )
 # The below version is used for versioning of the package and is replaced by the version from the pack workflow
 project ( columnar VERSION 0.0.0 )
 
-# Enable add_test() before component subdirectories are configured. Daemon
-# ubertests are attached later by testing.cmake when a daemon checkout exists.
-include ( CTest )
-
 set ( COLUMNAR_EMBEDDED_BUILD OFF )
 if (NOT "${columnar_SOURCE_DIR}" STREQUAL "${CMAKE_SOURCE_DIR}")
 	set ( COLUMNAR_EMBEDDED_BUILD ON )
@@ -231,6 +227,11 @@ endif ()
 target_link_libraries ( columnar_root INTERFACE columnar::columnar_api )
 target_include_directories ( columnar_root INTERFACE columnar util common )
 set_property ( TARGET columnar_root PROPERTY INTERFACE_POSITION_INDEPENDENT_CODE TRUE )
+
+# Enable add_test() before component subdirectories are configured. Daemon ubertests are attached later by
+# testing.cmake when a daemon checkout exists. This must stay below the packaging block above: CTest declares the
+# BUILD_TESTING cache option, and the "no testing on packaging" override cannot replace an option that already exists.
+include ( CTest )
 
 add_subdirectory ( util )
 add_subdirectory ( common )
