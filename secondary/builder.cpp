@@ -68,6 +68,7 @@ public:
 
 	virtual bool	Setup ( const std::string & sFile, const SchemaAttr_t & tAttr, int iAttr, std::string & sError ) = 0;
 	virtual int		GetItemSize () const = 0;
+	virtual size_t	GetUsedBytes () const = 0;
 	virtual void	SetItemsCount ( size_t tSize ) = 0;
 
 	virtual void	SetAttr ( uint32_t tRowID, int64_t tAttr ) = 0;
@@ -121,6 +122,7 @@ public:
 
 	bool	Setup ( const std::string & sFile, const SchemaAttr_t & tAttr, int iAttr, std::string & sError ) final;
 	int		GetItemSize() const final { return sizeof ( m_dRows[0] ); }
+	size_t	GetUsedBytes() const final { return m_dRows.size() * sizeof ( m_dRows[0] ); }
 	void	SetItemsCount ( size_t tSize ) final { m_dRows.reserve(tSize); }
 	void	Flush() final;
 	void	Done() final;
@@ -585,9 +587,12 @@ struct BinValue_T : public RawValue_T<VALUE>
 	{
 		if ( m_pReader->GetPos()>=m_iBinEnd )
 			return false;
-		
+
 		m_pReader->Read ( (uint8_t *)( this ), sizeof ( RawValue_T<VALUE> ) );
-		return true;
+
+		// a failed read (e.g. a bin shorter than recorded) leaves the position where it was; without this check the
+		// stale entry would be fed to the merge again and again, forever
+		return !m_pReader->IsError();
 	}
 };
 
@@ -712,6 +717,13 @@ bool SIWriter_T<SRC_VALUE, DST_VALUE>::Process ( FileWriter_c & tDstFile, FileWr
 			dBins.push ( tBin );
 	}
 
+	for ( const auto & pReader : dSrcFile )
+		if ( pReader->IsError() )
+		{
+			sError = pReader->GetError();
+			return false;
+		}
+
 	tWriter.Done(tDstFile);
 
 	m_uCountDistinct	= tWriter.GetCountDistinct();
@@ -765,6 +777,13 @@ uint64_t SIWriter_T<SRC_VALUE, DST_VALUE>::GetMax() const
 template<typename VALUE>
 SIWriter_i * RawWriter_T<VALUE>::GetWriter ( std::string & sError )
 {
+	// a bin that failed to be written in full must not be merged: its recorded size is wrong
+	if ( m_tFile.IsError() )
+	{
+		sError = m_tFile.GetError();
+		return nullptr;
+	}
+
 	std::unique_ptr<SIWriter_i> pWriter { nullptr };
 	switch ( m_tAttr.m_eType )
 	{
@@ -827,6 +846,7 @@ private:
 	size_t		m_tBufferSize = 0;
 	uint32_t	m_tRowID = 0;
 	uint32_t	m_uMaxRows = 0;
+	size_t		m_tMemoryLimit = 0;
 
 	std::vector<std::shared_ptr<RawWriter_i>>	m_dRawWriter;
 	std::vector<std::shared_ptr<SIWriter_i>>	m_dCidWriter;
@@ -835,6 +855,7 @@ private:
 	ScopedFilesRemoval_t						m_tCleanup;
 
 	void Flush();
+	size_t GetUsedBytes() const;
 	bool WriteMeta ( const std::string & sPgmName, const std::string & sBlocksName, const std::vector<uint64_t> & dBlocksOffStart, const std::vector<uint64_t> & dBlocksCount, uint64_t uMetaOff, std::string & sError ) const;
 };
 
@@ -909,6 +930,7 @@ bool Builder_c::Setup ( const Settings_t & tSettings, const Schema_t & tSchema, 
 			iRowSize += pWriter->GetItemSize();
 
 	m_uMaxRows = std::min ( std::max ( size_t(10000), tMemoryLimit / iRowSize ), size_t(UINT32_MAX) );
+	m_tMemoryLimit = tMemoryLimit;
 
 	for ( auto & pWriter : m_dRawWriter )
 	{
@@ -925,8 +947,21 @@ void Builder_c::SetRowID ( uint32_t tRowID )
 {
 	m_tRowID = tRowID;
 
-	if ( ( m_tRowID % m_uMaxRows )==0 )
+	// the row budget assumes one item per row. attributes with many values per row (MVAs, float vectors) fill the
+	// memory limit long before that many rows, so the accumulated bins are checked against the limit as well
+	if ( ( m_tRowID % m_uMaxRows )==0 || ( m_tMemoryLimit && GetUsedBytes()>=m_tMemoryLimit ) )
 		Flush();
+}
+
+
+size_t Builder_c::GetUsedBytes() const
+{
+	size_t tUsed = 0;
+	for ( const auto & pWriter : m_dRawWriter )
+		if ( pWriter )
+			tUsed += pWriter->GetUsedBytes();
+
+	return tUsed;
 }
 
 void Builder_c::SetAttr ( int iAttr, int64_t tAttr )
