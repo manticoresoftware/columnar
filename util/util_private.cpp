@@ -273,12 +273,43 @@ void FileWriter_c::Write_string ( const std::string & sStr )
 }
 
 
+// one write() call takes a 32-bit length on Windows and transfers at most 0x7ffff000 bytes on Linux, whatever the
+// length, so a buffer of any size goes out in bounded pieces and a short write is retried from where it stopped
+static bool WriteAll ( int iFD, const uint8_t * pData, size_t tLength )
+{
+	static const size_t MAX_WRITE_CHUNK = 0x7ffff000;
+
+	while ( tLength )
+	{
+		size_t tChunk = tLength<MAX_WRITE_CHUNK ? tLength : MAX_WRITE_CHUNK;
+		auto iRes = ::write ( iFD, pData, (unsigned int)tChunk );
+		if ( iRes<0 )
+		{
+			if ( errno==EINTR )
+				continue;
+
+			return false;
+		}
+
+		if ( !iRes )
+		{
+			errno = EIO;
+			return false;
+		}
+
+		pData += iRes;
+		tLength -= (size_t)iRes;
+	}
+
+	return true;
+}
+
+
 void FileWriter_c::Flush()
 {
 	assert ( m_iFD>=0 );
 
-	int iRes = ::write ( m_iFD, m_pData.get(), (uint32_t)m_tUsed );
-	if ( iRes<0 )
+	if ( !WriteAll ( m_iFD, m_pData.get(), m_tUsed ) )
 	{
 		m_sError = FormatStr ( "write error in '%s': %d (%s)", m_sFile.c_str(), errno, strerror(errno) );
 		m_bError = true;
@@ -343,8 +374,7 @@ void FileWriterNonBuffered_c::Write ( const uint8_t * pData, size_t tLength )
 {
 	assert ( m_iFD>=0 );
 
-	int iRes = ::write ( m_iFD, pData, (uint32_t)tLength );
-	if ( iRes<0 )
+	if ( !WriteAll ( m_iFD, pData, tLength ) )
 	{
 		m_sError = FormatStr ( "write error in '%s': %d (%s)", m_sFile.c_str(), errno, strerror(errno) );
 		m_bError = true;
