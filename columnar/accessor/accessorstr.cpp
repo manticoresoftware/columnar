@@ -75,8 +75,8 @@ public:
 	FORCE_INLINE Span_T<uint8_t>	ReadValue ( RD & tReader, int iIdInBlock );
 	FORCE_INLINE int				GetValueLength() const { return (int)m_tValuesOffset; }
 
-	template <typename RD> FORCE_INLINE void ReadSubblock ( int iSubblockIdInBlock, int iSubblockValues, RD & tReader ) {}
-	FORCE_INLINE Span_T<uint64_t>	GetAllValueLengths() { return m_dLengths; }
+	template <typename RD> FORCE_INLINE void ReadSubblock ( int iSubblockIdInBlock, int iSubblockValues, RD & tReader ) { m_tLengthsRead = { m_dLengths.data(), (size_t)iSubblockValues }; }
+	FORCE_INLINE Span_T<uint64_t>	GetAllValueLengths() { return m_tLengthsRead; }
 	template <typename RD> FORCE_INLINE Span_T<Span_T<uint8_t>> & ReadAllSubblockValues ( int iSubblockIdInBlock, int iSubblockValues, RD & tReader );
 
 private:
@@ -87,6 +87,7 @@ private:
 	std::vector<uint8_t>		m_dValue;
 
 	SpanResizeable_T<uint64_t>	m_dLengths;
+	Span_T<uint64_t>			m_tLengthsRead;
 	SpanResizeable_T<uint8_t>	m_dAllValues;
 	SpanResizeable_T<Span_T<uint8_t>> m_dAllValuePtrs;
 };
