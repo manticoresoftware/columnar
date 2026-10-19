@@ -797,12 +797,16 @@ int AnalyzerBlock_Int_Values_T<VALUES,ACCESSOR_VALUES>::ProcessSubblock_ValuesLi
 
 	for ( auto i : dValues )
 	{
+		bool bAnyEqual = false;
 		for ( auto j : m_dValues )
-			if ( ( i==(ACCESSOR_VALUES)j ) ^ (!EQ) )
+			if ( i==(ACCESSOR_VALUES)j )
 			{
-				*pRowID++ = tRowID;
+				bAnyEqual = true;
 				break;
 			}
+
+		if ( bAnyEqual ^ (!EQ) )
+			*pRowID++ = tRowID;
 
 		tRowID++;
 	}
