@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://manticoresearch.com" target="_blank" rel="noopener">
-    <img src="https://manticoresearch.com/manticore-logo-central.svg" width="15%" alt="Manicore Search Logo">
+    <img src="https://manticoresearch.com/manticore-logo-central.svg" width="15%" alt="Manticore Search logo">
   </a>
 </p>
 
@@ -8,82 +8,174 @@
   Manticore Columnar Library
 </h1>
 
-Manticore Columnar Library is a column-oriented storage and secondary indexing library, aiming to provide **decent performance with low memory footprint at big data volume**.
-When used in combination with [Manticore Search](https://github.com/manticoresoftware/manticoresearch) can be beneficial for those looking for:
-1. log analytics including rich free text search capabities (which is missing in e.g. [Clickhouse](https://github.com/ClickHouse/ClickHouse) - great tool for metrics analytics)
-2. faster / low resource consumption log/metrics analytics. Since the library and Manticore Search are both written in C++ with low level optimizations in mind, in many cases the performance / RAM consumption is better than in Lucene / SOLR / Elasticsearch
-3. running log / metric analytics in docker / kubernetes. Manticore Search + the library can work with as little as 30 megabytes of RAM which Elasticsearch / Clickhouse can't. It also starts in less than a second or a few seconds in the worst case. Since the overhead is so little you can afford having more nodes of Manticore Search + the library than Elasticsearch. More nodes and quicker start means higher high availability and agility.
-4. powerful SQL for logs/metrics analytics and everything else [Manticore Search](https://github.com/manticoresoftware/manticoresearch) can give you
+<p align="center">
+  <b>Columnar storage, secondary indexes and KNN vector search for <a href="https://github.com/manticoresoftware/manticoresearch">Manticore Search</a>.</b><br>
+  Query data that does not fit in RAM, filter it quickly, and search it by meaning.
+</p>
+
+<p align="center">
+  <a href="https://github.com/manticoresoftware/columnar/actions/workflows/ci.yml"><img src="https://github.com/manticoresoftware/columnar/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/manticoresoftware/columnar/releases/latest"><img src="https://img.shields.io/github/v/release/manticoresoftware/columnar?label=release" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/manticoresoftware/columnar" alt="License: Apache-2.0"></a>
+</p>
+
+Manticore Columnar Library (MCL) is a set of C++ libraries, plus a Rust embeddings library, that Manticore Search loads at startup. It provides the engine behind:
+
+| Feature | What it gives you | How it works | Manual |
+|---|---|---|---|
+| **Columnar storage** (`columnar/`) | Lower memory use on large tables: attributes stay on disk instead of in RAM | Each attribute is stored as its own column, in compressed blocks of 65,536 values. The encoding is chosen per block, and integers are packed with [FastPFOR](https://github.com/fast-pack/FastPFor) and [StreamVByte](https://github.com/fast-pack/streamvbyte) codecs | [Row-wise and columnar storage](https://manual.manticoresearch.com/Creating_a_table/Data_types#Row-wise-and-columnar-attribute-storages) |
+| **Secondary indexes** (`secondary/`) | Faster filtering on attributes, enabled by default | Compact learned index built on the [PGM-index](https://github.com/gvinciguerra/PGM-index) | [Automatic secondary indexes](https://manual.manticoresearch.com/Introduction#Automatic-secondary-indexes) |
+| **KNN vector search** (`knn/`) | Similarity, semantic and hybrid search over `float_vector` attributes | HNSW graphs built on [hnswlib](https://github.com/nmslib/hnswlib), with L2, inner-product and cosine distance, plus optional 8-bit and 1-bit quantization | [KNN vector search](https://manual.manticoresearch.com/Searching/KNN) |
+| **Auto embeddings** (`embeddings/`) | Text is turned into vectors inside Manticore, with no separate model service | Local models run on ONNX Runtime or [Candle](https://github.com/huggingface/candle). Remote models use the OpenAI, Voyage and Jina APIs | [Auto embeddings](https://manual.manticoresearch.com/Searching/KNN#Auto-Embeddings-%28Recommended%29) |
+
+> [!NOTE]
+> MCL is not a general-purpose standalone library. Its C++ interfaces (`columnar/columnar.h`, `secondary/secondary.h`, `knn/knn.h`) exist for Manticore Search. Each one carries a `LIB_VERSION` that must exactly match the version the daemon was built against. To use these features, install Manticore Search.
+
+## How it fits into Manticore Search
+
+```mermaid
+flowchart LR
+    client["Clients<br/>SQL · HTTP JSON"] --> searchd["Manticore Search daemon<br/>(searchd)"]
+    searchd -- dlopen --> col["lib_manticore_columnar<br/>columnar attribute storage"]
+    searchd -- dlopen --> si["lib_manticore_secondary<br/>secondary indexes"]
+    searchd -- dlopen --> knn["lib_manticore_knn<br/>HNSW vector search"]
+    knn -- loads --> emb["lib_manticore_knn_embeddings<br/>auto embeddings (Rust)"]
+```
+
+At startup, `searchd` looks for these modules in its modules directory, for example `/usr/share/manticore/modules` on Linux. `indexer` and `indextool` load the same modules. On x86_64 it prefers the `_avx512` build, then the `_avx2` build, then the baseline build, depending on what the CPU supports. If a module is missing, the daemon still runs, but that feature is unavailable.
 
 ## Getting started
 
-### Requirements
+MCL ships inside Manticore Search. Since Manticore 25.0.0, the `manticore` package for Debian, Ubuntu and RHEL-based systems is a bundle that already includes `manticore-columnar-lib`. The `manticore` Homebrew formula from `manticoresoftware/tap` and the official Docker image include the MCL modules too.
 
-1. CPU: with SSE >= 4.2
-2. Architecture: arm64 or x86_64 
-3. OS: Debian-based OS (Debian, Ubuntu, Mint), RHEL-based (RHEL, Centos, Alma, Oracle Linux, Amazon Linux) OS, Windows, MacOS
+**Try it in Docker:**
 
-### Installation from yum/apt repositories
-#### Ubuntu, Debian:
+```bash
+docker run --name manticore --rm -d manticoresearch/manticore && until docker logs manticore 2>&1 | grep -q "accepting connections"; do sleep 1; done && docker exec -it manticore mysql && docker stop manticore
+```
+
+This sandbox keeps no data. When you exit the MySQL client, the container stops and is removed.
+
+**Install on Ubuntu or Debian** ([other platforms](https://manual.manticoresearch.com/Installation/Installation)):
+
 ```bash
 wget https://repo.manticoresearch.com/manticore-repo.noarch.deb
-sudo dpkg -i manticore-repo.noarch.deb
+sudo apt install ./manticore-repo.noarch.deb
 sudo apt update
-sudo apt install manticore-columnar-lib
+sudo apt install manticore
 ```
 
-#### Centos:
+Check that the libraries were loaded: `searchd -v` lists the columnar, secondary, knn and embeddings versions. Output from the `manticoresearch/manticore:29.9.0` image:
+
+```
+Manticore 29.9.0 58e88d5ab@26091108 (columnar 14.2.1 cb282a2@26090615) (secondary 14.2.1 cb282a2@26090615) (knn 14.2.1 cb282a2@26090615) (embeddings 1.1.1 cb282a2@26090615)
+```
+
+Then create a table that stores its attributes in columnar storage and has a vector column:
+
+```sql
+CREATE TABLE products(title TEXT, price FLOAT,
+  emb FLOAT_VECTOR KNN_TYPE='hnsw' KNN_DIMS='4' HNSW_SIMILARITY='l2') ENGINE='columnar';
+
+INSERT INTO products(id, title, price, emb) VALUES
+  (1, 'red shoes', 49.9, (0.1, 0.2, 0.3, 0.4)),
+  (2, 'blue shirt', 19.5, (0.9, 0.1, 0.1, 0.1));
+
+SELECT id, title, price FROM products WHERE price > 20;
+SELECT id, knn_dist() FROM products WHERE knn(emb, 2, (0.1, 0.2, 0.3, 0.4));
+```
+
+You can also make only some attributes columnar with `engine='columnar'` on those attributes. Plain tables use the `columnar_attrs` setting instead. See [how to switch between the storages](https://manual.manticoresearch.com/Creating_a_table/Data_types#How-to-switch-between-the-storages).
+
+## Requirements and limitations
+
+- **Platforms.** MCL runs wherever Manticore Search packages are available: Debian-based and RHEL-based Linux and macOS on x86_64 and arm64, and Windows on x86_64. See the Manticore [installation guide](https://manual.manticoresearch.com/Installation/Installation) for supported distribution releases.
+- **CPU.** On Linux and macOS, the baseline x86_64 build targets `x86-64-v2`; MSVC and clang-cl baseline builds use `/arch:AVX`. Columnar storage and secondary indexes need SSE 4.2; otherwise the daemon reports `MCL requires a CPU that supports SSE 4.2`. KNN search also needs POPCNT and reports `MCL requires a CPU that supports SSE 4.2 and POPCNT instruction`. In both cases `searchd` logs a warning and keeps running without that library. AVX2 and AVX-512 builds are used automatically when the CPU supports them. On arm64, the SIMD code runs through [SIMDe](https://github.com/simd-everywhere/simde).
+- **Version matching.** Each library exposes an API number, `LIB_VERSION`. If it differs from the one the daemon was built with, the daemon refuses to load the library, for example `daemon requires columnar library v29 (trying to load v28)`. Upgrade or downgrade Manticore and MCL together. The `manticore` bundle package does this for you.
+- **Columnar is a trade-off.** If all your attributes fit in RAM, the default row-wise storage usually gives lower latency. Columnar storage is designed for data that does not fit in memory.
+- **KNN memory.** HNSW indexes must be fully loaded into memory. Quantization reduces this footprint. Float vectors and KNN search are only supported in real-time tables.
+- **Windows builds.** Windows DLLs are cross-compiled from Linux with clang. A native MSVC build of this repository is not supported, because MSVC rejects designated initializers under C++17.
+
+## Building from source
+
+Most users do not need this: the libraries come with Manticore Search. Build from source to work on MCL itself.
+
+The C++ libraries need CMake 3.21 or newer, a C++17 compiler (GCC or Clang) and network access. During configuration, CMake downloads Manticore's forks of FastPFOR, StreamVByte, PGM-index and hnswlib from GitHub, unless you provide them in a local bundle directory (`LIBS_BUNDLE`). These are the build commands CI runs on Linux x86_64, Linux aarch64 and macOS arm64. The x86_64 job also sets `-DBUILD_TESTING=ON`, and a separate job cross-compiles the Windows x64 build from Linux:
+
 ```bash
-sudo yum install https://repo.manticoresearch.com/manticore-repo.noarch.rpm
-sudo yum install manticore-columnar-lib
+git clone https://github.com/manticoresoftware/columnar.git
+cd columnar
+cmake -B build -DBUILD_TESTING=OFF
+cmake --build build --config RelWithDebInfo --target columnar_lib secondary_index knn_lib --parallel
 ```
 
-`searchd -v` should include `columnar x.y.z`, e.g.:
-```bash
-root@srv# searchd -v
-Manticore 6.0.2 89c7a5139@230210 (columnar 2.0.0 a7c703d@230130) (secondary 2.0.0 a7c703d@230130)
-```
+This produces `lib_manticore_columnar`, `lib_manticore_secondary` and `lib_manticore_knn`. Building the explicit targets skips the extra AVX2 and AVX-512 builds. A plain `cmake --build build` on x86_64 includes them.
 
-### Basic usage:
-1. Read https://manual.manticoresearch.com/Creating_a_table/Data_types#Row-wise-and-columnar-attribute-storages
-2. Create plain or real-time table specifying that the columnar storage should be used
+<details>
+<summary>Embeddings library, tests, and running a local build with Manticore</summary>
+
+- **Embeddings.** The embeddings library is a Rust crate in [`embeddings/`](embeddings/). Add `-DBUILD_EMBEDDINGS_LOCALLY=ON` to build it from CMake; this requires Rust and Cargo, and CMake downloads ONNX Runtime. The `embeddings` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) shows the full toolchain and the `cargo fmt`, `clippy` and `test` commands.
+- **Tests.** With `-DBUILD_TESTING=ON`, the `knn_graphrepair_test`, `knn_multivector_slot_test` and `knn_embedding_span_test` targets build focused KNN tests that run with `ctest -R '^knn_'`. The full functional test suite runs from the Manticore Search repository against a daemon.
+- **Running with Manticore.** `searchd` takes module paths from the `LIB_MANTICORE_COLUMNAR`, `LIB_MANTICORE_SECONDARY`, `LIB_MANTICORE_KNN` and `LIB_MANTICORE_KNN_EMBEDDINGS` environment variables. Point them at your build outputs. The Manticore Search repository also includes MCL as the `mcl` git submodule. Configure it with `-DMCL_LOCAL_RUNTIME=ON` to build the daemon and MCL together. See [Compiling from sources](https://manual.manticoresearch.com/Installation/Compiling_from_sources).
+
+</details>
 
 ## Benchmarks
 
-### Log analytics - 6x faster than Elasticsearch
+In 2022, the Manticore team published these comparisons of Manticore Search with columnar storage against Elasticsearch and ClickHouse on [db-benchmarks.com](https://db-benchmarks.com/). The test framework is [open source](https://github.com/db-benchmarks/db-benchmarks). The figures below are the geometric mean of per-query response-time ratios from the published charts. They reflect the software versions of that time.
 
-https://db-benchmarks.com/test-logs10m/#elasticsearch-tuned-vs-manticore-search-columnar-storage
+| Dataset | vs Elasticsearch | vs ClickHouse |
+|---|---|---|
+| [10M Nginx logs](https://db-benchmarks.com/test-logs10m/) | [6.52x faster](https://db-benchmarks.com/test-logs10m/#elasticsearch-tuned-vs-manticore-search-columnar-storage) (tuned) | [1.40x faster](https://db-benchmarks.com/test-logs10m/#clickhouse-vs-manticore-search-columnar-storage) |
+| [110M Hacker News comments](https://db-benchmarks.com/test-hn/) | [5.06x faster](https://db-benchmarks.com/test-hn/#manticore-search-columnar-storage-vs-elasticsearch) (tuned) | [11.60x faster](https://db-benchmarks.com/test-hn/#manticore-search-columnar-storage-vs-clickhouse) |
+| [1.7B NYC taxi rides](https://db-benchmarks.com/test-taxi/) | [3.97x faster](https://db-benchmarks.com/test-taxi/#manticore-search-vs-elasticsearch) (tuned) | [1.81x faster](https://db-benchmarks.com/test-taxi/#manticore-search-vs-clickhouse) |
 
-![logs_es_msc](https://db-benchmarks.com/test-logs10m/est_msc.png)
+Most comparisons include queries where Manticore is slower; the per-query tables show them. In the 10M logs test, Elasticsearch timed out on 2 queries, which were excluded from its score.
 
-### Log analytics - 1.4x faster than Clickhouse
+<details>
+<summary>Charts</summary>
 
-https://db-benchmarks.com/test-logs10m/#clickhouse-vs-manticore-search-columnar-storage
+**10M Nginx logs, compared with Elasticsearch (tuned)**
 
-![logs_es_ch](https://db-benchmarks.com/test-logs10m/ch_msc.png)
+![Manticore Search columnar vs Elasticsearch on 10M Nginx logs](https://db-benchmarks.com/test-logs10m/est_msc.png)
 
-### Medium data - 110M Hackernews comments - 5x faster than Elasticsearch
+**10M Nginx logs, compared with ClickHouse**
 
-https://db-benchmarks.com/test-hn/#manticore-search-columnar-storage-vs-elasticsearch
+![Manticore Search columnar vs ClickHouse on 10M Nginx logs](https://db-benchmarks.com/test-logs10m/ch_msc.png)
 
-![hn_es_msc](https://db-benchmarks.com/test-hn/msc_es.png)
+**110M Hacker News comments, compared with Elasticsearch (tuned)**
 
-### Medium data - 110M Hackernews comments - 11x faster than Clickhouse
+![Manticore Search columnar vs Elasticsearch on 110M Hacker News comments](https://db-benchmarks.com/test-hn/msc_es.png)
 
-https://db-benchmarks.com/test-hn/#manticore-search-columnar-storage-vs-clickhouse
+**110M Hacker News comments, compared with ClickHouse**
 
-![hn_msc_ch](https://db-benchmarks.com/test-hn/msc_ch.png)
+![Manticore Search columnar vs ClickHouse on 110M Hacker News comments](https://db-benchmarks.com/test-hn/msc_ch.png)
 
-### Big data - 1.7B NYC taxi rides - 4x faster than Elasticsearch
+**1.7B NYC taxi rides, compared with Elasticsearch (tuned)**
 
-https://db-benchmarks.com/test-taxi/#manticore-search-vs-elasticsearch
+![Manticore Search columnar vs Elasticsearch on 1.7B NYC taxi rides](https://db-benchmarks.com/test-taxi/ms_es.png)
 
-![taxi_ms_es](https://db-benchmarks.com/test-taxi/ms_es.png)
+**1.7B NYC taxi rides, compared with ClickHouse**
 
-### Big data - 1.7B NYC taxi rides - 1.8x faster than Clickhouse
+![Manticore Search columnar vs ClickHouse on 1.7B NYC taxi rides](https://db-benchmarks.com/test-taxi/ms_ch.png)
 
-https://db-benchmarks.com/test-taxi/#manticore-search-vs-clickhouse
+</details>
 
-![taxi_ms_ch](https://db-benchmarks.com/test-taxi/ms_ch.png)
+Further reading on the Manticore blog: [About columnar storage](https://manticoresearch.com/blog/mcl/), [mmap for columnar KNN rescoring](https://manticoresearch.com/blog/columnar-mmap/), [vector quantization](https://manticoresearch.com/blog/quantization/), [faster HNSW search](https://manticoresearch.com/blog/knn-hnsw-performance/) and [ONNX embeddings](https://manticoresearch.com/blog/onnx-embeddings-speedup/).
 
+## Versions and releases
 
+- The latest GitHub release is [14.2.1](https://github.com/manticoresoftware/columnar/releases/tag/14.2.1). It is the version in the current `manticore-columnar-lib` packages and in Manticore Search 29.9.0.
+- Pushes to `master` that change code get a version tag automatically from [`.github/workflows/auto_version.yml`](.github/workflows/auto_version.yml), so `master` can be ahead of the latest release. The `project()` version in `CMakeLists.txt` is a placeholder that the packaging workflow replaces.
+- Binary packages are built and published by the Manticore Search repository, not attached to GitHub releases here.
+- For release notes, see [GitHub Releases](https://github.com/manticoresoftware/columnar/releases) and the [Manticore Search changelog](https://manual.manticoresearch.com/Changelog), where MCL updates are listed. [`Changelog.md`](Changelog.md) in this repository covers only older versions.
+
+## Contributing, support and security
+
+- **Bugs and feature requests:** [open an issue](https://github.com/manticoresoftware/columnar/issues/new/choose). Issues about Manticore Search behavior in general belong in the [Manticore Search repository](https://github.com/manticoresoftware/manticoresearch/issues).
+- **Contributing:** this repository has no separate guide. The [Manticore Search contributing guide](https://github.com/manticoresoftware/manticoresearch/blob/main/CONTRIBUTING.md) applies. Pull requests run the checks in [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+- **Security:** do not report vulnerabilities in public issues. Report them privately through [Manticore Search's private vulnerability reporting](https://github.com/manticoresoftware/manticoresearch/security/advisories/new).
+
+## License
+
+Manticore Columnar Library is licensed under the [Apache License 2.0](LICENSE). Binary packages also contain third-party components; see [`LICENSE-binary`](LICENSE-binary) and [`NOTICE-binary`](NOTICE-binary). [`licenses-binary/`](licenses-binary/) holds the licenses of the bundled C++ components (FastPFOR, PGM-index, hnswlib, SIMDe and StreamVByte). The Rust dependencies of the embeddings library are listed in [`embeddings/Cargo.lock`](embeddings/Cargo.lock).
