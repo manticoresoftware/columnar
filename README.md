@@ -24,7 +24,7 @@ Manticore Columnar Library (MCL) is a set of C++ libraries, plus a Rust embeddin
 | Feature | What it gives you | How it works | Manual |
 |---|---|---|---|
 | **Columnar storage** (`columnar/`) | Lower memory use on large tables: attributes stay on disk instead of in RAM | Each attribute is stored as its own column, in compressed blocks of 65,536 values. The encoding is chosen per block, and integers are packed with [FastPFOR](https://github.com/fast-pack/FastPFor) and [StreamVByte](https://github.com/fast-pack/streamvbyte) codecs | [Row-wise and columnar storage](https://manual.manticoresearch.com/Creating_a_table/Data_types#Row-wise-and-columnar-attribute-storages) |
-| **Secondary indexes** (`secondary/`) | Faster filtering on attributes, enabled by default | Compact learned index built on the [PGM-index](https://github.com/gvinciguerra/PGM-index) | [Automatic secondary indexes](https://manual.manticoresearch.com/Introduction#Automatic-secondary-indexes) |
+| **Secondary indexes** (`secondary/`) | Faster filtering on attributes. Secondary indexes are on by default for numeric and string attributes; JSON attributes can be enabled with `json_secondary_indexes` | Compact learned index built on the [PGM-index](https://github.com/gvinciguerra/PGM-index) | [Automatic secondary indexes](https://manual.manticoresearch.com/Introduction#Automatic-secondary-indexes) |
 | **KNN vector search** (`knn/`) | Similarity, semantic and hybrid search over `float_vector` attributes | HNSW graphs built on [hnswlib](https://github.com/nmslib/hnswlib), with L2, inner-product and cosine distance, plus optional 8-bit and 1-bit quantization | [KNN vector search](https://manual.manticoresearch.com/Searching/KNN) |
 | **Auto embeddings** (`embeddings/`) | Text is turned into vectors inside Manticore, with no separate model service | Local models run on ONNX Runtime or [Candle](https://github.com/huggingface/candle). Remote models use the OpenAI, Voyage and Jina APIs | [Auto embeddings](https://manual.manticoresearch.com/Searching/KNN#Auto-Embeddings-%28Recommended%29) |
 
@@ -93,6 +93,7 @@ You can also make only some attributes columnar with `engine='columnar'` on thos
 - **CPU.** On Linux and macOS, the baseline x86_64 build targets `x86-64-v2`; MSVC and clang-cl baseline builds use `/arch:AVX`. Columnar storage and secondary indexes need SSE 4.2; otherwise the daemon reports `MCL requires a CPU that supports SSE 4.2`. KNN search also needs POPCNT and reports `MCL requires a CPU that supports SSE 4.2 and POPCNT instruction`. In both cases `searchd` logs a warning and keeps running without that library. AVX2 and AVX-512 builds are used automatically when the CPU supports them. On arm64, the SIMD code runs through [SIMDe](https://github.com/simd-everywhere/simde).
 - **Version matching.** Each library exposes an API number, `LIB_VERSION`. If it differs from the one the daemon was built with, the daemon refuses to load the library, for example `daemon requires columnar library v29 (trying to load v28)`. Upgrade or downgrade Manticore and MCL together. The `manticore` bundle package does this for you.
 - **Columnar is a trade-off.** If all your attributes fit in RAM, the default row-wise storage usually gives lower latency. Columnar storage is designed for data that does not fit in memory.
+- **Columnar attribute limits.** JSON attributes cannot use columnar storage; keep them row-wise in the same table. Columnar attributes cannot be changed with `UPDATE`; use `REPLACE`.
 - **KNN memory.** HNSW indexes must be fully loaded into memory. Quantization reduces this footprint. Float vectors and KNN search are only supported in real-time tables.
 - **Windows builds.** Windows DLLs are cross-compiled from Linux with clang. A native MSVC build of this repository is not supported, because MSVC rejects designated initializers under C++17.
 
@@ -122,7 +123,7 @@ This produces `lib_manticore_columnar`, `lib_manticore_secondary` and `lib_manti
 
 ## Benchmarks
 
-In 2022, the Manticore team published these comparisons of Manticore Search with columnar storage against Elasticsearch and ClickHouse on [db-benchmarks.com](https://db-benchmarks.com/). The test framework is [open source](https://github.com/db-benchmarks/db-benchmarks). The figures below are the geometric mean of per-query response-time ratios from the published charts. They reflect the software versions of that time.
+In 2022, the Manticore team published these comparisons of Manticore Search with columnar storage against Elasticsearch and ClickHouse on [db-benchmarks.com](https://db-benchmarks.com/). The test framework is [open source](https://github.com/db-benchmarks/db-benchmarks). The figures below are the "Relative query processing time" summaries from the published charts, which are based on geometric means of per-query response-time ratios. They reflect the software versions of that time.
 
 | Dataset | vs Elasticsearch | vs ClickHouse |
 |---|---|---|
