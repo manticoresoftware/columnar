@@ -9,7 +9,7 @@
 </h1>
 
 <p align="center">
-  <b>Column-oriented storage, secondary indexes and KNN vector search in one library.</b><br>
+  <b>Columnar storage, secondary indexes and KNN vector search libraries.</b><br>
   Query data that does not fit in RAM, filter it quickly, and search it by meaning.
 </p>
 
@@ -26,13 +26,13 @@ Manticore Columnar Library (MCL) is a column-oriented storage, secondary indexin
 | **Columnar storage** (`columnar/`) | Lower memory use on large tables: attributes stay on disk instead of in RAM | Each attribute is stored as its own column, in compressed blocks of 65,536 values. The encoding is chosen per block, and integers are packed with [FastPFOR](https://github.com/fast-pack/FastPFor) and [StreamVByte](https://github.com/fast-pack/streamvbyte) codecs | [Row-wise and columnar storage](https://manual.manticoresearch.com/Creating_a_table/Data_types#Row-wise-and-columnar-attribute-storages) |
 | **Secondary indexes** (`secondary/`) | Faster filtering on attributes. Secondary indexes are on by default for numeric and string attributes; JSON attributes can be enabled with `json_secondary_indexes` | Compact learned index built on the [PGM-index](https://github.com/gvinciguerra/PGM-index) | [Automatic secondary indexes](https://manual.manticoresearch.com/Introduction#Automatic-secondary-indexes) |
 | **KNN vector search** (`knn/`) | Similarity, semantic and hybrid search over `float_vector` attributes | HNSW graphs built on [hnswlib](https://github.com/nmslib/hnswlib), with L2, inner-product and cosine distance, plus optional 8-bit and 1-bit quantization | [KNN vector search](https://manual.manticoresearch.com/Searching/KNN) |
-| **Auto embeddings** (`embeddings/`) | Text is turned into vectors in-process, with no separate model service | Local models run on ONNX Runtime or [Candle](https://github.com/huggingface/candle). Remote models use the OpenAI, Voyage and Jina APIs | [Auto embeddings](https://manual.manticoresearch.com/Searching/KNN#Auto-Embeddings-%28Recommended%29) |
+| **Auto embeddings** (`embeddings/`) | Text is turned into vectors by the library itself. Local models need no separate model service | Local models run on ONNX Runtime or [Candle](https://github.com/huggingface/candle). Remote models use the OpenAI, Voyage and Jina APIs | [Auto embeddings](https://manual.manticoresearch.com/Searching/KNN#Auto-Embeddings-%28Recommended%29) |
 
 When used in combination with [Manticore Search](https://github.com/manticoresoftware/manticoresearch), MCL can be beneficial for those looking for:
 
-1. log analytics with rich full-text search, which metrics-focused tools such as [ClickHouse](https://github.com/ClickHouse/ClickHouse) lack;
-2. faster log and metrics analytics with lower resource use. MCL and Manticore Search are both written in C++ with low-level optimizations in mind; see the [benchmarks](#benchmarks) against Elasticsearch and ClickHouse;
-3. semantic and hybrid search, with embeddings generated in-process;
+1. log analytics combined with rich full-text search;
+2. faster analytics with lower memory use on large tables. The MCL C++ libraries and Manticore Search are both written with low-level optimizations, such as SIMD, in mind; see the [benchmarks](#benchmarks) against Elasticsearch and ClickHouse;
+3. semantic and hybrid search, with embeddings generated from local models or the OpenAI, Voyage and Jina APIs;
 4. powerful SQL and everything else Manticore Search offers.
 
 ## Using MCL with Manticore Search
