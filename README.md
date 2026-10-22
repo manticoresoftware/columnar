@@ -60,14 +60,16 @@ docker run --name manticore --rm -d manticoresearch/manticore && until docker lo
 
 This sandbox keeps no data. When you exit the MySQL client, the container stops and is removed.
 
-**Install on Ubuntu or Debian** ([other platforms](https://manual.manticoresearch.com/Installation/Installation)):
+**Install the library package on Ubuntu or Debian:**
 
 ```bash
 wget https://repo.manticoresearch.com/manticore-repo.noarch.deb
 sudo apt install ./manticore-repo.noarch.deb
 sudo apt update
-sudo apt install manticore
+sudo apt install manticore-columnar-lib
 ```
+
+If you install Manticore Search with the `manticore` package ([installation guide](https://manual.manticoresearch.com/Installation/Installation)), you already have MCL. That package provides `manticore-columnar-lib` and replaces the separate package, so do not install both.
 
 Check that the libraries were loaded: `searchd -v` lists the columnar, secondary, knn and embeddings versions. Output from the `manticoresearch/manticore:29.9.0` image:
 
@@ -127,18 +129,18 @@ This produces `lib_manticore_columnar`, `lib_manticore_secondary` and `lib_manti
 
 ## Benchmarks
 
-In 2022, the Manticore team published these comparisons of Manticore Search with columnar storage against Elasticsearch and ClickHouse on [db-benchmarks.com](https://db-benchmarks.com/). The test framework is [open source](https://github.com/db-benchmarks/db-benchmarks). The figures below are the "Relative query processing time" summaries from the published charts, which are based on geometric means of per-query response-time ratios. They reflect the software versions of that time.
+The Manticore team publishes comparisons of Manticore Search with columnar storage against Elasticsearch and ClickHouse on [db-benchmarks.com](https://db-benchmarks.com/). The test framework is [open source](https://github.com/db-benchmarks/db-benchmarks). The figures below are the "Relative query processing time" values shown on the site, which are based on geometric means of per-query response-time ratios ("Fast avg" results, 110,000 MB RAM limit). They compare Manticore Search 27.1.5, Elasticsearch 9.4.3 and ClickHouse 26.6.1.1193. Each figure links to the live comparison.
 
 | Dataset | vs Elasticsearch | vs ClickHouse |
 |---|---|---|
-| [10M Nginx logs](https://db-benchmarks.com/test-logs10m/) | [6.52x faster](https://db-benchmarks.com/test-logs10m/#elasticsearch-tuned-vs-manticore-search-columnar-storage) (tuned) | [1.40x faster](https://db-benchmarks.com/test-logs10m/#clickhouse-vs-manticore-search-columnar-storage) |
-| [110M Hacker News comments](https://db-benchmarks.com/test-hn/) | [5.06x faster](https://db-benchmarks.com/test-hn/#manticore-search-columnar-storage-vs-elasticsearch) (tuned) | [11.60x faster](https://db-benchmarks.com/test-hn/#manticore-search-columnar-storage-vs-clickhouse) |
-| [1.7B NYC taxi rides](https://db-benchmarks.com/test-taxi/) | [3.97x faster](https://db-benchmarks.com/test-taxi/#manticore-search-vs-elasticsearch) (tuned) | [1.81x faster](https://db-benchmarks.com/test-taxi/#manticore-search-vs-clickhouse) |
+| [10M Nginx logs](https://db-benchmarks.com/test-logs10m/) | [2.79x faster](https://db-benchmarks.com/?cache=fast_avg&engines=elasticsearch_tuned_9.4.3,manticoresearch_columnar_27.1.5&tests=logs10m&memory=110000) (tuned) | [1.71x faster](https://db-benchmarks.com/?cache=fast_avg&engines=clickhouse_26.6.1.1193,manticoresearch_columnar_27.1.5&tests=logs10m&memory=110000) |
+| [110M Hacker News comments](https://db-benchmarks.com/test-hn/) | [3.02x faster](https://db-benchmarks.com/?cache=fast_avg&engines=elasticsearch_tuned_9.4.3,manticoresearch_columnar_tuned_27.1.5&tests=hn&memory=110000) (tuned) | [8.99x faster](https://db-benchmarks.com/?cache=fast_avg&engines=clickhouse_26.6.1.1193,manticoresearch_columnar_tuned_27.1.5&tests=hn&memory=110000) |
+| [1.7B NYC taxi rides](https://db-benchmarks.com/test-taxi/) | [2.02x faster](https://db-benchmarks.com/?cache=fast_avg&engines=elasticsearch_tuned_9.4.3,manticoresearch_columnar_27.1.5&tests=taxi&memory=110000) (tuned) | [3.16x faster](https://db-benchmarks.com/?cache=fast_avg&engines=clickhouse_26.6.1.1193,manticoresearch_columnar_27.1.5&tests=taxi&memory=110000) |
 
-Most comparisons include queries where Manticore is slower; the per-query tables show them. In the 10M logs test, Elasticsearch timed out on 2 queries, which were excluded from its score.
+In the Hacker News test, Manticore Search also runs with a tuned configuration. Every comparison includes queries where Manticore is slower; the per-query tables show them. In the 10M logs test, Elasticsearch timed out on 2 queries, which were excluded from its score.
 
 <details>
-<summary>Charts</summary>
+<summary>Charts from the original 2022 write-ups (older versions)</summary>
 
 **10M Nginx logs, compared with Elasticsearch (tuned)**
 
@@ -170,7 +172,7 @@ Further reading on the Manticore blog: [About columnar storage](https://manticor
 
 ## Versions and releases
 
-- The latest GitHub release is [14.2.1](https://github.com/manticoresoftware/columnar/releases/tag/14.2.1). It is the version in the current `manticore-columnar-lib` packages and in Manticore Search 29.9.0.
+- The latest release is on [GitHub Releases](https://github.com/manticoresoftware/columnar/releases/latest). The `manticore` package and the official Docker image ship with a matching MCL version.
 - Pushes to `master` that change code get a version tag automatically from [`.github/workflows/auto_version.yml`](.github/workflows/auto_version.yml), so `master` can be ahead of the latest release. The `project()` version in `CMakeLists.txt` is a placeholder that the packaging workflow replaces.
 - Binary packages are built and published by the Manticore Search repository, not attached to GitHub releases here.
 - For release notes, see [GitHub Releases](https://github.com/manticoresoftware/columnar/releases) and the [Manticore Search changelog](https://manual.manticoresearch.com/Changelog), where MCL updates are listed. [`Changelog.md`](Changelog.md) in this repository covers only older versions.
