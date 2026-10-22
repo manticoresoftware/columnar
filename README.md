@@ -9,7 +9,7 @@
 </h1>
 
 <p align="center">
-  <b>Columnar storage, secondary indexes and KNN vector search for <a href="https://github.com/manticoresoftware/manticoresearch">Manticore Search</a>.</b><br>
+  <b>Column-oriented storage, secondary indexes and KNN vector search in one library.</b><br>
   Query data that does not fit in RAM, filter it quickly, and search it by meaning.
 </p>
 
@@ -19,19 +19,23 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/manticoresoftware/columnar" alt="License: Apache-2.0"></a>
 </p>
 
-Manticore Columnar Library (MCL) is a set of C++ libraries, plus a Rust embeddings library, that Manticore Search loads at startup. It provides the engine behind:
+Manticore Columnar Library (MCL) is a column-oriented storage, secondary indexing and vector search library, aiming to provide decent performance with a low memory footprint at big data volumes. It consists of C++ libraries plus a Rust embeddings library:
 
 | Feature | What it gives you | How it works | Manual |
 |---|---|---|---|
 | **Columnar storage** (`columnar/`) | Lower memory use on large tables: attributes stay on disk instead of in RAM | Each attribute is stored as its own column, in compressed blocks of 65,536 values. The encoding is chosen per block, and integers are packed with [FastPFOR](https://github.com/fast-pack/FastPFor) and [StreamVByte](https://github.com/fast-pack/streamvbyte) codecs | [Row-wise and columnar storage](https://manual.manticoresearch.com/Creating_a_table/Data_types#Row-wise-and-columnar-attribute-storages) |
 | **Secondary indexes** (`secondary/`) | Faster filtering on attributes. Secondary indexes are on by default for numeric and string attributes; JSON attributes can be enabled with `json_secondary_indexes` | Compact learned index built on the [PGM-index](https://github.com/gvinciguerra/PGM-index) | [Automatic secondary indexes](https://manual.manticoresearch.com/Introduction#Automatic-secondary-indexes) |
 | **KNN vector search** (`knn/`) | Similarity, semantic and hybrid search over `float_vector` attributes | HNSW graphs built on [hnswlib](https://github.com/nmslib/hnswlib), with L2, inner-product and cosine distance, plus optional 8-bit and 1-bit quantization | [KNN vector search](https://manual.manticoresearch.com/Searching/KNN) |
-| **Auto embeddings** (`embeddings/`) | Text is turned into vectors inside Manticore, with no separate model service | Local models run on ONNX Runtime or [Candle](https://github.com/huggingface/candle). Remote models use the OpenAI, Voyage and Jina APIs | [Auto embeddings](https://manual.manticoresearch.com/Searching/KNN#Auto-Embeddings-%28Recommended%29) |
+| **Auto embeddings** (`embeddings/`) | Text is turned into vectors in-process, with no separate model service | Local models run on ONNX Runtime or [Candle](https://github.com/huggingface/candle). Remote models use the OpenAI, Voyage and Jina APIs | [Auto embeddings](https://manual.manticoresearch.com/Searching/KNN#Auto-Embeddings-%28Recommended%29) |
 
-> [!NOTE]
-> MCL is not a general-purpose standalone library. Its C++ interfaces (`columnar/columnar.h`, `secondary/secondary.h`, `knn/knn.h`) exist for Manticore Search. Each one carries a `LIB_VERSION` that must exactly match the version the daemon was built against. To use these features, install Manticore Search.
+When used in combination with [Manticore Search](https://github.com/manticoresoftware/manticoresearch), MCL can be beneficial for those looking for:
 
-## How it fits into Manticore Search
+1. log analytics with rich full-text search, which metrics-focused tools such as [ClickHouse](https://github.com/ClickHouse/ClickHouse) lack;
+2. faster log and metrics analytics with lower resource use. MCL and Manticore Search are both written in C++ with low-level optimizations in mind; see the [benchmarks](#benchmarks) against Elasticsearch and ClickHouse;
+3. semantic and hybrid search, with embeddings generated in-process;
+4. powerful SQL and everything else Manticore Search offers.
+
+## Using MCL with Manticore Search
 
 ```mermaid
 flowchart LR
@@ -46,7 +50,7 @@ At startup, `searchd` looks for these modules in its modules directory, for exam
 
 ## Getting started
 
-MCL ships inside Manticore Search. Since Manticore 25.0.0, the `manticore` package for Debian, Ubuntu and RHEL-based systems is a bundle that already includes `manticore-columnar-lib`. The `manticore` Homebrew formula from `manticoresoftware/tap` and the official Docker image include the MCL modules too.
+The easiest way to use MCL is with Manticore Search. Since Manticore 25.0.0, the `manticore` package for Debian, Ubuntu and RHEL-based systems is a bundle that already includes `manticore-columnar-lib`. The `manticore` Homebrew formula from `manticoresoftware/tap` and the official Docker image include the MCL modules too.
 
 **Try it in Docker:**
 
@@ -89,9 +93,9 @@ You can also make only some attributes columnar with `engine='columnar'` on thos
 
 ## Requirements and limitations
 
-- **Platforms.** MCL runs wherever Manticore Search packages are available: Debian-based and RHEL-based Linux and macOS on x86_64 and arm64, and Windows on x86_64. See the Manticore [installation guide](https://manual.manticoresearch.com/Installation/Installation) for supported distribution releases.
+- **Platforms.** Debian-based and RHEL-based Linux and macOS on x86_64 and arm64, and Windows on x86_64. For supported distribution releases, see the Manticore [installation guide](https://manual.manticoresearch.com/Installation/Installation).
 - **CPU.** On Linux and macOS, the baseline x86_64 build targets `x86-64-v2`; MSVC and clang-cl baseline builds use `/arch:AVX`. Columnar storage and secondary indexes need SSE 4.2; otherwise the daemon reports `MCL requires a CPU that supports SSE 4.2`. KNN search also needs POPCNT and reports `MCL requires a CPU that supports SSE 4.2 and POPCNT instruction`. In both cases `searchd` logs a warning and keeps running without that library. AVX2 and AVX-512 builds are used automatically when the CPU supports them. On arm64, the SIMD code runs through [SIMDe](https://github.com/simd-everywhere/simde).
-- **Version matching.** Each library exposes an API number, `LIB_VERSION`. If it differs from the one the daemon was built with, the daemon refuses to load the library, for example `daemon requires columnar library v29 (trying to load v28)`. Upgrade or downgrade Manticore and MCL together. The `manticore` bundle package does this for you.
+- **Version matching.** Each library exposes an API number, `LIB_VERSION`. If it differs from the one the host application was built with, the library is not loaded. For example, `searchd` reports `daemon requires columnar library v29 (trying to load v28)`. With Manticore Search, upgrade or downgrade Manticore and MCL together. The `manticore` bundle package does this for you.
 - **Columnar is a trade-off.** If all your attributes fit in RAM, the default row-wise storage usually gives lower latency. Columnar storage is designed for data that does not fit in memory.
 - **Columnar attribute limits.** JSON attributes cannot use columnar storage; keep them row-wise in the same table. Columnar attributes cannot be changed with `UPDATE`; use `REPLACE`.
 - **KNN memory.** HNSW indexes must be fully loaded into memory. Quantization reduces this footprint. Float vectors and KNN search are only supported in real-time tables.
@@ -99,7 +103,7 @@ You can also make only some attributes columnar with `engine='columnar'` on thos
 
 ## Building from source
 
-Most users do not need this: the libraries come with Manticore Search. Build from source to work on MCL itself.
+Build from source to work on MCL or to integrate it into your own application. Packaged builds come with Manticore Search.
 
 The C++ libraries need CMake 3.21 or newer, a C++17 compiler (GCC or Clang) and network access. During configuration, CMake downloads Manticore's forks of FastPFOR, StreamVByte, PGM-index and hnswlib from GitHub, unless you provide them in a local bundle directory (`LIBS_BUNDLE`). These are the build commands CI runs on Linux x86_64, Linux aarch64 and macOS arm64. The x86_64 job also sets `-DBUILD_TESTING=ON`, and a separate job cross-compiles the Windows x64 build from Linux:
 
