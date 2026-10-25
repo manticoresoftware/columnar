@@ -48,6 +48,9 @@ public:
 	template<typename T>
 	static FORCE_INLINE bool Test ( const Span_T<T> & dValues, int64_t iTestValue )
 	{
+		if ( dValues.empty() )
+			return false ^ (!EQ);
+
 		for ( auto i : dValues )
 			if ( i!=iTestValue )
 				return false ^ (!EQ);
