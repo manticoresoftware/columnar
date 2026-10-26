@@ -391,10 +391,12 @@ void RowWriter_T<SRC_VALUE, VALUE>::NextValue ( const RawValue_T<VALUE> & tBin, 
 {
 	// collect row-list
 	// or flush and store new value
-	if ( IS_FLOAT_VALUE && ( FloatEqual ( UintToFloat ( m_tLastValue ), UintToFloat ( tBin.m_tValue ) ) ) )
-		m_dRows.push_back ( tBin.m_tRowid );
-	else if ( !IS_FLOAT_VALUE && m_tLastValue==tBin.m_tValue ) 
-		m_dRows.push_back ( tBin.m_tRowid );
+	if ( IS_FLOAT_VALUE ? FloatEqual ( UintToFloat ( m_tLastValue ), UintToFloat ( tBin.m_tValue ) ) : m_tLastValue==tBin.m_tValue )
+	{
+		// values come sorted by value and row: a value set twice for one row (e.g. [2,2] in json) is stored once
+		if ( m_dRows.back()!=tBin.m_tRowid )
+			m_dRows.push_back ( tBin.m_tRowid );
+	}
 	else
 	{
 		FlushValue(m_tDstFile);
