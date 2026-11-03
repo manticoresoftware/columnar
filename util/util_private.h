@@ -558,6 +558,7 @@ inline int FillWithIncreasingValues ( uint32_t *& pRowID, size_t uNumValues, uin
         tAdd = _mm_add_epi32(tAdd, _mm_set1_epi32(4));
         pRowID += 4;
     }
+    tRowID += (uint32_t)uValuesInBlocks;
 
     size_t uValuesLeft = uNumValues - uValuesInBlocks;
     pRowIDMax = pRowID + uValuesLeft;

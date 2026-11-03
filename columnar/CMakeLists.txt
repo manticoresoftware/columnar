@@ -25,3 +25,9 @@ add_library ( columnar_lib MODULE columnar.cpp builder.cpp columnar.h builder.h 
 target_compile_options ( columnar_lib PRIVATE $<$<COMPILE_LANG_AND_ID:CXX,MSVC>:-wd4996> )
 target_link_libraries ( columnar_lib PRIVATE columnar_root util common builder accessor )
 set_target_properties( columnar_lib PROPERTIES PREFIX "" OUTPUT_NAME lib_manticore_columnar${lib_arch_suffix} )
+
+if ( BUILD_TESTING AND NOT EXTERNAL_LIB )
+	add_executable ( columnar_degenerate_test tests/test_degenerate.cpp columnar.cpp builder.cpp )
+	target_link_libraries ( columnar_degenerate_test PRIVATE columnar_root util common builder accessor )
+	add_test ( NAME columnar_degenerate COMMAND $<TARGET_FILE:columnar_degenerate_test> )
+endif()
