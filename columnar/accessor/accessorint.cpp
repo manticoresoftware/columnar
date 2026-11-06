@@ -304,6 +304,7 @@ protected:
 
 	IntPacking_e	m_ePacking = IntPacking_e::CONST;
 
+	// no FORCE_INLINE - see https://github.com/manticoresoftware/manticoresearch/issues/4804
 	void SetCurBlock ( uint32_t uBlockId );
 
 	int64_t			ReadValue_Const();

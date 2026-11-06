@@ -422,6 +422,7 @@ class Accessor_String_T : public StoredBlockTraits_t
 public:
 									Accessor_String_T ( const AttributeHeader_i & tHeader, uint32_t uVersion, RD * pReader );
 
+	// need to real bench to decide - whether FORCE_INLINE is better or worse here.
 	FORCE_INLINE void				SetCurBlock ( uint32_t uBlockId );
 
 protected:
