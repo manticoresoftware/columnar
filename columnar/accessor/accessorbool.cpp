@@ -106,7 +106,8 @@ class Accessor_Bool_T : public StoredBlockTraits_t
 public:
 						Accessor_Bool_T ( const AttributeHeader_i & tHeader, RD * pReader );
 
-	FORCE_INLINE void	SetCurBlock ( uint32_t uBlockId );
+	// no FORCE_INLINE - see https://github.com/manticoresoftware/manticoresearch/issues/4804
+	void	SetCurBlock ( uint32_t uBlockId );
 
 protected:
 	const AttributeHeader_i &		m_tHeader;
