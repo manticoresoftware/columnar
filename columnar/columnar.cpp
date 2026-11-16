@@ -731,14 +731,37 @@ bool Columnar_c::EarlyReject ( const std::vector<Filter_t> & dFilters, const Blo
 bool Columnar_c::IsFilterDegenerate ( const Filter_t & tFilter ) const
 {
 	const AttributeHeader_i * pHeader = GetHeader ( tFilter.m_sName );
-	if ( !pHeader )
+	if ( !pHeader || tFilter.m_bExclude )
 		return false;
 
-	// fixme! handle more cases
 	if ( tFilter.m_eType==FilterType_e::VALUES && pHeader->GetType()==AttrType_e::BOOLEAN && tFilter.m_dValues.size()==2 && tFilter.m_dValues[0]==0 && tFilter.m_dValues[1]==1 )
 		return true;
 
-	return false;
+	if ( tFilter.m_eType!=FilterType_e::RANGE || tFilter.m_eMvaAggr!=MvaAggr_e::NONE || !pHeader->GetNumDocs() || !pHeader->GetNumMinMaxLevels() )
+		return false;
+
+	switch ( pHeader->GetType() )
+	{
+	case AttrType_e::UINT32:
+	case AttrType_e::TIMESTAMP:
+	case AttrType_e::INT64:
+	case AttrType_e::BOOLEAN:
+		break;
+
+	default:
+		return false;
+	}
+
+	Filter_t tFixed = tFilter;
+	FixupFilterSettings ( tFixed, pHeader->GetType() );
+	auto tBounds = pHeader->GetMinMax ( 0, 0 );
+	auto fnMatches = [&tFixed]( int64_t iValue )
+	{
+		bool bMin = tFixed.m_bLeftUnbounded || ( tFixed.m_bLeftClosed ? iValue>=tFixed.m_iMinValue : iValue>tFixed.m_iMinValue );
+		bool bMax = tFixed.m_bRightUnbounded || ( tFixed.m_bRightClosed ? iValue<=tFixed.m_iMaxValue : iValue<tFixed.m_iMaxValue );
+		return bMin && bMax;
+	};
+	return tBounds.first<=tBounds.second && fnMatches(tBounds.first) && fnMatches(tBounds.second);
 }
 
 
