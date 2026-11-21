@@ -30,4 +30,8 @@ if ( BUILD_TESTING AND NOT EXTERNAL_LIB )
 	add_executable ( columnar_degenerate_test tests/test_degenerate.cpp columnar.cpp builder.cpp )
 	target_link_libraries ( columnar_degenerate_test PRIVATE columnar_root util common builder accessor )
 	add_test ( NAME columnar_degenerate COMMAND $<TARGET_FILE:columnar_degenerate_test> )
+
+	add_executable ( columnar_read_order_test tests/test_read_order.cpp columnar.cpp builder.cpp )
+	target_link_libraries ( columnar_read_order_test PRIVATE columnar_root util common builder accessor )
+	add_test ( NAME columnar_read_order COMMAND $<TARGET_FILE:columnar_read_order_test> )
 endif()

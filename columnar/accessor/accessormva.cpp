@@ -335,7 +335,7 @@ void StoredBlock_MvaConstLen_T<T,COMPRESSED>::ReadSubblock ( int iSubblockId, in
 	int iValuesInSubblock = m_iLength*iNumSubblockValues;
 
 	int64_t iDataOffset = m_tValuesOffset+uOffset;
-	if constexpr ( BUFFERED )
+	if constexpr ( COMPRESSED || BUFFERED || RD::IS_MAPPED )
 		tReader.Seek ( iDataOffset );
 
 	if constexpr ( !COMPRESSED )
@@ -349,7 +349,6 @@ void StoredBlock_MvaConstLen_T<T,COMPRESSED>::ReadSubblock ( int iSubblockId, in
 		// mmap zero-copy: point the row spans straight into the mapping instead of copying into m_dValues
 		if constexpr ( RD::IS_MAPPED )
 		{
-			tReader.Seek ( iDataOffset );
 			uint8_t * pMapped = nullptr;
 			if ( tReader.ReadFromBuffer ( pMapped, uSize ) )
 			{

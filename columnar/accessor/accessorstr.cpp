@@ -73,7 +73,7 @@ public:
 	template <typename RD> FORCE_INLINE void ReadHeader ( RD & tReader );
 	template <bool PACK, typename RD>
 	FORCE_INLINE Span_T<uint8_t>	ReadValue ( RD & tReader, int iIdInBlock );
-	FORCE_INLINE int				GetValueLength() const { return (int)m_tValuesOffset; }
+	FORCE_INLINE int				GetValueLength() const { return (int)m_tValueLength; }
 
 	template <typename RD> FORCE_INLINE void ReadSubblock ( int iSubblockIdInBlock, int iSubblockValues, RD & tReader ) { m_tLengthsRead = { m_dLengths.data(), (size_t)iSubblockValues }; }
 	FORCE_INLINE Span_T<uint64_t>	GetAllValueLengths() { return m_tLengthsRead; }
@@ -319,6 +319,7 @@ void StoredBlock_StrGeneric_c::ReadHeader ( RD & tReader, int iNumSubblocks )
 	DecodeValues_Delta_PFOR ( m_dOffsets, tReader, *m_pCodec, m_dTmp, uSubblockSize, false, m_uVersion );
 
 	m_tValuesOffset = tReader.GetPos();
+	m_iSubblockId = -1;
 }
 
 
