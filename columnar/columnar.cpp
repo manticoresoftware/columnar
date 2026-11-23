@@ -380,6 +380,7 @@ public:
 	std::vector<BlockIterator_i *>		CreateAnalyzerOrPrefilter ( const std::vector<Filter_t> & dFilters, std::vector<int> & dDeletedFilters, const BlockTester_i & tBlockTester ) const final;
 	int64_t								EstimateMinMax ( const Filter_t & tFilter, const BlockTester_i & tBlockTester ) const final;
 	bool								GetAttrInfo ( const std::string & sName, AttrInfo_t & tInfo ) const final;
+	const BlockBounds_i *				GetBlockBounds ( const std::string & sAttr ) const final;
 
 	bool								EarlyReject ( const std::vector<Filter_t> & dFilters, const BlockTester_i & tBlockTester ) const final;
 	bool								IsFilterDegenerate ( const Filter_t & tFilter ) const final;
@@ -725,6 +726,16 @@ bool Columnar_c::EarlyReject ( const std::vector<Filter_t> & dFilters, const Blo
 	SharedBlocks_c pShared(nullptr);
 	MinMaxEval_T<false,true> tMinMaxEval ( dHeaders, tBlockTester, pShared, 0, INVALID_ROW_ID );
 	return !tMinMaxEval.EvalAll();
+}
+
+
+const BlockBounds_i * Columnar_c::GetBlockBounds ( const std::string & sAttr ) const
+{
+	const auto * pHeader = GetHeader(sAttr);
+	if ( !pHeader || !pHeader->GetNumDocs() || !pHeader->GetNumMinMaxLevels() )
+		return nullptr;
+
+	return pHeader;
 }
 
 

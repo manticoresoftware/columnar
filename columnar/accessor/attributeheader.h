@@ -28,7 +28,7 @@ namespace columnar
 
 struct Settings_t;
 
-class AttributeHeader_i
+class AttributeHeader_i : public BlockBounds_i
 {
 public:
 	virtual						~AttributeHeader_i() = default;
@@ -42,10 +42,6 @@ public:
 	virtual int					GetNumBlocks() const = 0;
 	virtual uint32_t			GetNumDocs ( int iBlock ) const = 0;
 	virtual uint64_t			GetBlockOffset ( int iBlock ) const = 0;
-
-	virtual int					GetNumMinMaxLevels() const = 0;
-	virtual int					GetNumMinMaxBlocks ( int iLevel ) const = 0;
-	virtual std::pair<int64_t,int64_t> GetMinMax ( int iLevel, int iBlock ) const = 0;
 
 	virtual bool				Load ( util::FileReader_c & tReader, std::string & sError ) = 0;
 	virtual bool				Check ( util::FileReader_c & tReader, Reporter_fn & fnError ) = 0;

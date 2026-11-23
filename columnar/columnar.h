@@ -28,7 +28,7 @@
 namespace columnar
 {
 
-static const int LIB_VERSION = 29;
+static const int LIB_VERSION = 31;
 
 class Iterator_i
 {
@@ -81,6 +81,20 @@ struct AttrInfo_t
 };
 
 
+/// Binary min/max tree in row-ID order. Level zero is the root and the last level contains the leaves.
+class BlockBounds_i
+{
+public:
+	virtual int					GetLeafRows() const = 0;
+	virtual int					GetNumMinMaxLevels() const = 0;
+	virtual int					GetNumMinMaxBlocks ( int iLevel ) const = 0;
+	virtual std::pair<int64_t,int64_t> GetMinMax ( int iLevel, int iBlock ) const = 0;
+
+protected:
+	~BlockBounds_i() = default;
+};
+
+
 class Columnar_i
 {
 public:
@@ -93,6 +107,9 @@ public:
 
 	virtual bool			EarlyReject ( const std::vector<common::Filter_t> & dFilters, const BlockTester_i & tBlockTester ) const = 0;
 	virtual bool			IsFilterDegenerate ( const common::Filter_t & tFilter ) const = 0;
+
+	/// Returns the attribute's min/max tree, owned by this reader, or nullptr when unavailable.
+	virtual const BlockBounds_i * GetBlockBounds ( const std::string & sAttr ) const = 0;
 };
 
 } // namespace columnar

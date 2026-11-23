@@ -170,6 +170,7 @@ public:
 	uint32_t				GetNumDocs ( int iBlock ) const override;
 	uint64_t				GetBlockOffset ( int iBlock ) const override { return m_dBlocks[iBlock]; }
 
+	int						GetLeafRows() const final			{ return m_tSettings.m_iSubblockSize; }
 	int						GetNumMinMaxLevels() const override	{ return 0; }
 	int						GetNumMinMaxBlocks ( int iLevel ) const override { return 0; }
 	std::pair<int64_t,int64_t> GetMinMax ( int iLevel, int iBlock ) const override { return {0, 0}; }

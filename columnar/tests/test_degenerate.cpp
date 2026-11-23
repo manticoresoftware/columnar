@@ -39,6 +39,19 @@ static bool TestRange ( common::AttrType_e eType, int64_t iMin, int64_t iMax, co
 	pBuilder.reset();
 	std::unique_ptr<columnar::Columnar_i> pReader ( CreateColumnarStorageReader ( sFile, iDocs, false, sError ) );
 	CHECK(pReader);
+	auto * pBounds = pReader->GetBlockBounds("value");
+	CHECK(pBounds);
+	int iRows = pBounds->GetLeafRows();
+	CHECK ( iRows>1 && iRows<iDocs && iDocs%iRows>1 );
+	for ( int iLevel=pBounds->GetNumMinMaxLevels()-1; iLevel>=0; --iLevel, iRows*=2 )
+	{
+		int iBlocks = (iDocs+iRows-1)/iRows;
+		CHECK ( pBounds->GetNumMinMaxBlocks(iLevel)==iBlocks );
+		for ( int i=0; i<iBlocks; ++i )
+			CHECK ( pBounds->GetMinMax ( iLevel, i )==std::make_pair ( iMin, i+1==iBlocks ? iMax : iMin ) );
+	}
+	CHECK ( !pReader->GetBlockBounds("missing") );
+
 	common::Filter_t tFilter;
 	tFilter.m_sName = "value";
 	tFilter.m_eType = common::FilterType_e::RANGE;
