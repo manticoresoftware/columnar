@@ -117,6 +117,64 @@ static bool TestUnsupported ( const std::string & sFile )
 	return true;
 }
 
+
+static bool TestSignedTableRanges ( const std::string & sFile )
+{
+	struct AllBlocks_t : columnar::BlockTester_i
+	{
+		bool Test ( const columnar::MinMaxVec_t & ) const final { return true; }
+	} tAllBlocks;
+
+	common::Schema_t tSchema = { { "value", common::AttrType_e::INT64 } };
+	std::string sError;
+	std::unique_ptr<columnar::Builder_i> pBuilder ( CreateColumnarBuilder ( tSchema, sFile, 65536, sError ) );
+	CHECK(pBuilder);
+
+	// Four distinct values select TABLE packing.
+	const int64_t dValues[] = { INT64_MIN, -1, 0, INT64_MAX };
+	constexpr uint32_t NUM_DOCS = 512;
+	for ( uint32_t i=0; i<NUM_DOCS; ++i )
+		pBuilder->SetAttr ( 0, dValues[i%4] );
+
+	CHECK ( pBuilder->Done(sError) );
+	pBuilder.reset();
+
+	common::Filter_t tFilter;
+	tFilter.m_sName = "value";
+	tFilter.m_eType = common::FilterType_e::RANGE;
+	tFilter.m_iMinValue = -1;
+	tFilter.m_iMaxValue = 0;
+	for ( bool bMmap : { false, true } )
+	{
+		std::unique_ptr<columnar::Columnar_i> pReader ( CreateColumnarStorageReader ( sFile, NUM_DOCS, bMmap, sError ) );
+		CHECK(pReader);
+		for ( bool bLeftClosed : { true, false } )
+			for ( bool bRightClosed : { true, false } )
+			{
+				tFilter.m_bLeftClosed = bLeftClosed;
+				tFilter.m_bRightClosed = bRightClosed;
+				std::vector<int> dDeletedFilters;
+				auto dAnalyzers = pReader->CreateAnalyzerOrPrefilter ( { tFilter }, dDeletedFilters, tAllBlocks );
+				CHECK ( dAnalyzers.size()==1 );
+
+				std::unique_ptr<common::BlockIterator_i> pAnalyzer ( dAnalyzers.front() );
+				std::vector<uint32_t> dExpected, dActual;
+				for ( uint32_t i=0; i<NUM_DOCS; ++i )
+					if ( ( i%4==1 && bLeftClosed ) || ( i%4==2 && bRightClosed ) )
+						dExpected.push_back(i);
+
+				util::Span_T<uint32_t> dRows;
+				while ( pAnalyzer->GetNextRowIdBlock(dRows) )
+					dActual.insert ( dActual.end(), dRows.begin(), dRows.end() );
+
+				CHECK ( dActual==dExpected );
+			}
+	}
+
+	return true;
+}
+
+
 int main()
 {
 	auto tFile = std::filesystem::temp_directory_path() / ( "columnar-degenerate-" + std::to_string ( std::chrono::steady_clock::now().time_since_epoch().count() ) + ".spc" );
@@ -126,7 +184,8 @@ int main()
 		&& TestRange ( common::AttrType_e::INT64, INT64_MIN, INT64_MAX, sFile )
 		&& TestRange ( common::AttrType_e::INT64, -7, -7, sFile )
 		&& TestRange ( common::AttrType_e::BOOLEAN, 0, 1, sFile )
-		&& TestUnsupported(sFile);
+		&& TestUnsupported(sFile)
+		&& TestSignedTableRanges(sFile);
 	std::filesystem::remove(tFile);
 	return bOk ? 0 : 1;
 }

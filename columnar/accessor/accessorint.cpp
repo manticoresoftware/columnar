@@ -548,7 +548,7 @@ public:
 	template <bool EQ> FORCE_INLINE int	ProcessSubblock_ValuesBinary ( uint32_t * & pRowID, const Span_T<uint32_t> & dValueIndexes );
 	FORCE_INLINE int	ProcessSubblock_Range ( uint32_t * & pRowID, const Span_T<uint32_t> & dValueIndexes );
 
-	template <typename T, typename RANGE_EVAL>
+	template <typename VALUES, typename RANGE_EVAL, typename T>
 	FORCE_INLINE bool	SetupNextBlock ( const StoredBlock_Int_Table_T<T> & tBlock, bool bEq );
 
 	template <typename T>
@@ -659,7 +659,7 @@ int AnalyzerBlock_Int_Table_c::ProcessSubblock_Range ( uint32_t * & pRowID, cons
 	return (int)dValueIndexes.size();
 }
 
-template<typename T, typename RANGE_EVAL>
+template<typename VALUES, typename RANGE_EVAL, typename T>
 bool AnalyzerBlock_Int_Table_c::SetupNextBlock ( const StoredBlock_Int_Table_T<T> & tBlock, bool bEq )
 {
 	switch ( m_eType )
@@ -693,7 +693,7 @@ bool AnalyzerBlock_Int_Table_c::SetupNextBlock ( const StoredBlock_Int_Table_T<T
 			bool bAnyInRange = false;
 			for ( int i = 0; i < tBlock.GetTableSize(); i++ )
 			{
-				m_dRangeMap[i] = RANGE_EVAL::Eval ( tBlock.GetValueFromTable(i), (T)m_iMinValue, (T)m_iMaxValue );
+				m_dRangeMap[i] = RANGE_EVAL::Eval ( (VALUES)tBlock.GetValueFromTable(i), (VALUES)m_iMinValue, (VALUES)m_iMaxValue );
 				bAnyInRange |= m_dRangeMap[i];
 			}
 
@@ -1180,7 +1180,7 @@ bool Analyzer_INT_T<VALUES,ACCESSOR_VALUES,RANGE_EVAL,HAVE_MATCHING_BLOCKS,RD>::
 			break;
 
 		case IntPacking_e::TABLE:
-			bProcessBlock = m_tBlockTable.SetupNextBlock<ACCESSOR_VALUES,RANGE_EVAL> ( ACCESSOR::m_tBlockTable, !m_tSettings.m_bExclude );
+			bProcessBlock = m_tBlockTable.SetupNextBlock<VALUES,RANGE_EVAL> ( ACCESSOR::m_tBlockTable, !m_tSettings.m_bExclude );
 			if ( bProcessBlock && m_tBlockTable.AllPassFilter ( ACCESSOR::m_tBlockTable, !m_tSettings.m_bExclude ) )
 				ePackingForProcessingFunc = IntPacking_e::CONST;
 			break;
