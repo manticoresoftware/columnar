@@ -112,7 +112,6 @@ public:
 	FORCE_INLINE int	GetLength() const { return m_iSize; }
 
 	void				Invert ( int iMinBit=-1, int iMaxBit=-1 ) { assert ( 0 && "Unsupported by SplitBitmap_c" ); }
-	void				Resize ( int iSize ) { assert ( 0 && "Unsupported by SplitBitmap_c" ); }
 
 	template <typename RESULT>
 	void				Fetch ( int & iIterator, int iBase, RESULT * & pRes, RESULT * pMax );
@@ -288,29 +287,19 @@ void BitmapIterator_T<BITMAP,ROWID_RANGE>::Add ( BlockIterator_i * pIterator )
 			}
 		}
 
-		bool bWasCutoff = false;
+		// values are added one after another, so the cutoff keeps the first N rows of the values, not the N lowest rowids;
+		// any N matching rows satisfy the cutoff, but the bitmap must keep every row it collected
 		int iProcessed = ( pEnd - pPtr );
 		if ( iProcessed>m_iRowsLeft )
 		{
 			pEnd = pPtr + m_iRowsLeft;
 			iProcessed = m_iRowsLeft;
-			bWasCutoff = true;
 		}
 		while ( pPtr<pEnd )
 			m_tBitmap.BitSet ( *pPtr++ );
 
 		m_iNumProcessed += iProcessed;
 		m_iRowsLeft -= iProcessed;
-
-		// cutoff lower processed count that keep some bits cleared
-		// then tFilter.m_bExclude cause bitvec to invert thouse bits
-		if ( m_bHasCutoff && bWasCutoff )
-		{
-			uint32_t iLastRow = *(--pPtr);
-			// should only srink but not extend
-			assert ( iLastRow+1<=m_tBitmap.GetLength() );
-			m_tBitmap.Resize ( iLastRow+1 );
-		}
 	}
 
 	m_iRowsLeft = std::max ( m_iRowsLeft, 0 );
@@ -1313,7 +1302,8 @@ void RangeReaderBase_T<RD>::CreateBlocksIterator ( const BlockIter_t & tIt, cons
 	std::function<void( BitmapIterator_i * pIterator )> fnDeleter = [&]( BitmapIterator_i * pIterator ){ if ( pIterator ) { assert(dRes.empty()); dRes.push_back(pIterator); } };
 	RowidRange_t * pBounds = BASE::m_bHaveBounds ? &this->m_tBounds : nullptr;
 	std::unique_ptr<BitmapIterator_i, decltype(fnDeleter)> pBitmapIterator ( BASE::SpawnBitmapIterator ( pBounds, tFilter.m_bExclude ), fnDeleter );
-	if ( pBitmapIterator && BASE::m_iCutoff>=0 )
+	// the bitmap of an excluded range is inverted after all values are added, so a cutoff would let excluded rows pass
+	if ( pBitmapIterator && BASE::m_iCutoff>=0 && !tFilter.m_bExclude )
 		pBitmapIterator->SetCutoff(BASE::m_iCutoff);
 
 	std::unique_ptr<BlockIteratorWithSetup_i> pCommonIterator;
